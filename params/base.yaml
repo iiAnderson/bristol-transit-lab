@@ -171,3 +171,48 @@ car:
     centre: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
     urban: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
     rural: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
+
+# Routing settings shared by r5r (PT) and r5py (walk, cycle), passed identically to
+# both (plans/P2.md D7). The departure window is skims.departure_window_min.
+routing:
+  max_rides:
+    value: 8
+    unit: public transport rides per trip
+    tag: MODELLED
+    reasoning: >-
+      r5py's default; r5r's default is 3, which changed p50 times on the D7 comparison.
+      8 is effectively unlimited for this network, so the router, not a cap, decides.
+  walk_speed_kmh:
+    value: 3.6
+    unit: km/h
+    tag: PLACEHOLDER
+    note: R5 default (1 m/s) in both engines; to be sourced (e.g. TAG / NTS) before published output
+  cycle_speed_kmh:
+    value: 12.0
+    unit: km/h
+    tag: PLACEHOLDER
+    note: R5 default in both engines; to be sourced before published output
+  max_bicycle_lts:
+    value: 3
+    unit: level of traffic stress (1–4)
+    tag: PLACEHOLDER
+    note: r5py default 3; r5r default 2 — must be passed explicitly to both; to be justified
+  max_walk_min:
+    value: null
+    unit: min of walking per trip (access, transfer, egress)
+    tag: PLACEHOLDER
+    note: both engines default to no limit beyond the trip duration; decide in P2c
+  max_trip_min:
+    value: 120
+    unit: min
+    tag: MODELLED
+    reasoning: >-
+      Both engines' default. Longer than any internal commute of interest; pairs beyond
+      it are unreachable.
+  pt_reachable_share_min:
+    value: 0.5
+    unit: share of departure minutes in the window
+    tag: MODELLED
+    reasoning: >-
+      Robbie, 2026-09-27 (D7): a pair is PT-unreachable if fewer than half the departure
+      minutes have a route; this matches r5py's p50 (undefined below 50%).
