@@ -10,8 +10,10 @@ B3 (plans/P2.md §5): WebTRIS site speeds by period and direction, matched to SR
 * Day filter: weekday periods (AM, IP, PM, off-peak) use neutral days — Tue–Thu in
   school term, not a bank holiday, not August — and the weekend is Sat–Sun, both from
   the same calendar in config.
-* Matching: nearest SRN segment of the same road whose bearing agrees with the site's
-  direction (within 60°), within ``max_match_m``.
+* Matching: nearest SRN main-carriageway segment (not a ``_link``) of the same road on
+  the site's side: WebTRIS directions are nominal route directions (the M4 "westbound"
+  runs at 331° near Almondsbury), so the label only picks one of two opposite
+  carriageways — bearing within 90° of the label — within ``max_match_m``.
 """
 from __future__ import annotations
 
@@ -106,7 +108,8 @@ def process(con: duckdb.DuckDBPyConnection, webtris_dir: Path, sites: list[dict]
         GROUP BY ALL""")
     # match sites to SRN segments: same ref, bearing within 60°, nearest within max_match_m
     segs = con.execute(f"""SELECT way_id, seq, forward, u, v, ref, lon_u, lat_u, lon_v, lat_v
-        FROM read_parquet('{segments}') WHERE road_class = 'srn'""").fetchall()
+        FROM read_parquet('{segments}')
+        WHERE road_class = 'srn' AND highway NOT LIKE '%_link'""").fetchall()
     by_ref: dict[str, list] = {}
     for s in segs:
         by_ref.setdefault(s[5], []).append(s)
@@ -121,7 +124,7 @@ def process(con: duckdb.DuckDBPyConnection, webtris_dir: Path, sites: list[dict]
                 continue
             b = _bearing(s[6], s[7], s[8], s[9])
             diff = abs((b - DIR_BEARING[st["direction"]] + 180) % 360 - 180)
-            if diff > 60:
+            if diff >= 90:
                 continue
             if best is None or dm < best[0]:
                 best = (dm, s)
