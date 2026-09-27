@@ -162,8 +162,37 @@ comes out. An analysis-grade stage should include them.
   re-run after committing P0.
 - No scenario files, land use, or `lab.duckdb`: P1 onwards.
 
+## P1 — Analysis-grade demand export
+
+### Decisions before the build (user, 2026-09-27)
+
+- **Upstream `correct()` approved**, with conditions. `bres_discount` takes a float or
+  a table keyed by MSOA (the ONS Data Science Campus rate varies by area-type cluster).
+  `cap` takes `None`, and the lab always passes it explicitly. "Unchanged game output"
+  means identical rows after sorting by every key column: exact on integers, and exact
+  on floats if achievable, otherwise ≤ 1e-9 relative, recording which held. File bytes
+  are not compared. The edge-OA TS058 quirk stays on the game path and is logged
+  upstream as a known issue. The upstream commit is made from a clean tree, after the
+  user has reviewed the diff and regression results.
+- **Externals** are stored uncut at their real MSOA, with distance attached, and tagged
+  by direction: `external_in` (66,186 in raw flows) and `external_out` (37,350). The
+  30 km cut is a v1.1 decision. v1.1 gateways cover both directions (SPEC §11b).
+- **Destination grain:** each MSOA is split across its LSOAs by BRES LSOA jobs, using
+  discounted jobs if the discount varies by area. **Assumption:** within an MSOA,
+  every origin gets the same destination pattern. **Why:** upstream measured
+  LSOA → LSOA as too noisy, with 21.5% of commuters in flows of 2 or fewer.
+- **BRES discount definition:** d = 1 − (workers attending a fixed workplace on an
+  average weekday ÷ BRES jobs). The Data Science Campus report supplies the method,
+  not the rate: its 2018–19 and 2020–21 variants are neither current. The rate comes
+  from recent NTS commuting / working-from-home tables and ONS hybrid-working
+  statistics. P1 outputs the matrix at low, central and high d.
+- **Segment order:** the ODWP14EW CA/NCA split is applied after `correct()`.
+  **Assumption:** redistributed no-fixed-place workers share their origin's
+  car-availability split.
+
 ## Phase status
 
 | phase | status |
 |---|---|
-| P0 | done 2026-09-27; committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
+| P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
+| P1 | upstream `correct()` refactor in review; lab-side steps not started |

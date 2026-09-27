@@ -209,7 +209,9 @@ landuse(landuse_version, zone_id, residents, workers, jobs, jobs_by_sector JSON,
 -- demand, versioned
 demand(demand_version, purpose /* HBW|HBE|HBS|HBO|NHB|EMP|SPECIAL */,
        period /* AM|IP|PM|OP */, segment /* CA|NCA */, o_zone, d_zone, trips,
-       external /* bool: one end outside the extent; excluded from v1 behaviour */)
+       external /* NULL | 'external_in' | 'external_out': one end outside the extent;
+                   excluded from v1 behaviour */,
+       ext_dist_km /* distance to the external end, externals only */)
 
 -- observed / base mode shares used as the pivot
 base_mode_share(base_version, purpose, segment, o_zone, d_zone, mode, share, source)
@@ -314,18 +316,32 @@ Order: **discount BRES → rescale → check whether the 4.0 cap still binds.** 
 longer binds, drop it rather than carrying a game-era safety rail. Log the result
 either way.
 
-**Car availability.** Split each OD pair into CA/NCA using ODWP14EW proportions, at the
-finest level that stays above record-swapping noise (re-measure).
+**Car availability.** After the correction, split each OD pair into CA/NCA using
+ODWP14EW proportions, at the finest level that stays above record-swapping noise
+(re-measure).
 
-**Destination grain.** Choice is LSOA → LSOA; P1 produces LSOA → MSOA. Decide in P1
-between (a) splitting each destination MSOA across its LSOAs by BRES LSOA jobs, or
-(b) keeping MSOA destinations and skimming to them through job-weighted LSOA points.
-Log the choice and the reason.
+**Destination grain.** Decided (2026-09-27): each destination MSOA is split across its
+LSOAs by BRES LSOA jobs — discounted jobs if the discount varies by area. Assumption,
+logged: within an MSOA every origin gets the same destination pattern. Chosen because
+LSOA → LSOA was measured too noisy upstream (21.5% of commuters in flows ≤ 2).
 
-**External commuters.** P1 builds them at their real external origin or destination
-MSOA (no clamping, no spreading; whether upstream's 30 km cut applies is a P1 decision,
-logged), tags them
-`external=true` in the demand table, and stops. v1 excludes them from mode choice,
+**BRES discount definition.** d = 1 − (workers attending a fixed workplace on an
+average weekday ÷ BRES jobs): the fixed-workplace share and average days attended,
+combined. Method from the ONS Data Science Campus travel-to-work matrix report; rate
+from current NTS / ONS hybrid-working statistics. Where the cap does not bind,
+destination totals are BRES × (1 − d), so d sets the level of the whole matrix: P1
+outputs the matrix at low / central / high d; later phases use central, with the range
+for sensitivity runs.
+
+**Order.** `correct()` (no-fixed-place redistribution → BRES discount → rescale → cap
+check) first, then the CA/NCA split. Assumption, logged: redistributed no-fixed-place
+workers share their origin's car-availability split.
+
+**External commuters.** P1 builds them uncut at their real external origin or
+destination MSOA, with distance attached (no clamping, no spreading; the 30 km cut is a
+v1.1 decision), tags them by direction — `external_in` (external origin → internal
+workplace) or `external_out` (internal residence → external workplace) — in the demand
+table, and stops. v1 excludes them from mode choice,
 assignment and connectivity metrics. v1.1 adds them through gateways (§11b) on top of
 the P1 table rather than rebuilding it.
 
@@ -398,7 +414,7 @@ P¹_m = P⁰_m · exp(λ · ΔGC_m) / Σ_k P⁰_k · exp(λ · ΔGC_k),   ΔGC_m
   record the implied bus IVT and fare elasticities in every calibration report.
 - Base shares `P⁰`: 2011 WU03EW for commute (pre-COVID, OD-specific), NTS mode share
   by distance band for other purposes, reconciled to TS061 and NTS at LAD level.
-- v1: rows with `external=true` are excluded.
+- v1: rows with `external` set (`external_in` / `external_out`) are excluded.
 
 ### 7.4 Assignment and crowding
 
@@ -576,18 +592,22 @@ The game is the **sketchpad**; the lab is the **judge**.
 ## 11b. v1.1 — External gateways (committed next scope)
 
 Distinct from §12: this is committed, not speculative. It builds on the P1 demand
-table's `external=true` rows without rebuilding P1.
+table's `external_in` and `external_out` rows without rebuilding P1. Gateways work in
+**both directions**: inbound commuters arrive at them, and outbound residents leave
+through them — residents commuting out by rail generate access trips to Temple Meads,
+Parkway and the other stations, which load the internal network like any other trip.
 
 - **Fixed mode.** External demand is fixed-mode; schemes cannot change an external
   trip's main mode. State this as a v1.1 limitation in any report that includes
   externals.
 - **Mode shares by external origin** come from Census 2011 WU03EW (external MSOA →
   internal MSOA by mode), scaled to current totals.
-- **Rail.** Gateways are the *alighting* stations inside the extent (Temple Meads,
+- **Rail.** Inbound gateways are the *alighting* stations inside the extent (Temple Meads,
   Parkway, Bath Spa, Filton Abbey Wood etc.), not boundary crossings. Split across
   stations using ORR's station-to-station origin–destination data; confirm the latest
   release exists and its licence before use. The onward station → workplace leg is
-  modelled normally.
+  modelled normally. Outbound: the *boarding* stations inside the extent, split the same
+  way; the home → station access leg is modelled normally.
 - **Road.** Gateways are the points where each external origin's fastest OSM car route
   crosses the boundary, computed once, not assigned by hand. Expected crossings include
   M4, M5, M32, M48/M49 and the Severn crossings, A4, A37, A38, A370, A420 and A432 —
