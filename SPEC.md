@@ -201,7 +201,7 @@ Confirm every URL at build time (rule 3). All OGL v3 unless stated.
 | BODS vehicle location (SIRI-VM) | observed bus speeds → shape of car congestion factors | *Amended at P2a:* nine neutral September days from the National Data Library archive (30 s snapshots) for calibration, plus three days of live 10 s polling to measure the spacing bias |
 | DfT travel time measures, local A roads (by local highway authority) | calibration target for local A-road speeds | England only; grain (period, urban/rural) confirmed in P2a A7 |
 | National Highways WebTRIS | SRN speeds by site, direction and 15 min | England only |
-| DfT AADF by link and direction | flow-weighting modelled speeds like-for-like with DfT | |
+| DfT AADF by link and direction | flow-weighting modelled speeds like-for-like with DfT; **road class** | *Amended at P2b:* each car segment's class (SRN vs local A) comes from DfT's own count-point category (TM/TA → SRN, PM/PA → local A), because OSM's `trunk` marks many local A roads; between count points the class propagates along contiguous links with the same `ref`, and where a road changes class the boundary is taken from count-point positions (recorded); OSM is the fallback only where a road has no count point |
 | ONS 2021 rural–urban classification | area types (D4) | confirm Wales coverage |
 | Open Data Bristol "Historic journey times" | validation (relative pattern only if pre-2020) | existence and licence to confirm |
 | Bristol City Council ATC speeds | validation (optional, re-run when received) | requested, not received |
@@ -433,7 +433,11 @@ home-based purposes is an acceptable v1 simplification — say so in reports.
   local-A-road measures by authority, WebTRIS on the SRN) with bus moving speeds
   shaping the pattern within each authority, and validated on held-out data
   (plans/P2.md §5; copied here when P2b is approved). Parking search and access walk by
-  destination area type [PLACEHOLDER until sourced].
+  destination area type [PLACEHOLDER until sourced]. *Structure decided 2026-09-27:*
+  a base of class × area × direction × period factors for every road, plus per-road
+  multipliers (regularised towards 1) only on the DfT-measured roads; the headline
+  accuracy for unmeasured roads is leave-one-road-out; road class from DfT count points
+  (§3). Car routing: native OSRM with per-direction segment speeds (plans/P2.md D2).
 - Check GTFS `calendar.txt` covers the chosen modelled date; fail otherwise.
 
 ### 7.2 Generalised cost (in minutes)
