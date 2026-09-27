@@ -636,6 +636,42 @@ Working plan and progress log: `plans/P2.md`.
 | DfT Transport connectivity metric 2025 | https://www.gov.uk/government/publications/transport-connectivity-metric → https://assets.publishing.service.gov.uk/media/68c966fc07d9e92bc5517b80/connectivity_metrics_2025.ods | 2026-09-27 | OGL v3 | V1.0.0, version date 2025-08-21, experimental; timetables Q4 2024; **England and Wales**; OA/LSOA/LAD/RGN scores 0–100 by purpose × mode. SHA-256 `4f6589ae…`. The 1 GB `content.xml` is streamed to CSV (`src/lab/supply/ods.py`). The PT employment column is labelled "Business (public transport)" |
 | Welsh trunk-road speeds | — | 2026-09-27 | — | **None published.** Traffic Wales is live-only; M4 speeds appear only in ad-hoc FOI releases (e.g. https://www.gov.wales/atisn18581). Welsh trunk roads keep transferred factors (D8). The M4 J24–J28 through Newport has 50 mph average-speed enforcement: free-flow speeds there must honour it |
 
+### Bus GTFS (A4, 2026-09-27)
+
+Inputs: the NDL archive's `itm_south_west_gtfs_20260923.zip` (SHA-256 `cb0026b2…`) and
+`itm_wales_gtfs_20260923.zip` (`b8fb8573…`), fetched one at a time during a pause of
+the SIRI-VM fetch. Both are BODS feed version `20260922_02424x`, feed start 22 Sep 2026,
+so they cover the modelled date (A4 checks 1 and 3).
+
+`lab supply bus` (run `20260927T191653-supply-bus-ef66a1`): 58,922 trips active on
+Wed 23 Sep in the two feeds → 12,798 calling in the extent → 3,664 exact duplicates
+removed → 198 left with fewer than two calls in the clip box → **8,936 trips, 286,130
+stop times, 5,818 stops**; 32,420 calls beyond the box cut. Validator: 0 errors,
+128 warnings (90 missing bike allowance, 17 duplicate route names, 15 unexpected enum
+values, 3 long short names, and the single-date ones).
+
+- **Duplicates are mostly whole-route doubling.** 62 of 262 routes lost more than 10%:
+  First Bristol 41, FlixBus 16, National Express 4, Newport Bus 1. Where one route ID
+  runs on the date, trips are doubled exactly by overlapping service calendars
+  (e.g. First 75: 256 → 128). A route name can cover several real services (First "1"
+  is a Bath circular, Bristol–South Gloucestershire and a Weston route); none of them
+  duplicate each other. FlixBus repeats each trip up to ~11× (UK940: 344 → 31).
+- **Unresolved variants (kept, listed):** 66 groups of trips leave the same first stop at
+  the same minute but differ later, 61 of them on First 5 and 77. The longer variant
+  (to "Transport Hub", `010000012`) belongs to service `6606` (calendar_dates only,
+  Mon–Thu from 22 Sep); the shorter ends at Black Boy Hill (`0100BRP90986`). On 8 Sep
+  vehicles on 5 and 77 were bound for Black Boy Hill, but that predates `6606`. To be
+  resolved from the 23 Sep vehicle destinations when the archive fetch reaches them.
+- **Check 2** (23 Sep vs Wed 7 Oct, same feeds): every local operator's route counts are
+  identical; only FlixBus raw counts differ (duplicate multiplicity).
+- **Welsh coverage (D8 measurement).** The South West file gives the Welsh zones only
+  coaches and 4 Newport Bus trips. The Wales file gives Newport Bus 751 trips on 61
+  routes and Stagecoach South Wales 442 trips on 8 routes. Every line observed running
+  in the Welsh zones in the 8 Sep vehicle positions (Stagecoach 18 lines, Newport Bus 4)
+  is present in the Wales timetable. Newport Bus reports few vehicles to BODS (10 seen
+  in the 8 Sep morning), so its vehicle-location coverage is thin even though its
+  timetable is complete.
+
 ### DfT local 'A' road speeds: actual grain (A7, 2026-09-27)
 
 The plan assumed a table by local highway authority × period × urban/rural. It
