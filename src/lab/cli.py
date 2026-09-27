@@ -669,6 +669,78 @@ def congestion_avl(days: tuple[str, ...], source: str) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@congestion.command("calibrate")
+@click.option("--days", default=None, help="Comma-separated AVL days to use (default: all "
+              "closed archive days).")
+def congestion_calibrate(days: str | None) -> None:
+    """P2b: fit per-period link speeds; write link_speed and OSRM speed files."""
+    import json
+    import duckdb
+    import pandas as pd
+    import yaml
+    from .congestion import calibrate as cal, fit, targets as tg
+    from .supply import avl as a
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    p = {k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("congestion.")}
+    ffp = {k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("free_flow.")}
+    periods = {k: tuple(ps[f"periods.{k}"].split("-")) for k in ("AM", "IP", "PM")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    avl_dir = cfg.root / raw["paths"]["avl"] / "archive"
+    closed = [json.loads(x)["day"] for x in (avl_dir / "days.jsonl").read_text().splitlines()]
+    use_days = days.split(",") if days else closed
+    trav_files = [d / "avl" / f"traversals_archive_{x}.parquet" for x in use_days]
+    missing = [f.name for f in trav_files if not f.is_file()]
+    if missing:
+        raise click.ClickException(f"run `lab congestion avl` first for: {missing}")
+    rec = runrecord.build(cfg, command="congestion-calibrate", inputs=[
+        {"name": str(f), "sha256": params.file_hash(f)} for f in
+        [d / "segments_annotated.parquet", d / "webtris_speed.parquet",
+         d / "webtris_sites.parquet", *trav_files]])
+    runrecord.write(cfg, rec)
+    try:
+        seg = pd.read_parquet(d / "segments_annotated.parquet")
+        trav = pd.concat([pd.read_parquet(f) for f in trav_files], ignore_index=True)
+        wspeed = pd.read_parquet(d / "webtris_speed.parquet")
+        wsites = pd.read_parquet(d / "webtris_sites.parquet")
+        dc = cfg.root / "data" / "raw" / "dft_congestion"
+        targets = tg.dft_targets(dc / "cgn0503.ods", dc / "cgn0509.ods")
+        targets = targets[targets["lad"].isin(raw["authorities"].values())]
+        cov = tg.coverage(duckdb.connect(), d / "main_roads_full.parquet",
+                          cfg.root / "data/raw/ons_geo/lad24_bgc_extent.geojson",
+                          cfg.root / "data/interim/aadf_by_direction_clip.parquet",
+                          a.clip_box(cfg))
+        year, prof = tg.tra0307_profile(
+            cfg.root / "data/raw/dft_traffic/tra0307-traffic-distribution-by-time-of-day.ods")
+        P = fit.period_weights(prof, periods)
+        months = [f"{m} 2025" for m in ("April", "May", "June", "July", "August", "September",
+                                        "October", "November", "December")] + \
+                 [f"{m} 2026" for m in ("January", "February", "March")]
+        national = cal.dft_national_ratios(str(dc / "cgn0503.ods"), months)
+        ls, rep = cal.run(seg, trav, wspeed, wsites, targets, cov, P, p, ffp, national,
+                          p["target_min_coverage"], p["fit_ridge_lambda"])
+        ls.to_parquet(d / "link_speed.parquet", compression="zstd")
+        files = cal.write_speed_files(ls, d / "osrm_speeds")
+        rep.update({"days": use_days, "tra0307_year": year, "period_weights": P,
+                    "speed_files": {k: str(v) for k, v in files.items()}})
+        (cfg.runs_dir / rec["run_id"] / "calibration.json").write_text(
+            json.dumps(rep, indent=1, default=str))
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {k: v for k, v in rep.items() if k not in ("shape",)}
+    rec["result"]["level"] = {k: v for k, v in rep["level"].items() if k != "targets"}
+    click.echo(f"  period weights {({k: round(v, 3) for k, v in P.items()})}")
+    click.echo(f"  srn {rep['srn']}")
+    click.echo(f"  rho {rep['shape']['rho']}  national {national}")
+    click.echo(f"  level g {rep['level']['g']}  A {rep['level']['A']}")
+    click.echo(f"  targets {rep['level']['n_targets']}, params {rep['level']['n_params']}, "
+               f"max |rel error| {rep['level']['max_abs_rel_error']:.3f}")
+    click.echo(f"  median factor by period {rep['median_factor']}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @congestion.command("webtris")
 def congestion_webtris() -> None:
     """Fetch 15-minute WebTRIS data for every active site in the clip box (resumable)."""

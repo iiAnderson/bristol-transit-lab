@@ -196,6 +196,20 @@ congestion:
     reasoning: >-
       Positions this close to a busway or bus-only link are dropped (B1): the car-profile
       matcher would snap them onto nearby general roads.
+  min_cells:
+    value: 20
+    unit: segments per shape cell (period × direction × area × class group)
+    tag: MODELLED
+    reasoning: >-
+      A bus-derived ratio is used only when at least this many segments each have
+      min_obs_per_link traversals; otherwise the cell falls back to the national ratio.
+  fit_ridge_lambda:
+    value: 1.0
+    unit: weight on (log authority multiplier)² in the level fit
+    tag: MODELLED
+    reasoning: >-
+      Pulls authority multipliers towards 1 unless targets demand otherwise (parsimony,
+      plans/P2.md §5); reported with the fit.
   target_min_coverage:
     value: 0.8
     unit: share of an authority × road's DfT-local length inside the clip box
