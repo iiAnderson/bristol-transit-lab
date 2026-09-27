@@ -196,6 +196,14 @@ congestion:
     reasoning: >-
       Positions this close to a busway or bus-only link are dropped (B1): the car-profile
       matcher would snap them onto nearby general roads.
+  target_min_coverage:
+    value: 0.8
+    unit: share of an authority × road's DfT-local length inside the clip box
+    tag: MODELLED
+    reasoning: >-
+      A DfT all-day road speed is used as a target only if most of that road (in that
+      authority) is modelled; otherwise it describes road outside the model (e.g.
+      Monmouthshire's A465, most of Wiltshire's A roads).
   spacing_bias_threshold:
     value: 0.05
     unit: share, |30 s speed ÷ 10 s speed − 1|
