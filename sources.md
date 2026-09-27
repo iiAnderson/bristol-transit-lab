@@ -626,6 +626,39 @@ Working plan and progress log: `plans/P2.md`.
 | NaPTAN rail access nodes | https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv&atcoAreaCodes=910 (API listed on https://beta-naptan.dft.gov.uk/download) | 2026-09-27 | OGL v3 | 2,768 rows (2,716 `RLY`); `9100<TIPLOC>` → coordinates; SHA-256 `e9febab7…` |
 | MobilityData GTFS validator | https://github.com/MobilityData/gtfs-validator/releases/tag/v8.0.1 (`gtfs-validator-8.0.1-cli.jar`) | 2026-09-27 | Apache 2.0 | SHA-256 `19293ddd…`; run with `-c gb -d <modelled date>` |
 
+| DfT travel time measures: SRN (England) and local 'A' roads (Great Britain), Apr 2025 – Mar 2026 | release page https://www.gov.uk/government/statistics/travel-time-measures-for-the-strategic-road-network-england-and-local-a-roads-great-britain-april-2025-to-march-2026; tables zip https://assets.publishing.service.gov.uk/media/6a72ecfe8a340ed57ba476fe/travel-time-measures-on-srn-local-a-roads-apr-2025-mar-2026.zip | 2026-09-27 | OGL v3 | published 2026-08-06; SHA-256 `bbfec682…`; tables CGN0404/0405 (SRN), CGN0503–0510 (local A roads, England, GB, Scotland, Wales) |
+| OSM, five Geofabrik extracts | `…/england/{bristol,somerset,gloucestershire,wiltshire}-260926.osm.pbf`, `…/wales-260926.osm.pbf` (resolved from `-latest`) | 2026-09-27 | ODbL 1.0 | replication timestamp 2026-09-26T20:22:51Z for all five; MD5 checked against Geofabrik's `.md5`; merged and clipped to the clip box with osmium 1.19.1 (`complete_ways`): 5,804,074 nodes, 959,590 ways. OSM date (26 Sep) ≠ modelled date (23 Sep): accepted, both recorded |
+
+### DfT local 'A' road speeds: actual grain (A7, 2026-09-27)
+
+The plan assumed a table by local highway authority × period × urban/rural. It
+doesn't exist. What the release publishes:
+
+| table | grain | measure |
+|---|---|---|
+| CGN0503d (England), CGN0509b (Wales) | local authority × year | all-day average speed |
+| CGN0503e (England), CGN0509c (Wales) | local authority × A road × year | all-day average speed |
+| CGN0503a, CGN0505b (by nation), CGN0509a (Wales) | month (national) | all day, urban, rural, weekday AM, IP, PM, off-peak |
+| CGN0404d | SRN link (junction to junction, by direction) × year | average speed |
+
+Definitions (CGN0503 notes): flow-weighted; cars and light vans only; **all day = 24
+hours over all days including weekends and bank holidays**; urban = settlement of
+10,000+ (RUC 2011); AM 07–10, IP 10–16, PM 16–19 weekdays (school holidays included).
+2025 carries a series break (sample change).
+
+2025 all-day speeds for the extent's authorities (mph): Bristol 15.3, Bath and North
+East Somerset 23.0, South Gloucestershire 24.3, North Somerset 28.0, **Newport 26.2,
+Monmouthshire 27.0**. Road-level rows: Bristol 17, B&NES 12, South Glos 12, North
+Somerset 7, Newport 7, Monmouthshire 8.
+
+- **This is the first release to cover Great Britain.** Welsh authorities (Newport,
+  Monmouthshire) now have authority- and road-level targets, so D8's "no car-speed
+  calibration data in Wales" is no longer true for local A roads.
+- **The authority target is all-day, not by period.** A like-for-like modelled figure
+  needs speeds for every hour of every day, flow-weighted: AM and IP from the model,
+  plus PM, off-peak and weekend speeds and an hourly flow profile. Period shape can only
+  come from the national monthly split (by nation, urban/rural) and the bus data.
+
 ### Rail GTFS (A5, 2026-09-27)
 
 `lab supply rail` on the 23 Sep snapshot: 34,059 journeys on the date → 613 trips kept in
