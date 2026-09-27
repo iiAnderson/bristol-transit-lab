@@ -578,6 +578,42 @@ def congestion_network() -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@congestion.command("srn")
+@click.option("--max-match-m", default=150.0, show_default=True)
+def congestion_srn(max_match_m: float) -> None:
+    """B3: WebTRIS speeds by site × period (neutral days), matched to SRN segments."""
+    import datetime as dt
+    import duckdb
+    import yaml
+    from .congestion import webtris as w
+    from .supply import avl as a
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    periods = {p: tuple(ps[f"periods.{p}"].split("-")) for p in ("AM", "IP", "PM")}
+    wc = raw["webtris"]
+    d = cfg.root / "data" / "interim" / "congestion"
+    rec = runrecord.build(cfg, command="congestion-srn")
+    runrecord.write(cfg, rec)
+    try:
+        sites = w.site_table(cfg.root / wc["dir"] / "sites_all.json", a.clip_box(cfg))
+        days = w.day_types(raw["calendar_2025_26"], wc["start"], wc["end"])
+        with duckdb.connect() as con:
+            res = w.process(con, cfg.root / wc["dir"], sites, days, periods,
+                            d / "segments_annotated.parquet", max_match_m)
+            con.execute(f"COPY wspeed TO '{d / 'webtris_speed.parquet'}' (FORMAT parquet)")
+            con.execute(f"""COPY (SELECT s.*, m.way_id, m.seq, m.forward, m.u, m.v, m.match_m
+                FROM wsite s LEFT JOIN wmatch m USING (site_id))
+                TO '{d / 'webtris_sites.parquet'}' (FORMAT parquet)""")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    for k, v in res.items():
+        click.echo(f"  {k}: {v}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @congestion.command("webtris")
 def congestion_webtris() -> None:
     """Fetch 15-minute WebTRIS data for every active site in the clip box (resumable)."""
