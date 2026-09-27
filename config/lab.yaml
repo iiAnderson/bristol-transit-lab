@@ -72,8 +72,10 @@ avl:
     # snapshot, holding the national siri.xml.
     base_url: https://data.datalibrary.uk/transport/BODS-ARCHIVE/sirivm/
     # Tue–Thu of the first three full term weeks; 1–3 Sep excluded (first week of term).
-    days: [2026-09-08, 2026-09-09, 2026-09-10, 2026-09-15, 2026-09-16, 2026-09-17,
-           2026-09-22, 2026-09-23, 2026-09-24]
+    # Fetched in this order: the modelled date (23 Sep) moved up on 2026-09-27 so the
+    # First Bristol 5/77 variants can be resolved sooner (Robbie).
+    days: [2026-09-08, 2026-09-23, 2026-09-09, 2026-09-10, 2026-09-15, 2026-09-16,
+           2026-09-17, 2026-09-22, 2026-09-24]
     hours: ["07:00", "16:00"]          # [start, end), local
     # Fetch policy agreed with Robbie (courtesy to a small volunteer service).
     policy:
@@ -92,7 +94,9 @@ avl:
     # BODS API (DfT). Key from BODS_API_KEY; never written anywhere.
     endpoint: https://data.bus-data.dft.gov.uk/api/v1/datafeed/
     days: [2026-09-29, 2026-09-30, 2026-10-01]
-    hours: ["07:00", "16:00"]
+    # 07:00–19:00 (widened 2026-09-27, Robbie): the BODS API, not the archive, so no
+    # volunteer load; 16:00–19:00 supplies the local PM shape.
+    hours: ["07:00", "19:00"]
     poll_s: 10
     flush_every_polls: 60
 
