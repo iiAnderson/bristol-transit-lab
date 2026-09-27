@@ -208,25 +208,52 @@ def avl_archive(clear_halt: bool) -> None:
 
 
 @avl.command("live")
-def avl_live() -> None:
+@click.option("--wait", is_flag=True,
+              help="Stay up and collect every remaining configured day, keeping the Mac "
+                   "awake (caffeinate) only while a window is open.")
+def avl_live(wait: bool) -> None:
     """Poll the BODS API through today's window, if today is a collection day."""
+    import datetime as dt
+    import os
+    import subprocess
+    import time
     from .supply import avl as a
     cfg = LabConfig.load()
     ac = a.avl_config(cfg)
     get = a.requests_get(a.user_agent(cfg, _env_secret("LAB_CONTACT_EMAIL")), 30)
-    c = a.LiveCollect(cfg, get, _env_secret("BODS_API_KEY"))
-    _on_signal(c)
-    rec = runrecord.build(cfg, command="supply-avl-live", inputs=[
-        {"name": "BODS SIRI-VM datafeed", "url": ac["live"]["endpoint"]}])
-    runrecord.write(cfg, rec)
-    try:
-        status = c.run()
-    except Exception:
-        runrecord.finish(cfg, rec, "failed")
-        raise
-    rec["result"] = {"status": status, "live": a.live_status(cfg)}
-    runrecord.finish(cfg, rec, "paused" if status == "stopped" else "ok")
-    click.echo(f"live collection: {status}")
+    key = _env_secret("BODS_API_KEY")
+    days = ac["live"]["days"] if wait else [None]
+    for day in days:
+        c = a.LiveCollect(cfg, get, key)
+        _on_signal(c)
+        if day is not None:
+            start, end = a.window_utc(day, ac["live"]["hours"], ac["timezone"])
+            if dt.datetime.now(dt.timezone.utc) >= end:
+                continue
+            click.echo(f"waiting for {day} window ({start:%H:%M} UTC)", err=True)
+            # Wall-clock waits in short steps: survives the Mac sleeping in between.
+            c._wait_until(start - dt.timedelta(minutes=2))
+            if c.stop:
+                return
+        awake = subprocess.Popen(["caffeinate", "-ims", "-w", str(os.getpid())]) \
+            if wait else None
+        rec = runrecord.build(cfg, command="supply-avl-live", inputs=[
+            {"name": "BODS SIRI-VM datafeed", "url": ac["live"]["endpoint"]}])
+        runrecord.write(cfg, rec)
+        try:
+            status = c.run()
+        except Exception:
+            runrecord.finish(cfg, rec, "failed")
+            raise
+        finally:
+            if awake:
+                awake.terminate()
+        rec["result"] = {"status": status, "live": a.live_status(cfg)}
+        runrecord.finish(cfg, rec, "paused" if status == "stopped" else "ok")
+        click.echo(f"live collection: {status}", err=True)
+        if c.stop:
+            return
+        time.sleep(1)
 
 
 @avl.command("status")

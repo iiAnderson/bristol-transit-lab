@@ -303,3 +303,34 @@ def test_live_http_errors_never_expose_the_key(monkeypatch):
     with pytest.raises(avl.TransientError) as e:
         get("https://x/", params={"api_key": "SECRET"})
     assert "SECRET" not in str(e.value) and e.value.__cause__ is None
+
+
+def test_live_collects_through_the_window_and_closes_the_day(root):
+    raw = yaml.safe_load((root / "config" / "lab.yaml").read_text())
+    raw["avl"]["live"].update(days=["2026-09-29"], hours=["07:00", "07:01"],
+                              flush_every_polls=2)
+    (root / "config" / "lab.yaml").write_text(yaml.safe_dump(raw))
+    t = [dt.datetime(2026, 9, 29, 5, 59, 30, tzinfo=UTC)]
+    seen = []
+
+    def get(url, params=None):
+        seen.append(params)
+        now = t[0]
+        if len(seen) == 3:
+            raise avl.TransientError("ConnectTimeout")
+        return avl.Http(200, {}, siri(now.isoformat(), [
+            ("FB", "1", (now - dt.timedelta(seconds=5)).isoformat(), -2.6, 51.45),
+            ("FB", "9", "2026-09-28T18:00:00Z", -2.6, 51.45)]), 0.2)
+
+    def sleep(s):
+        t[0] += dt.timedelta(seconds=s)
+    c = avl.LiveCollect(LabConfig.load(root), get, "KEY", sleep=sleep, now=lambda: t[0])
+    assert c.run() == "ok"
+    assert seen[0]["api_key"] == "KEY" and len(seen[0]["boundingBox"].split(",")) == 4
+    day = json.loads((root / "avl/live/days.jsonl").read_text())
+    tab = pq.read_table(root / "avl/live" / day["file"])
+    assert tab.column("vehicle_ref").to_pylist().count("9") == 1          # stale, kept once
+    assert tab.num_rows == 1 + (len(seen) - 1)                              # one failed poll
+    assert "KEY" not in (root / "avl/live/polls.jsonl").read_text()
+    s = avl.live_status(LabConfig.load(root))["days"][0]
+    assert s["failed_polls"] == 1 and s["closed"]
