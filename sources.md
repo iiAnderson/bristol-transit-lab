@@ -636,6 +636,29 @@ Working plan and progress log: `plans/P2.md`.
 | DfT Transport connectivity metric 2025 | https://www.gov.uk/government/publications/transport-connectivity-metric → https://assets.publishing.service.gov.uk/media/68c966fc07d9e92bc5517b80/connectivity_metrics_2025.ods | 2026-09-27 | OGL v3 | V1.0.0, version date 2025-08-21, experimental; timetables Q4 2024; **England and Wales**; OA/LSOA/LAD/RGN scores 0–100 by purpose × mode. SHA-256 `4f6589ae…`. The 1 GB `content.xml` is streamed to CSV (`src/lab/supply/ods.py`). The PT employment column is labelled "Business (public transport)" |
 | Welsh trunk-road speeds | — | 2026-09-27 | — | **None published.** Traffic Wales is live-only; M4 speeds appear only in ad-hoc FOI releases (e.g. https://www.gov.wales/atisn18581). Welsh trunk roads keep transferred factors (D8). The M4 J24–J28 through Newport has 50 mph average-speed enforcement: free-flow speeds there must honour it |
 
+### Car routing engine (D2, 2026-09-27)
+
+**OSRM, native** — Homebrew `osrm-backend` **26.9.0** (bottled for arm64 Sequoia;
+https://github.com/Homebrew/homebrew-core/blob/HEAD/Formula/o/osrm-backend.rb),
+BSD-2-Clause. **Docker is not used.** Profile: the formula's `car.lua`. MLD pipeline
+(`osrm-extract` → `osrm-partition` → `osrm-customize --segment-speed-file`, served by
+`osrm-routed --algorithm mld` on a probed free port, never 5000).
+
+Measured:
+- **Direction test** (the D2 synthetic road, 5.013 km): segment speeds 16 km/h A→B and
+  97 km/h B→A give 18.83 min and 3.08 min — exact, per direction, no workaround.
+- **Clip** (5.80M nodes): extract 7.2 s / 0.8 GB peak; partition 0.9 s; customize 0.35 s
+  (so each period's speed file costs about a second); full 3,799 × 729 OA → LSOA table
+  9.0 s, no unroutable cells, free-flow median 26.5 min.
+
+**Why not R5 for car** (spike runs `20260927T194301-spike-d2-a3be8b`,
+`20260927T194305-spike-d2-9a3b88`): R5 7.5.1 honours `maxspeed` and
+`maxspeed:forward` but **ignores `maxspeed:backward`**. The only workaround — splitting
+each two-way way into two one-way ways — is directional but adds an unexplained
+**1–6 min per 5 km** on a synthetic 5 km road (worse when the two carriageways are drawn
+apart). A real-way test could not discriminate: 29 of 40 routes took 0 min at R5's minute
+resolution, and slowed ways were bypassed on parallel streets.
+
 ### r5r for PT cost components (D7, 2026-09-27)
 
 | item | source | accessed | licence | version / notes |
