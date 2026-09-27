@@ -120,3 +120,8 @@ bus:
   source_url: https://data.datalibrary.uk/transport/BODS-ARCHIVE/timetables/2026/09/23/
   compare_date: 2026-10-07          # A4 check 2: a later Wednesday in the same feed
   out: data/interim/gtfs/bus_bods.zip
+
+# P2a spikes (plans/P2.md A9). D2: a small car-network test area [min_lon, min_lat,
+# max_lon, max_lat] with plenty of two-way primary/secondary roads.
+spikes:
+  d2_box: [-2.64, 51.43, -2.54, 51.49]

@@ -565,6 +565,36 @@ def congestion_webtris() -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@cli.group()
+def spike() -> None:
+    """P2a decision spikes (plans/P2.md A9)."""
+
+
+@spike.command("d2")
+@click.option("--ways", default=20, show_default=True)
+def spike_d2(ways: int) -> None:
+    """Does R5 honour per-direction maxspeed edits? (D2 option A)"""
+    import datetime as dt
+    import yaml
+    from .spikes import d2_speed_direction as d2
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    rec = runrecord.build(cfg, command="spike-d2")
+    runrecord.write(cfg, rec)
+    try:
+        res = d2.run(cfg.root / raw["osm"]["clip"], tuple(raw["spikes"]["d2_box"]),
+                     cfg.runs_dir / rec["run_id"] / "work",
+                     dt.datetime.combine(day, dt.time(8, 0)), n=ways)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(f"  {res['summary']}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")
