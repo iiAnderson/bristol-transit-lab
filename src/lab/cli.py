@@ -203,6 +203,11 @@ def supply_rail() -> None:
         if bad:
             raise click.ClickException(f"rail station presence check failed: {pres}")
         g.write_gtfs(res, ref, paths["out"], raw["avl"]["timezone"])
+        from .supply import validate
+        val = validate.run(cfg.root / rc["validator"], paths["out"],
+                           paths["out"].with_suffix(".validator"), day, "gb")
+        if val["errors"]:
+            raise click.ClickException(f"rail GTFS has validator errors: {val['codes']}")
         now = dt.datetime.now(dt.timezone.utc)
         darwin_licence = "National Rail open data terms (wording to confirm, A5)"
         for fid, kind, p, url, lic in [
@@ -220,7 +225,8 @@ def supply_rail() -> None:
                        source_url="built by `lab supply rail`", path=paths["out"],
                        downloaded_at=now, licence=darwin_licence,
                        valid_from=day, valid_to=day,
-                       notes=f"darwin-{res.timetable_id}; validator not yet run")
+                       validator_errors=val["errors"], validator_warnings=val["warnings"],
+                       notes=f"darwin-{res.timetable_id}; {val['jar']}: {val['codes']}")
         feeds.require_covers(feeds.get(cfg, "rail_gtfs"), day)
     except Exception:
         runrecord.finish(cfg, rec, "failed")
@@ -228,11 +234,12 @@ def supply_rail() -> None:
     rec["result"] = {"timetable_id": res.timetable_id, "service_date": day.isoformat(),
                      "counts": dict(res.counts), "stops": len(res.stops),
                      "calls_by_tpl": dict(res.calls_by_tpl), "presence": pres,
-                     "unmapped_not_adjacent": res.unmapped}
+                     "unmapped_not_adjacent": res.unmapped, "validator": val}
     path = runrecord.finish(cfg, rec, "ok")
     for k, v in sorted(res.counts.items()):
         click.echo(f"  {k:<40} {v:>8,}")
-    click.echo(f"  {len(res.stops)} stations; presence check passed; wrote {paths['out']}")
+    click.echo(f"  {len(res.stops)} stations; presence check passed; validator "
+               f"{val['errors']} errors, {val['warnings']} warnings; wrote {paths['out']}")
     click.echo(f"wrote {path}")
 
 

@@ -73,6 +73,7 @@ rail:
   naptan: data/raw/naptan/naptan_910_rail.csv
   naptan_url: https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv&atcoAreaCodes=910
   out: data/interim/gtfs/rail_darwin.zip
+  validator: data/tools/gtfs-validator-8.0.1-cli.jar    # MobilityData, GitHub release v8.0.1
   # TIPLOCs with no weekday service on the modelled date, and why. The presence check
   # fails if any other active NaPTAN station in the clip box is unserved, or any of
   # these is served.
