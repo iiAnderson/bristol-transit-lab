@@ -48,10 +48,10 @@ def gtfs(tmp_path, name, trips, calendar=None, calendar_dates=()):
 CALLS = [("IN1", "08:00:00"), ("IN2", "08:10:00"), ("BUF", "08:20:00"), ("OUT", "09:00:00")]
 
 
-def run(tmp_path, feeds):
+def run(tmp_path, feeds, zones=None):
     con = duckdb.connect()
     g.load(con, {n: gtfs(tmp_path, n, **kw) for n, kw in feeds.items()})
-    return con, g.build(con, list(feeds), DAY, EXTENT, BOX)
+    return con, g.build(con, list(feeds), DAY, EXTENT, BOX, zones)
 
 
 def test_calendar_selects_the_date_and_honours_exceptions(tmp_path):
@@ -106,3 +106,19 @@ def test_written_feed_is_single_date(tmp_path):
         assert z.read("calendar_dates.txt").decode().splitlines()[1] == "D20260923,20260923,1"
         st = list(csv.DictReader(io.StringIO(z.read("stop_times.txt").decode())))
     assert [x["stop_sequence"] for x in st] == ["1", "2", "3"]
+
+
+def test_trips_calling_in_a_zone_beyond_the_extent_are_kept(tmp_path):
+    import json
+    zones = tmp_path / "zones.geojson"
+    # a zone polygon just beyond the extent's north edge, covering stop BUF
+    zones.write_text(json.dumps({"type": "FeatureCollection", "features": [{
+        "type": "Feature", "properties": {"LSOA21CD": "Z1"},
+        "geometry": {"type": "Polygon", "coordinates": [[[-2.6, 52.01], [-2.4, 52.01],
+                                                          [-2.4, 52.09], [-2.6, 52.09],
+                                                          [-2.6, 52.01]]]}}]}))
+    zone_only = [("BUF", "10:00:00"), ("OUT", "10:30:00"), ("BUF", "11:00:00")]
+    _, r0 = run(tmp_path, {"a": dict(trips=[("t1", "R1", "WK", zone_only)])})
+    assert r0["trips_calling_in_extent"] == 0
+    _, r1 = run(tmp_path, {"a": dict(trips=[("t1", "R1", "WK", zone_only)])}, zones)
+    assert r1["trips_calling_in_extent"] == 1

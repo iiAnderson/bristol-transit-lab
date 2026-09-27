@@ -264,7 +264,11 @@ def supply_bus() -> None:
         con = duckdb.connect()
         g.load(con, paths)
         names = list(paths)
-        res = g.build(con, names, day, cfg.extent, a.clip_box(cfg))
+        zones = cfg.root / "data" / "raw" / "ons_geo" / "lsoa21_bgc_internal.geojson"
+        if not zones.is_file():
+            raise click.ClickException(f"{zones} missing: internal LSOA polygons are needed "
+                                       "to keep trips serving zones beyond the extent")
+        res = g.build(con, names, day, cfg.extent, a.clip_box(cfg), zones)
         cmp_day = bc["compare_date"]
         now_r = g.trips_per_route_on(con, names, day)
         later = g.trips_per_route_on(con, names, cmp_day)

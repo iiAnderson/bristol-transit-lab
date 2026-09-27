@@ -5,8 +5,10 @@ Input: one or more regional BODS GTFS zips (the archived snapshot for the modell
 date). Output: a single-date GTFS zip holding
 
 * trips active on the date (``calendar`` weekday + range, then ``calendar_dates``);
-* whole trips that call at least once inside the extent, with calls beyond the clip box
-  cut (and a trip left with fewer than two calls dropped);
+* whole trips that call at least once inside the extent **or inside an internal zone**
+  (internal LSOAs follow the centroid rule, so 45 of their polygons reach beyond the
+  extent), with calls beyond the clip box cut (and a trip left with fewer than two
+  calls dropped);
 * no duplicates: trips with the same operator, route name and (stop, time) sequence are
   kept once, across and within feeds (BODS carries superseded registrations). Trips per
   route before and after are reported; a route that loses more than 10% is flagged.
@@ -53,7 +55,7 @@ def load(con: duckdb.DuckDBPyConnection, feeds: dict[str, Path]) -> None:
 
 
 def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
-          extent: tuple, box: tuple) -> dict:
+          extent: tuple, box: tuple, zones_geojson: Path | None = None) -> dict:
     d = f"{day:%Y%m%d}"
     wd = day.strftime("%A").lower()
     parts = []
@@ -89,8 +91,15 @@ def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
     con.execute(f"CREATE OR REPLACE TEMP TABLE st_on_date AS {st}")
     x0, y0, x1, y1 = extent
     b0, c0, b1, c1 = box
+    in_zone = "false"
+    if zones_geojson is not None:
+        con.execute("INSTALL spatial; LOAD spatial")
+        con.execute(f"""CREATE OR REPLACE TEMP TABLE zone_stops AS
+            SELECT DISTINCT s.stop_id FROM (SELECT DISTINCT stop_id, lon, lat FROM st_on_date) s
+            JOIN ST_Read('{zones_geojson}') z ON ST_Contains(z.geom, ST_Point(s.lon, s.lat))""")
+        in_zone = "stop_id IN (SELECT stop_id FROM zone_stops)"
     con.execute(f"""CREATE OR REPLACE TEMP TABLE st_on_date2 AS SELECT *,
-        lon BETWEEN {x0} AND {x1} AND lat BETWEEN {y0} AND {y1} in_extent,
+        (lon BETWEEN {x0} AND {x1} AND lat BETWEEN {y0} AND {y1}) OR {in_zone} in_extent,
         lon BETWEEN {b0} AND {b1} AND lat BETWEEN {c0} AND {c1} in_box FROM st_on_date""")
     con.execute("""CREATE OR REPLACE TEMP TABLE trips_extent AS
         SELECT t.* FROM trips_on_date t WHERE trip_id IN
