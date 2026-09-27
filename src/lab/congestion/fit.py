@@ -54,9 +54,13 @@ def allday_speed(seg: pd.DataFrame, factors: dict[str, np.ndarray], P: dict[str,
 
 
 def segment_factors(seg: pd.DataFrame, g: dict[str, float], A: dict[str, float],
-                    r: dict[tuple, float], rho: dict[str, float]) -> dict[str, np.ndarray]:
-    """Per-segment factor arrays for each period (local A roads)."""
+                    r: dict[tuple, float], rho: dict[str, float],
+                    m: dict[str, float] | None = None) -> dict[str, np.ndarray]:
+    """Per-segment factor arrays for each period (local A roads); ``m`` optional per-road
+    multipliers."""
     base = seg["area"].map(g).to_numpy() * seg["authority"].map(A).to_numpy()
+    if m:
+        base = base * seg["road"].map(m).fillna(1.0).to_numpy()
     out = {"IP": base, "OP": base * rho["OP"], "WE": base * rho["WE"]}
     for p in ("AM", "PM"):
         ratio = np.array([r.get((p, d, a), 1.0) for d, a in zip(seg["direction"], seg["area"])])
@@ -65,29 +69,35 @@ def segment_factors(seg: pd.DataFrame, g: dict[str, float], A: dict[str, float],
 
 
 def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict,
-              areas: list[str], lam: float = 1.0) -> dict:
-    """Fit g[area] and A[authority] so modelled all-day road speeds match ``targets``
+              areas: list[str], lam: float = 1.0, road_lam: float | None = None) -> dict:
+    """Fit g[area] and A[authority] (and, if ``road_lam`` is given, a multiplier per
+    target road with its own ridge) so modelled all-day road speeds match ``targets``
     (indexed by road key). Returns parameters, residuals and diagnostics."""
     seg = seg[seg["road"].isin(targets.index)].copy()
     auths = sorted(seg["authority"].unique())
-    na = len(areas)
+    roads = list(targets.index) if road_lam is not None else []
+    na, nA = len(areas), len(auths)
 
     def unpack(x):
         g = dict(zip(areas, np.exp(x[:na])))
-        A = dict(zip(auths, np.exp(x[na:])))
-        return g, A
+        A = dict(zip(auths, np.exp(x[na:na + nA])))
+        m = dict(zip(roads, np.exp(x[na + nA:])))
+        return g, A, m
 
     def resid(x):
-        g, A = unpack(x)
-        s = allday_speed(seg, segment_factors(seg, g, A, r, rho), P)
+        g, A, m = unpack(x)
+        s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P)
         res = np.log(s.reindex(targets.index).to_numpy()) - np.log(targets.to_numpy())
-        return np.concatenate([res, np.sqrt(lam) * x[na:]])
+        pen = [np.sqrt(lam) * x[na:na + nA]]
+        if roads:
+            pen.append(np.sqrt(road_lam) * x[na + nA:])
+        return np.concatenate([res, *pen])
 
-    x0 = np.zeros(na + len(auths))
+    x0 = np.zeros(na + nA + len(roads))
     sol = least_squares(resid, x0)
-    g, A = unpack(sol.x)
-    s = allday_speed(seg, segment_factors(seg, g, A, r, rho), P).reindex(targets.index)
+    g, A, m = unpack(sol.x)
+    s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P).reindex(targets.index)
     err = s / targets - 1
-    return {"g": g, "A": A, "modelled": s, "rel_error": err,
-            "n_params": na + len(auths), "n_targets": len(targets),
+    return {"g": g, "A": A, "m": m, "modelled": s, "rel_error": err,
+            "n_params": na + nA + len(roads), "n_targets": len(targets),
             "max_abs_rel_error": float(err.abs().max()), "success": bool(sol.success)}

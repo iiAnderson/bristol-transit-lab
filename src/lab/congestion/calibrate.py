@@ -148,7 +148,8 @@ def dft_national_ratios(cgn0503: str, months: list[str]) -> dict[str, float]:
 
 def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.DataFrame,
         targets: pd.DataFrame, cov: pd.DataFrame, P: dict, p: dict, ff_p: dict,
-        national: dict, min_coverage: float, lam: float) -> tuple[pd.DataFrame, dict]:
+        national: dict, min_coverage: float, lam: float,
+        road_lam: float) -> tuple[pd.DataFrame, dict]:
     """Returns (link_speed long table, report)."""
     periods = fit.PERIODS
     seg = seg.copy()
@@ -186,8 +187,17 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
     r_main = {(k[0], k[1], k[2]): v for k, v in r.items() if k[3] == "main"}
     tgt = use.set_index("road")["kmh"]
     tgt = tgt[tgt.index.isin(la["road"])]
-    lf = fit.fit_level(la, tgt, r_main, rho, P, AREAS, lam=lam)
-    rep["level"] = {"g": lf["g"], "A": lf["A"], "n_params": lf["n_params"],
+    lf0 = fit.fit_level(la, tgt, r_main, rho, P, AREAS, lam=lam)
+    lf = fit.fit_level(la, tgt, r_main, rho, P, AREAS, lam=lam, road_lam=road_lam)
+    e0, e1 = lf0["rel_error"].abs(), lf["rel_error"].abs()
+    rep["parsimonious"] = {"g": lf0["g"], "A": lf0["A"], "n_params": lf0["n_params"],
+                           "median_abs_rel_error": float(e0.median()),
+                           "p90_abs_rel_error": float(e0.quantile(0.9)),
+                           "share_within_5pct": float((e0 <= 0.05).mean())}
+    rep["level"] = {"g": lf["g"], "A": lf["A"], "m": lf["m"], "n_params": lf["n_params"],
+                    "median_abs_rel_error": float(e1.median()),
+                    "p90_abs_rel_error": float(e1.quantile(0.9)),
+                    "share_within_5pct": float((e1 <= 0.05).mean()),
                     "n_targets": lf["n_targets"], "max_abs_rel_error": lf["max_abs_rel_error"],
                     "targets": pd.DataFrame({"dft_kmh": tgt, "modelled_kmh": lf["modelled"],
                                              "rel_error": lf["rel_error"]}).round(4)
@@ -198,6 +208,9 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
     # 6–7. assemble per-segment factors
     area = seg["area_type"].replace({"buffer": "rural"}).to_numpy()
     A = seg["lad"].map(lf["A"]).fillna(1.0).to_numpy()
+    road_key = seg["lad"].fillna("") + ":" + seg["ref"].fillna("")
+    M = np.where(seg["road_class"] == "local_a", road_key.map(lf["m"]).fillna(1.0), 1.0)
+    A = A * M
     g = np.array([lf["g"][a] for a in area])
     grp = np.where(seg["road_class"] == "minor", "minor", "main")
     cls_lev = np.array([1.0 if c in ("local_a", "srn") else level.get((c, a), (1.0, 0))[0]

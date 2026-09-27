@@ -719,7 +719,8 @@ def congestion_calibrate(days: str | None) -> None:
                  [f"{m} 2026" for m in ("January", "February", "March")]
         national = cal.dft_national_ratios(str(dc / "cgn0503.ods"), months)
         ls, rep = cal.run(seg, trav, wspeed, wsites, targets, cov, P, p, ffp, national,
-                          p["target_min_coverage"], p["fit_ridge_lambda"])
+                          p["target_min_coverage"], p["fit_ridge_lambda"],
+                          p["fit_road_ridge_lambda"])
         ls.to_parquet(d / "link_speed.parquet", compression="zstd")
         files = cal.write_speed_files(ls, d / "osrm_speeds")
         rep.update({"days": use_days, "tra0307_year": year, "period_weights": P,
@@ -735,8 +736,11 @@ def congestion_calibrate(days: str | None) -> None:
     click.echo(f"  srn {rep['srn']}")
     click.echo(f"  rho {rep['shape']['rho']}  national {national}")
     click.echo(f"  level g {rep['level']['g']}  A {rep['level']['A']}")
-    click.echo(f"  targets {rep['level']['n_targets']}, params {rep['level']['n_params']}, "
-               f"max |rel error| {rep['level']['max_abs_rel_error']:.3f}")
+    for k in ("parsimonious", "level"):
+        v = rep[k]
+        click.echo(f"  {k}: params {v['n_params']}, median |err| "
+                   f"{v['median_abs_rel_error']:.3f}, p90 {v['p90_abs_rel_error']:.3f}, "
+                   f"within 5% {v['share_within_5pct']:.2f}")
     click.echo(f"  median factor by period {rep['median_factor']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 

@@ -210,6 +210,15 @@ congestion:
     reasoning: >-
       Pulls authority multipliers towards 1 unless targets demand otherwise (parsimony,
       plans/P2.md §5); reported with the fit.
+  fit_road_ridge_lambda:
+    value: 0.1
+    unit: weight on (log road multiplier)² in the level fit
+    tag: MODELLED
+    reasoning: >-
+      Per-road multipliers let each covered authority × road match its DfT all-day speed
+      (Robbie, 2026-09-27: match each road); the ridge keeps them near 1 where the
+      class × area level already fits. Held-out validation tests whether they
+      generalise; the parsimonious fit (no road multipliers) is reported alongside.
   target_min_coverage:
     value: 0.8
     unit: share of an authority × road's DfT-local length inside the clip box

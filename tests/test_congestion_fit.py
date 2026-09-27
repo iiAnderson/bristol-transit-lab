@@ -72,3 +72,15 @@ def test_ridge_pulls_authorities_together_when_targets_are_noisy():
     tight = fit.fit_level(seg, noisy, R, RHO, P, AREAS, lam=100.0)
     spread = lambda A: np.std(np.log(list(A.values())))  # noqa: E731
     assert spread(tight["A"]) < spread(loose["A"])
+
+
+def test_road_multipliers_close_road_specific_gaps():
+    seg = synthetic(seed=3)
+    g_true = {"centre": 0.45, "urban": 0.62, "rural": 0.78}
+    A_true = {k: 1.0 for k in ["A1", "A2", "A3", "A4"]}
+    rng = np.random.default_rng(4)
+    m_true = {rd: float(rng.lognormal(0, 0.15)) for rd in seg["road"].unique()}
+    t = fit.allday_speed(seg, fit.segment_factors(seg, g_true, A_true, R, RHO, m_true), P)
+    base = fit.fit_level(seg, t, R, RHO, P, AREAS, lam=1.0)
+    roads = fit.fit_level(seg, t, R, RHO, P, AREAS, lam=1.0, road_lam=1e-4)
+    assert roads["max_abs_rel_error"] < 0.01 < base["max_abs_rel_error"]
