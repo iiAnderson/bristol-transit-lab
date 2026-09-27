@@ -600,6 +600,49 @@ def spike_d2(ways: int, synthetic: bool) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@spike.command("d3")
+def spike_d3() -> None:
+    """Job-weighted LSOA destination points vs PWC: change in HBW PT and car times."""
+    import datetime as dt
+    import duckdb
+    import yaml
+    from .spikes import d3_job_points as d3
+    from .supply import feeds, osrm
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    base = cfg.root / raw["osm"]["osrm_base"]
+    if not base.with_suffix(".osrm.partition").exists():
+        osrm.prepare(cfg.root / raw["osm"]["clip"], base)
+    osrm.customize(base)                         # free flow: the default profile speeds
+    odwp = cfg.upstream_raw / raw["spikes"]["odwp01ew_oa"]
+    rec = runrecord.build(cfg, command="spike-d3", demand_version="p1-central", inputs=[
+        {"name": str(odwp), "sha256": params.file_hash(odwp)},
+        *[{"name": f, "sha256": feeds.get(cfg, f)["sha256"]}
+          for f in ("osm_clip", "bus_gtfs", "rail_gtfs")],
+        {"name": "osrm", "version": osrm.version()}])
+    runrecord.write(cfg, rec)
+    try:
+        with duckdb.connect(str(cfg.lab_db)) as con:
+            res = d3.run(con, str(odwp), base, str(cfg.root / raw["osm"]["clip"]),
+                         [str(cfg.root / raw["bus"]["out"]), str(cfg.root / raw["rail"]["out"])],
+                         dt.datetime.combine(day, dt.time(8, 0)),
+                         ps["skims.hbw_dest_point_abs_min"], ps["skims.hbw_dest_point_rel"])
+            pts = res.pop("points")
+            con.register("pts", pts)
+            con.execute("CREATE OR REPLACE TABLE int_lsoa_jobpoint AS SELECT id LSOA21CD, "
+                        "jlon lon, jlat lat, workers, moved_m FROM pts")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    for k, v in res.items():
+        click.echo(f"  {k}: {v}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")

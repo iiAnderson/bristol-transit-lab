@@ -95,6 +95,18 @@ generalised_cost:
       note: Subway Builder published weights, per spec; sensitivity runs only; verify
 
 skims:
+  hbw_dest_point_abs_min:
+    value: 2.0
+    unit: min, flow-weighted median |change| in HBW PT or car time
+    tag: MODELLED
+    reasoning: >-
+      Robbie, 2026-09-27 (D3): above this (or the relative threshold) job-weighted LSOA
+      points replace PWCs for HBW destinations.
+  hbw_dest_point_rel:
+    value: 0.05
+    unit: share, flow-weighted median |relative change|
+    tag: MODELLED
+    reasoning: Robbie, 2026-09-27 (D3); see hbw_dest_point_abs_min.
   departure_window_min:
     value: 60
     unit: min

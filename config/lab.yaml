@@ -102,6 +102,7 @@ osm:
   raw_dir: data/raw/osm
   merged: data/interim/osm/merged.osm.pbf
   clip: data/interim/osm/b2026_clip.osm.pbf
+  osrm_base: data/interim/osrm/b2026        # OSRM MLD files (osrm-extract/partition)
 
 # WebTRIS (plans/P2.md A7): the latest 12 months published. Data lags ~3 months; on
 # 2026-09-27 the last day with data was 30 Jun 2026.
@@ -124,4 +125,6 @@ bus:
 # P2a spikes (plans/P2.md A9). D2: a small car-network test area [min_lon, min_lat,
 # max_lon, max_lat] with plenty of two-way primary/secondary roads.
 spikes:
+  # D3: Census 2021 OA→OA commute file in upstream's raw data (read-only).
+  odwp01ew_oa: odwp01ew/ODWP01EW_OA.csv
   d2_box: [-2.64, 51.43, -2.54, 51.49]
