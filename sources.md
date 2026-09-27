@@ -636,6 +636,17 @@ Working plan and progress log: `plans/P2.md`.
 | DfT Transport connectivity metric 2025 | https://www.gov.uk/government/publications/transport-connectivity-metric → https://assets.publishing.service.gov.uk/media/68c966fc07d9e92bc5517b80/connectivity_metrics_2025.ods | 2026-09-27 | OGL v3 | V1.0.0, version date 2025-08-21, experimental; timetables Q4 2024; **England and Wales**; OA/LSOA/LAD/RGN scores 0–100 by purpose × mode. SHA-256 `4f6589ae…`. The 1 GB `content.xml` is streamed to CSV (`src/lab/supply/ods.py`). The PT employment column is labelled "Business (public transport)" |
 | Welsh trunk-road speeds | — | 2026-09-27 | — | **None published.** Traffic Wales is live-only; M4 speeds appear only in ad-hoc FOI releases (e.g. https://www.gov.wales/atisn18581). Welsh trunk roads keep transferred factors (D8). The M4 J24–J28 through Newport has 50 mph average-speed enforcement: free-flow speeds there must honour it |
 
+### Job-weighted destination points (D3 test, 2026-09-27)
+
+Census 2021 ODWP01EW OA file (upstream raw, read-only; `ODWP01EW_OA.csv`), place of work
+indicator 3 ("Working in the UK but not working at or from home", 15,095,659 workers in
+E&W), totalled by OA of workplace; each internal LSOA's point is the workplace-weighted
+mean of its OAs' population-weighted centroids. Lockdown depresses the counts' level;
+only the within-LSOA distribution is used. Result (run
+`20260927T205257-spike-d3-d38ffb`): flow-weighted median |Δ| over internal HBW pairs is
+1.0 min / 3.1% (PT) and 0.38 min / 3.4% (car), below the 2 min / 5% thresholds, so
+**HBW destinations stay at LSOA PWCs**.
+
 ### Car routing engine (D2, 2026-09-27)
 
 **OSRM, native** — Homebrew `osrm-backend` **26.9.0** (bottled for arm64 Sequoia;
