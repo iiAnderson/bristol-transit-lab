@@ -108,19 +108,22 @@ def bus_shape(seg: pd.DataFrame, trav: pd.DataFrame, min_obs: int, min_cells: in
     loc = loc.merge(agg, left_on=["u", "v"], right_index=True, how="inner")
     r, diag = {}, {}
     for p in ("AM", "PM"):
-        ok = (loc.get(f"n_{p}", 0) >= min_obs) & (loc.get("n_IP", 0) >= min_obs)
-        d = loc[ok].assign(ratio=lambda x: x[f"hm_{p}"] / x["hm_IP"])
-        for (direction, area, group), g in d.groupby(["direction", "area", "group"]):
-            if len(g) >= min_cells:
-                r[(p, direction, area, group)] = float(g["ratio"].median())
-                diag[(p, direction, area, group)] = ("bus", len(g))
+        # The archive window is 07:00–16:00, so there is no PM bus data by design; a
+        # period without bus data falls back to the national ratio in every cell.
+        if f"hm_{p}" in loc.columns and "hm_IP" in loc.columns:
+            ok = (loc[f"n_{p}"].fillna(0) >= min_obs) & (loc["n_IP"].fillna(0) >= min_obs)
+            d = loc[ok].assign(ratio=lambda x: x[f"hm_{p}"] / x["hm_IP"])
+            for (direction, area, group), g in d.groupby(["direction", "area", "group"]):
+                if len(g) >= min_cells:
+                    r[(p, direction, area, group)] = float(g["ratio"].median())
+                    diag[(p, direction, area, group)] = ("bus", len(g))
         for direction in ("inbound", "outbound"):
             for area in AREAS:
                 for group in ("main", "minor"):
                     if (p, direction, area, group) not in r:
                         r[(p, direction, area, group)] = national[p]
                         diag[(p, direction, area, group)] = ("national_fallback", 0)
-    ok = loc.get("n_IP", 0) >= min_obs
+    ok = loc["n_IP"].fillna(0) >= min_obs if "n_IP" in loc.columns else loc["u"] < 0
     lev = loc[ok].assign(bf=lambda x: x["hm_IP"] / x["ff"])
     level = {}
     for area in AREAS:
