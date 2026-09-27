@@ -303,6 +303,10 @@ ops:
   `mode: bus` on street, use period congested car speed × `bus_speed_ratio` [CALIBRATED]
   unless a `road_speed_factor` applies.
 - Emit `frequencies.txt` for headway-based services; R5 handles these natively.
+  *Added at P2 (D7):* R5 routes frequency-based services by randomising schedules. When
+  P3 starts, check how r5r's `expanded_travel_time_matrix()` handles them and set
+  `draws_per_minute` deliberately (a tagged parameter), so scenario PT skims are
+  comparable with the timetable-based baseline.
 - Validate every op: stops within 50 m of the alignment, alignment within the extent,
   headways positive, `route_id` exists for modify/remove. Fail loudly.
 - `spec_hash` = hash of the YAML plus referenced files, stored on `scenario`.
@@ -414,7 +418,16 @@ home-based purposes is an acceptable v1 simplification — say so in reports.
   (default 60 min) and percentiles (25, 50, 75). *Amended at P2a:* r5py 1.1.7's matrix
   returns total times only — there is no expanded output with walk, wait, in-vehicle and
   transfer components. Components come from a `DetailedItineraries` sample instead
-  (plans/P2.md D7); the approved method is copied here at the P2a stop.
+  (plans/P2.md D7). *Approved (2026-09-27):* PT totals **and** components come from
+  r5r's `expanded_travel_time_matrix()` (r5r 2.4.0, R5 7.5.1, separate env
+  `transit-lab-r`), one per-departure-minute output; r5py stays for walk and cycle.
+  Per OA → LSOA pair and period: mean access/wait/ride/transfer/egress and n_rides over
+  reachable minutes, p25/p50/p75 and best-minute totals, reachable share, walk-only
+  share, top-3 routes. Walk-only minutes count their whole time as walk. A pair is
+  unreachable below a reachable-minute share threshold [MODELLED]. GC is computed in
+  Python from the stored means (GC is linear, so mean GC = GC of mean components);
+  OA → LSOA → LSOA aggregation with population weights (§4). Both engines take every
+  shared routing setting from `params/base.yaml`.
 - Car: *amended at P2a* — link time = free-flow time ×
   `factor[period][direction][road_class][area_type]`, fitted to absolute speeds (DfT
   local-A-road measures by authority, WebTRIS on the SRN) with bus moving speeds
@@ -447,6 +460,9 @@ Per OD × purpose × segment × period, starting from base shares `P⁰`:
 P¹_m = P⁰_m · exp(λ · ΔGC_m) / Σ_k P⁰_k · exp(λ · ΔGC_k),   ΔGC_m = −(GC¹_m − GC⁰_m)
 ```
 
+- *Added at P2 (D7):* the "PT" alternative means itineraries with **≥ 1 ride**;
+  walk-only itineraries belong to the walk mode, not PT. PT skims store the share of
+  departure minutes whose best option is walk-only, so the split is available.
 - PT is **one** alternative whose GC is the best path (or a logsum over PT paths). A
   new line therefore changes PT's GC rather than creating a new mode with no base
   share — this is what lets the pivot approach test brand-new modes.

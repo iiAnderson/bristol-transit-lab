@@ -640,7 +640,7 @@ Working plan and progress log: `plans/P2.md`.
 
 | item | source | accessed | licence | version / notes |
 |---|---|---|---|---|
-| R (conda-forge `r-base` 4.5) + OpenJDK 21, separate env `transit-lab-r` | `environment-r.yml` | 2026-09-27 | GPL-2/3 (R) | kept apart from the Python env |
+| R (conda-forge `r-base` 4.5) + OpenJDK 21, separate env `transit-lab-r` | `environment-r.yml` | 2026-09-27 | GPL-2/3 (R) | kept apart from the Python env. **Correction:** the D7 approval note assumed R was already in the toolchain for UK2GTFS; it was not — UK2GTFS was dropped at the repo check when rail moved to Darwin. The separate env is the fix (approved 2026-09-27) |
 | r5r | https://cran.r-project.org/package=r5r | 2026-09-27 | MIT | **2.4.0** (published 2026-05-20), pinned via `remotes::install_version`; pins R5 **7.5.1** (`onLoad.R`: `r5_jar_version <- "7.5.1"`), the same R5 version as r5py 1.1.7 (`~/.cache/r5py/r5-v7.5.1-r5py-all.jar`) |
 
 Measured on the D3 1% sample (38 OAs × 729 LSOAs, Wed 23 Sep 08:00, 60-min window):
