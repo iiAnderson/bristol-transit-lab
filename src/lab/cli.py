@@ -113,8 +113,7 @@ def demand_commute() -> None:
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
-    rec["result"] = {"discounts": b.discounts, "cap": b.cap,
-                     "checks": [list(c) for c in b.checks],
+    rec["result"] = {"discounts": b.discounts, "checks": [list(c) for c in b.checks],
                      "summaries": b.summaries}
     path = runrecord.finish(cfg, rec, "ok")
     for name, lab, up, ok in b.checks:
@@ -122,22 +121,26 @@ def demand_commute() -> None:
         click.echo(f"  {'ok  ' if ok else 'FAIL'} {name}: {lab:{fmt}} vs {up:{fmt}}")
     for v in commute.VARIANTS:
         s = b.summaries[v]
-        click.echo(f"  {v:<8} d={s['d']:.3f}  cap={b.cap[v]}  median factor "
-                   f"{s['median_raw_factor']:.3f}  total {s['after_step2']:,.0f}")
+        click.echo(f"  {v:<8} d={s['d']:.3f}  median factor {s['median_raw_factor']:.3f}  "
+                   f"max {s['max_raw_factor']:.2f}  external_out median factor "
+                   f"{s['ext_out']['median']:.3f}")
     click.echo(f"wrote {path}")
 
 
 def commute_inputs(cfg: LabConfig) -> list[dict]:
     """Hashes of the raw files P1 reads, for the run record."""
-    raw = cfg.root / "data" / "raw"
-    files = ["census2021/odwp14ew.zip", "nts2025/nts0412.ods", "nts2025/nts0504.ods",
-             "ons/hybridsupplementary8januaryto30march2025.xlsx"]
+    files = [(cfg.root / "data" / "raw", f) for f in (
+        "census2021/odwp14ew.zip", "nts2025/nts0412.ods", "nts2025/nts0504.ods",
+        "ons/hybridsupplementary8januaryto30march2025.xlsx",
+        "ons_geo/lsoa21_pwc_extent.geojson")]
+    files += [(cfg.upstream_raw, f) for f in (
+        "odwp01ew.zip", "ts058.zip", "bres_lsoa.csv")]
     out = []
-    for f in files:
-        p = raw / f
+    for root, f in files:
+        p = root / f
         if not p.is_file():
             raise click.ClickException(f"missing input {p}; see sources.md P1")
-        out.append({"name": f, "sha256": params.file_hash(p)})
+        out.append({"name": str(p), "sha256": params.file_hash(p)})
     return out
 
 

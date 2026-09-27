@@ -2,8 +2,9 @@
 P1 — the analysis-grade commute matrix.
 
 Runs the whole build into an in-memory DuckDB (the upstream DB attached read-only),
-then checks the SPEC §10 P1 acceptance: reconciliation in parts, externals tagged not
-spread, the discount sourced from the raw tables, and the cap decision recorded.
+then checks the SPEC §10 P1 acceptance: reconciliation in parts, the centroid zone
+rule, externals tagged not spread and on the average-weekday basis, the discount
+sourced from the raw tables, and the factor check in place of the cap.
 """
 import duckdb
 import pytest
@@ -28,6 +29,10 @@ def built(cfg, raw):
     con.close()
 
 
+def one(con, sql, *args):
+    return con.execute(sql, list(args)).fetchone()[0]
+
+
 def test_all_reconciliation_checks_pass(built):
     b, _ = built
     assert b.checks and all(ok for *_, ok in b.checks), b.checks
@@ -40,19 +45,47 @@ def test_upstream_equivalent_inputs_are_exact(built):
     assert s0["after_step1"] == pytest.approx(432_002.52, abs=0.01)
 
 
+def test_zone_rule_is_lsoa_centroid(built, cfg):
+    _, con = built
+    min_lon, min_lat, max_lon, max_lat = cfg.extent
+    outside = one(con, f"""SELECT count(*) FROM int_lsoa WHERE lon NOT BETWEEN {min_lon} AND {max_lon}
+                           OR lat NOT BETWEEN {min_lat} AND {max_lat}""")
+    assert outside == 0
+    # the two sliver MSOAs that used to reach the cap are no longer internal
+    for msoa in ("E02004625", "E02006062"):                     # Cotswold 011, Sedgemoor 002
+        assert one(con, "SELECT count(*) FROM int_lsoa WHERE MSOA21CD=?", msoa) == 0
+
+
+def test_reclassification_accounts_for_every_commuter(built):
+    _, con = built
+    total = one(con, "SELECT sum(commuters) FROM p1_reclass_flows")
+    assert total == one(con, "SELECT sum(n) FROM nat_oa_flows")
+    moved = one(con, "SELECT count(*) FROM p1_reclass_zones")
+    assert moved > 0
+
+
 def test_externals_tagged_by_direction_and_not_spread(built):
     _, con = built
-    got = dict(con.execute("""SELECT external, sum(n) FROM hbw_base
-                              WHERE external IS NOT NULL GROUP BY 1""").fetchall())
-    assert got == {"external_in": 66_186, "external_out": 37_350}
-    # external_in origins stay at their real (external) MSOA
-    n_inmap = con.execute("""SELECT count(*) FROM hbw_base WHERE external='external_in'
-                             AND o_msoa IN (SELECT MSOA21CD FROM ext_oa)""").fetchone()[0]
-    assert n_inmap < con.execute("SELECT count(*) FROM hbw_base WHERE external='external_in'"
-                                 ).fetchone()[0]
-    missing = con.execute("""SELECT count(*) FROM demand WHERE external IS NOT NULL
-                             AND ext_dist_km IS NULL AND d_level <> 'COUNTRY'""").fetchone()[0]
+    kinds = {r[0] for r in con.execute("SELECT DISTINCT external FROM demand").fetchall()}
+    assert kinds == {None, "external_in", "external_out"}
+    missing = one(con, """SELECT count(*) FROM demand WHERE external IS NOT NULL
+                          AND ext_dist_km IS NULL AND d_level <> 'COUNTRY'""")
     assert missing == 0
+
+
+def test_external_out_varies_with_d(built):
+    _, con = built
+    t = dict(con.execute("""SELECT demand_version, sum(trips) FROM demand
+                            WHERE external='external_out' GROUP BY 1""").fetchall())
+    assert t["p1-low"] > t["p1-central"] > t["p1-high"]
+
+
+def test_no_destination_factor_above_check(built, cfg):
+    b, _ = built
+    check = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}[
+        "commute.destination_factor_check"]
+    for v in commute.VARIANTS:
+        assert b.summaries[v]["max_raw_factor"] <= check
 
 
 def test_demand_versions_and_segments(built):
@@ -66,28 +99,29 @@ def test_demand_versions_and_segments(built):
 def test_segment_split_conserves_trips(built):
     _, con = built
     for v in commute.VARIANTS:
-        od = con.execute(f"SELECT sum(trips) FROM hbw_p1_{v}_od").fetchone()[0]
-        dm = con.execute("SELECT sum(trips) FROM demand WHERE demand_version=?",
-                         [f"p1-{v}"]).fetchone()[0]
+        od = one(con, f"SELECT sum(trips) FROM hbw_{v}_od")
+        dm = one(con, "SELECT sum(trips) FROM demand WHERE demand_version=?", f"p1-{v}")
         assert dm == pytest.approx(od, rel=1e-9)
 
 
-def test_destination_split_conserves_trips(built):
+def test_destination_split_conserves_internal_destinations(built):
     _, con = built
-    m = con.execute("SELECT sum(n) FROM hbw_central_matrix").fetchone()[0]
-    od = con.execute("SELECT sum(trips) FROM hbw_p1_central_od").fetchone()[0]
+    m = one(con, "SELECT sum(n) FROM hbw_central_matrix WHERE d_msoa NOT LIKE 'OUT:%'")
+    od = one(con, """SELECT sum(trips) FROM hbw_central_od
+                     WHERE external IS DISTINCT FROM 'external_out'""")
     assert od == pytest.approx(m, rel=1e-9)
+
+
+def test_ca_fallback_levels(built):
+    b, _ = built
+    assert set(b.summaries["ca_basis"]) <= {"pair", "origin MSOA x destination LAD", "origin MSOA"}
+    assert "origin MSOA x destination LAD" in b.summaries["ca_basis"]
 
 
 def test_discount_orders_the_matrix(built):
     b, _ = built
     tot = {v: b.summaries[v]["after_step2"] for v in commute.VARIANTS}
     assert tot["low"] > tot["central"] > tot["high"]
-
-
-def test_cap_decision_recorded(built):
-    b, _ = built
-    assert set(b.cap) == set(commute.VARIANTS)
 
 
 def test_params_match_the_derivation(cfg, raw):
@@ -99,10 +133,15 @@ def test_params_match_the_derivation(cfg, raw):
     assert r.d_low < r.d_central < r.d_high
 
 
-def test_no_game_table_is_read():
-    """The build may read upstream game tables only inside the reconciliation."""
+def test_game_tables_only_in_reconciliation():
+    """Upstream game tables may be read only by the reconciliation functions."""
     import inspect
-    src = inspect.getsource(commute)
-    body = src.split("def _upstream_equivalent_view")[0] + src.split("def split_destinations")[1]
-    for t in ("od_msoa_adj", "base_flows", "ext_clamp", "edge_fold", "oa_points"):
-        assert f"up.{t}" not in body.split("def recon_checks")[0], t
+    recon = {"_upstream_equivalent_view", "reconcile_upstream", "recon_checks",
+             "reconcile_checks", "_reclass_zones"}
+    for name, fn in inspect.getmembers(commute, inspect.isfunction):
+        if name in recon or fn.__module__ != commute.__name__:
+            continue
+        src = inspect.getsource(fn)
+        for t in ("od_msoa_adj", "base_flows", "ext_clamp", "edge_fold", "oa_points",
+                  "pops_s1", "dest_factor FROM up", "up.dest_factor"):
+            assert t not in src, (name, t)

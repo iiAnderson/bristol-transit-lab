@@ -8,6 +8,7 @@ upstream:
   db: data/interim/BRS/census.duckdb      # NOT data/interim/census.duckdb (pre-package build)
   package: ons_to_subwaybuilder
   city_config: ons_to_subwaybuilder/cities/bristol.yml
+  raw: data/raw                          # upstream's national raw files, read-only
 
 # Same extent as upstream Bristol & Bath: [min_lon, min_lat, max_lon, max_lat]
 extent: [-3.02, 51.32, -2.28, 51.60]

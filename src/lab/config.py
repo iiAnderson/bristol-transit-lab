@@ -30,6 +30,7 @@ class LabConfig:
     upstream_db: Path
     upstream_package: str
     upstream_city_config: Path
+    upstream_raw: Path
     extent: tuple[float, float, float, float]
     lab_db: Path
     runs_dir: Path
@@ -49,6 +50,7 @@ class LabConfig:
             upstream_db=repo / up["db"],
             upstream_package=up["package"],
             upstream_city_config=repo / up["city_config"],
+            upstream_raw=repo / up["raw"],
             extent=extent,  # type: ignore[arg-type]
             lab_db=root / raw["paths"]["lab_db"],
             runs_dir=root / raw["paths"]["runs"],

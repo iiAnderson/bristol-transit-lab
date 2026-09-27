@@ -39,16 +39,24 @@ commute:
         1 − NTS 2025 attendance: NTS0412 222.8 commuting trips per employed person
         per year × NTS0504b weekday share 0.899 ÷ 2 ÷ 253 weekdays. NTS counts only
         home ↔ usual-workplace trips, so it under-counts attendance: ceiling on d.
-  bres_rescale_cap:
+  destination_factor_check:
     value: 4.0
-    unit: max destination factor
+    unit: max in-extent destination factor
     tag: MODELLED
     reasoning: >-
-      Inherited from upstream (p95 rule, Bristol 2026-08). Re-checked in P1 after the
-      discount: it still binds, but only on boundary-sliver MSOAs whose partial LSOAs
-      bring all their BRES jobs (Cotswold 011 at every d, x29.7–42.8; Sedgemoor 002
-      at low d, x4.3). Kept as a guard against that geography artefact, not as a
-      lockdown correction.
+      Was upstream's clipping cap (p95 rule, Bristol 2026-08). Now a check: the build
+      fails if any in-extent destination factor exceeds it, instead of clipping. After
+      the discount and the LSOA-centroid zone rule the largest factor is 2.55 (low d);
+      the two MSOAs that used to reach it (Cotswold 011, Sedgemoor 002) were
+      boundary slivers and are now external.
+  ca_min_commuters:
+    value: 10
+    unit: ODWP14EW commuters in the cell
+    tag: MODELLED
+    reasoning: >-
+      Smallest cell whose own car-availability split is used, at pair level and then at
+      origin MSOA × destination LAD, before falling back to the origin MSOA. Upstream
+      measured MSOA→MSOA at a mean flow of 21.95.
 
 generalised_cost:
   w_walk:
