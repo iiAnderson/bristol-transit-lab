@@ -307,6 +307,34 @@ def supply_bus() -> None:
     click.echo(f"wrote {path}")
 
 
+@supply.command("points")
+def supply_points() -> None:
+    """Fetch OA population-weighted centroids for every internal OA; table int_oa_pwc."""
+    import datetime as dt
+    import duckdb
+    import yaml
+    from .supply import avl as a, feeds, points
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    out = cfg.root / "data" / "raw" / "ons_geo" / "oa21_pwc_internal.geojson"
+    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+        codes = [r[0] for r in con.execute("SELECT OA21CD FROM int_oa ORDER BY 1").fetchall()]
+    res = points.fetch(raw["oa_pwc_service"], codes, out,
+                       a.user_agent(cfg, _env_secret("LAB_CONTACT_EMAIL")))
+    if res["missing"]:
+        raise click.ClickException(f"ONS returned no centroid for {res['missing']}")
+    with duckdb.connect(str(cfg.lab_db)) as con:
+        con.execute("INSTALL spatial; LOAD spatial")
+        con.execute(f"""CREATE OR REPLACE TABLE int_oa_pwc AS SELECT OA21CD,
+            ST_X(geom) lon, ST_Y(geom) lat FROM ST_Read('{out}')""")
+        n = con.execute("SELECT count(*) FROM int_oa_pwc").fetchone()[0]
+    feeds.register(cfg, feed_id="ons_oa21_pwc_internal", kind="ref",
+                   source_url=raw["oa_pwc_service"], path=out,
+                   downloaded_at=dt.datetime.now(dt.timezone.utc), licence="OGL v3",
+                   notes=f"{n} internal OAs")
+    click.echo(f"int_oa_pwc: {n} OAs")
+
+
 @supply.command("smoke")
 @click.option("--itin-pairs", default=200, show_default=True)
 def supply_smoke(itin_pairs: int) -> None:
@@ -325,12 +353,11 @@ def supply_smoke(itin_pairs: int) -> None:
         feeds.require_covers(feeds.get(cfg, fid), day)
     with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
         lsoa = con.execute("SELECT LSOA21CD id, lon, lat FROM int_lsoa ORDER BY 1").df()
-        oa_ids = con.execute("SELECT OA21CD FROM int_oa").df()
-    with duckdb.connect(str(cfg.upstream_db), read_only=True) as up:   # rule 10
-        pwc = up.execute("SELECT OA21CD id, lon, lat FROM pwc ORDER BY 1").df()
-    oa = pwc[pwc["id"].isin(set(oa_ids["OA21CD"]))].reset_index(drop=True)
-    if len(oa) != len(oa_ids):
-        raise click.ClickException(f"{len(oa_ids) - len(oa)} internal OAs have no PWC")
+        oa = con.execute("SELECT OA21CD id, lon, lat FROM int_oa_pwc ORDER BY 1").df()
+        n_int = con.execute("SELECT count(*) FROM int_oa").fetchone()[0]
+    if len(oa) != n_int:
+        raise click.ClickException(f"int_oa_pwc has {len(oa)} OAs, int_oa {n_int}; "
+                                   "run `lab supply points`")
     rec = runrecord.build(cfg, command="supply-smoke", inputs=[
         {"name": fid, "sha256": feeds.get(cfg, fid)["sha256"]}
         for fid in ("osm_clip", "bus_gtfs", "rail_gtfs")])
