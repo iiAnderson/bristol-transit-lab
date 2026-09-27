@@ -53,6 +53,7 @@ def srn_factors(seg: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.DataFrame,
     """Per SRN segment: factor per period and its source (site | nearest_site | srn_mean)."""
     srn = seg[seg["road_class"] == "srn"].copy()
     srn["bearing"] = _bearing(srn)
+    wsites = wsites.astype({"lon": float, "lat": float})
     s = wsites.dropna(subset=["u"]).merge(
         srn[["u", "v", "ff", "bearing"]], on=["u", "v"], how="inner")
     w = wspeed.pivot_table(index="site_id", columns="period", values="kmh_hmean")

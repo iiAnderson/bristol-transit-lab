@@ -85,7 +85,7 @@ def process(con: duckdb.DuckDBPyConnection, webtris_dir: Path, sites: list[dict]
             segments: Path, max_match_m: float) -> dict:
     con.execute("CREATE OR REPLACE TEMP TABLE wsite AS SELECT * FROM (VALUES " +
                 ",".join(f"('{s['site_id']}','{s['name']}','{s['road']}','{s['kind']}',"
-                         f"'{s['direction']}',{s['lon']},{s['lat']})" for s in sites) +
+                         f"'{s['direction']}',{s['lon']}::DOUBLE,{s['lat']}::DOUBLE)" for s in sites) +
                 ") t(site_id, name, road, kind, direction, lon, lat)")
     con.execute("CREATE OR REPLACE TEMP TABLE dtype AS SELECT * FROM (VALUES " +
                 ",".join(f"(DATE '{d}', '{t}')" for d, t in days.items()) + ") t(date, day_type)")
