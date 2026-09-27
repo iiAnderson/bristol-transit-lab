@@ -19,11 +19,14 @@ no URL is copied from the spec into code without being navigated to first.
 
 | Dataset | Level | Source | Accessed | Licence |
 |---|---|---|---|---|
-| Upstream Bristol DB | OA / LSOA / MSOA | `~/Documents/Projects/subwaybuilder-bristol/data/interim/BRS/census.duckdb`, `ons_to_subwaybuilder` 0.1.0 @ `2361e300`, sha256 `581da77d7dd7…` (full hash in every `run.json`) | 2026-09-27 | derived from OGL v3 sources; see upstream `sources.md` |
+| Upstream Bristol DB | OA / LSOA / MSOA | `~/Documents/Projects/subwaybuilder-bristol/data/interim/BRS/census.duckdb`, `ons_to_subwaybuilder` 0.1.0 (pinned per run; now `main` @ `1c82c76`), sha256 `581da77d7dd7…` (full hash in every `run.json`) | 2026-09-27 | derived from OGL v3 sources; see upstream `sources.md` |
 | ODWP14EW (Census 2021 OD by household car/van availability) | MSOA → MSOA only | https://www.nomisweb.co.uk/output/census/2021/odwp14ew.zip (found via https://www.nomisweb.co.uk/sources/census_2021_od), sha256 `9f324a154ef34852…` | 2026-09-27 | OGL v3 |
 | NTS0412 (commuter trips by employment status, England) | national | https://assets.publishing.service.gov.uk/media/6a9ecd5ff36e1f225ecb7e8e/nts0412.ods (NTS 2025, published 11 Sept 2026; table updated 10 Sept 2026), sha256 `f3afe920be36fed6…` | 2026-09-27 | OGL v3 |
 | NTS0504 (trips by day of week and purpose, England) | national | https://assets.publishing.service.gov.uk/media/6a9ecd5f474b8101ece46432/nts0504.ods (NTS 2025), sha256 `6e45c7e1d7520a64…` | 2026-09-27 | OGL v3 |
 | ONS OPN, "Who has access to hybrid work in Great Britain?" supplementary tables | GB | https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/whohasaccesstohybridworkingingreatbritainsupplementarytables/current/hybridsupplementary8januaryto30march2025.xlsx (release 11 June 2025; fieldwork 8 Jan–30 Mar 2025), sha256 `3d2ce76054548b9c…`. The `cdn.ons.gov.uk` link on the dataset page returns 404 | 2026-09-27 | OGL v3 |
+| ONS OPN, working arrangements by personal characteristics | GB, with region and occupation | https://www.ons.gov.uk/file?uri=/peoplepopulationandcommunity/healthandsocialcare/healthandwellbeing/datasets/publicopinionsandsocialtrendsgreatbritainworkingarrangementsbypersonalcharacteristics/1aprilto28june2026/workingarrangementsbypersonalcharacteristics1aprilto28june2026.xlsx (released 17 July 2026) | 2026-09-27 | OGL v3 |
+| LSOA 2021 population-weighted centroids | LSOA | ArcGIS `LSOA_PopCentroids_EW_2021_V4/FeatureServer/0` (ONS Open Geography), sha256 `a4a16e26f08fd3cd…` | 2026-09-27 | OGL v3 |
+| ODWP01EW OA and MSOA (national), TS058 OA, BRES 2024 LSOA (national, paged) | OA / MSOA / LSOA | upstream's raw downloads in `subwaybuilder-bristol/data/raw/` (provenance in upstream `sources.md`); read-only; hashes in every run record | 2026-09-27 | OGL v3 |
 
 Every run pins the upstream it read: DB file hash, package version and commit, dirty
 flag and a `stage_log` snapshot (`src/lab/upstream.py`).
@@ -215,7 +218,7 @@ comes out. An analysis-grade stage should include them.
   **Assumption:** redistributed no-fixed-place workers share their origin's
   car-availability split.
 
-### Build (2026-09-27)
+### Build, round 1 (2026-09-27)
 
 `lab demand commute` (`src/lab/demand/commute.py`) writes `demand` rows
 `p1-low`, `p1-central` and `p1-high` (purpose HBW, period `DAY`, segments CA / NCA) to
@@ -334,7 +337,7 @@ the discounted BRES counts people *present* on an average weekday. The two measu
 different things, and the lab's matrix is now the second, which is what a
 weekday model needs.
 
-### The 4.0 cap still binds, but only on a geography artefact
+### The 4.0 cap still binds, but only on a geography artefact (superseded — see review round 2)
 
 With a discount, the cap binds on:
 - Cotswold 011 at every d (17 modelled commuters against 577 discounted BRES jobs at
@@ -348,7 +351,7 @@ sliver has no row to scale. **Kept at 4.0** as a guard against that artefact, no
 lockdown correction. The proper fix is to apportion partial LSOAs' BRES by the in-map
 share (for example non-residential floorspace). That is a decision for the user.
 
-### Destination split and car availability
+### Destination split and car availability (superseded — see review round 2)
 
 - **Destinations:** in-map MSOA → LSOA by BRES LSOA jobs (the discount is national, so
   discounted and raw shares are identical). Assumption, as decided: within an MSOA,
@@ -362,7 +365,7 @@ share (for example non-residential floorspace). That is a decision for the user.
   redistributed no-fixed-place workers share their origin's split. CA share of trips:
   internal 0.874, external_in 0.934, external_out 0.903.
 
-### Externals
+### Externals (superseded — see review round 2)
 
 | | base | p1-central trips | median distance to map | beyond 30 km |
 |---|---|---|---|---|
@@ -373,7 +376,7 @@ Distance is from the external MSOA's population-weighted centroid to the nearest
 in-map OA centroid, the same definition upstream's clamp uses. Stored uncut; the 30 km
 cut is a v1.1 decision.
 
-### Demand written
+### Demand written (superseded — see review round 2)
 
 | version | internal | external_in | external_out |
 |---|---|---|---|
@@ -384,9 +387,203 @@ cut is a v1.1 decision.
 Origins: internal at LSOA, external_in at MSOA. Destinations: LSOA, except
 external_out at MSOA (or country).
 
+### Review round 2 (user decisions and rebuild, 2026-09-27)
+
+**Checkpoint and upstream.** `aad1bea` (round 1) is pushed. Upstream
+`analysis-grade-correct` was merged into upstream `main` with `--no-ff` as `1c82c76`,
+so `0ea228d` stays reachable. On `main` after the merge:
+- the full upstream suite passes (64);
+- a fresh single-threaded covid + assemble run on a DB copy matches the pre-refactor
+  code on every table, with exact floats, and `demand_data.json` is byte-identical;
+- the regression and `correct()` tests against that re-run DB pass (23, with the
+  routing test skipped).
+
+Upstream `main` was then pushed. The push moved origin from `93602a7` to `1c82c76`, so
+it also published the earlier local-only upstream commits (G1–G8 and Cardiff).
+
+**Decisions (user):**
+- d is accepted as `[MODELLED]` with the midpoint central. P5 chooses the default
+  between low, central and high on the station-usage, BUS01 and traffic-count gates,
+  logging the fit for all three (SPEC §9).
+- The average-weekday basis is accepted (SPEC §6.1), and external_out is put on the
+  same basis.
+- Zones are internal only if their population-weighted centroid is inside the extent.
+  The cap becomes a check.
+- The car-availability fallback gains an origin MSOA × destination LAD level.
+
+#### d by industry: not possible from current data
+
+- **ONS OPN has no industry breakdown.** Neither the hybrid supplementary tables
+  (Jan–Mar 2025) nor the newer "working arrangements by personal characteristics"
+  tables (1 Apr–28 Jun 2026, released 17 Jul 2026) break down by industry (SIC).
+  Occupation is published, and varies a lot. Professional occupations: 30%
+  travel-only, 41% hybrid. Elementary occupations: 78% travel-only, 1% hybrid. But
+  BRES is classified by industry, not occupation, so there is no mix to weight by.
+  Logged as SPEC §12 FUTURE ("industry- or occupation-varying attendance").
+- **The 2026 edition adds a region breakdown.** South West: travel-only 44%, hybrid
+  23%, home only 14%, neither 19% (660 respondents). England: 42 / 25 / 14 / 19.
+  GB 2025 was 41 / 28 / 14 / 17. The 2026 tables give no full-time / part-time split,
+  so the full derivation can't be re-run. Applying the formula to all-persons shares
+  gives attendance of about 0.507 (GB 2025), 0.50 (England 2026) and 0.508 (South West
+  2026). That shifts d by under 0.01, well inside the low–high range, so the accepted
+  values are kept. File:
+  https://www.ons.gov.uk/file?uri=/peoplepopulationandcommunity/healthandsocialcare/healthandwellbeing/datasets/publicopinionsandsocialtrendsgreatbritainworkingarrangementsbypersonalcharacteristics/1aprilto28june2026/workingarrangementsbypersonalcharacteristics1aprilto28june2026.xlsx
+  (accessed 2026-09-27, OGL v3).
+- **Central-Bristol share of HBW trips** (destination LSOAs in Bristol 054, 060 and
+  061). d is uniform, so there is no industry-varying version to compare against. The
+  only change is from this round's reclassification:
+  - the absolute central-Bristol trips are unchanged: 61,836 at central d (76,495
+    low, 53,052 high);
+  - their share of internal trips rises from **19.69% to 20.40%**, because the
+    internal denominator shrinks;
+  - their share of all trips to in-map destinations rises from 17.89% to 18.88%.
+
+#### Zones by LSOA population-weighted centroid
+
+Source: ONS ArcGIS `LSOA_PopCentroids_EW_2021_V4` (FeatureServer/0, on the same ONS
+Open Geography server upstream uses; accessed 2026-09-27, OGL v3). Fetched by code for
+the 772 extent LSOAs into `data/raw/ons_geo/lsoa21_pwc_extent.geojson`
+(sha256 `a4a16e26f08fd3cd…`).
+
+**729 of 772 LSOAs are internal; 43 move out.** The table lists their internal →
+internal commuters under upstream's classification. Commuters between two moved LSOAs
+are counted in both columns (529).
+
+| MSOA | LSOAs moved | as origin | as destination |
+|---|---|---|---|
+| Bath and North East Somerset 021 | E01014383, E01014418 | 267 | 136 |
+| Bath and North East Somerset 022 | E01014442, E01014443 | 250 | 6 |
+| Bath and North East Somerset 023 | E01014394 | 110 | 28 |
+| Cotswold 011 | E01034790 | 24 | 5 |
+| Mendip 001 | E01029057 | 17 | 66 |
+| Mendip 005 | E01029060 | 37 | 36 |
+| Monmouthshire 009 | W01001542, W01001590 | 94 | 322 |
+| Newport 001 | W01001625 | 46 | 278 |
+| Newport 003 | W01001620 | 77 | 42 |
+| Newport 004 | W01001639, W01001640, W01001641 | 201 | 69 |
+| Newport 005 | W01001614 | 159 | 83 |
+| Newport 006 | W01001682, W01001683 | 125 | 168 |
+| Newport 007 | W01001677 | 68 | 0 |
+| Newport 012 | W01001604 | 113 | 26 |
+| Newport 017 | W01001631, W01001632 | 577 | 40 |
+| Newport 020 | W01001912, W01001913 | 387 | 935 |
+| North Somerset 023 | E01014772 | 196 | 95 |
+| North Somerset 024 | E01014741, E01014742 | 214 | 189 |
+| North Somerset 025 | E01014805 | 331 | 97 |
+| Sedgemoor 001 | E01029128 | 68 | 57 |
+| Sedgemoor 002 | E01032633 | 26 | 35 |
+| South Gloucestershire 001 | E01014986, E01014989 | 133 | 423 |
+| South Gloucestershire 002 | E01014991, E01014992 | 406 | 471 |
+| South Gloucestershire 003 | E01014884 | 103 | 30 |
+| South Gloucestershire 004 | E01014962 | 164 | 235 |
+| Stroud 015 | E01022381 | 58 | 184 |
+| Wiltshire 008 | E01031950 | 60 | 17 |
+| Wiltshire 017 | E01031888, E01031929, E01031930 | 168 | 101 |
+| Wiltshire 023 | E01032059, E01032061 | 138 | 47 |
+| **total (43 LSOAs)** | | **4,617** | **4,221** |
+
+**The base is now built from the national ODWP01EW OA file** (upstream's
+`data/raw/odwp01ew/ODWP01EW_OA.csv`, read-only), not from upstream's `oa_flows`. Three
+OAs belong to internal LSOAs but lie outside upstream's polygon-intersection extent.
+Upstream's table only holds flows with an end in its extent, so it misses those OAs'
+flows whose other end is also outside it. Under upstream's classification, the
+national file reproduces upstream's `oa_flows` exactly: internal → internal 275,369
+(zero difference in every destination MSOA), external_in 66,186, external_out 37,350.
+
+**Every commuter is accounted for between the two classifications**
+(`p1_reclass_flows`; "none" means external at both ends, so not a lab trip):
+
+| was (upstream) | now (lab) | commuters |
+|---|---|---|
+| internal | internal | 267,060 |
+| internal | external_in | 4,088 |
+| internal | external_out | 3,692 |
+| internal | none | 529 |
+| external_in | internal | 151 |
+| external_out | internal | 65 |
+| outside upstream's flows | internal | 1 |
+| external_in | external_in / external_out / none | 59,818 / 15 / 6,202 |
+| external_out | external_in / external_out / none | 6 / 34,061 / 3,218 |
+| outside upstream's flows | external_in / external_out | 100 / 124 |
+
+**Internal → internal: 275,369 → 267,277.** That is −8,309 moved out and +217 moved
+in; the build asserts the total. 9,949 commuters become external at both ends and
+are dropped.
+
+**Reconciliation step 4** (d = 0, no cap) switches to the lab's zones. Fixed-workplace
+369,181; after the no-fixed-place step 444,860; median factor **1.505** over 157
+destination MSOAs; **max 4.48**, against 74.9 at step 3. The two boundary slivers
+were what upstream's cap had been catching.
+
+#### The cap becomes a check; nothing binds
+
+The correction now runs with `cap=None`. Any in-extent destination factor above
+`commute.destination_factor_check` (4.0, [MODELLED], in `params/base.yaml`) fails the
+build. Largest in-extent factors: **2.55 (low d), 2.07 (central), 1.77 (high)**.
+Median factors: 0.859 / 0.694 / 0.596.
+
+#### External_out on the average-weekday basis
+
+Each external workplace MSOA gets a national factor: BRES × (1 − d) ÷ census
+fixed-workplace inflow from all England and Wales origins. The inputs are the national
+ODWP01EW MSOA file and upstream's paged national BRES file `bres_lsoa.csv` (35,672
+LSOAs), both upstream raw downloads, read-only. The factor is applied to the base flow.
+It already brings the destination total to BRES × (1 − d), so no-fixed-place uplift is
+not added on top.
+
+**National factors, 2,243 MSOAs:**
+
+| d | median | max |
+|---|---|---|
+| low | 0.993 | 38.8 |
+| central | 0.802 | 31.4 |
+| high | 0.688 | 26.9 |
+
+**Fallback, 2 destinations** (Scotland and Northern Ireland, 168 commuters): the
+in-extent overall factor for that d, [MODELLED].
+
+**External_out now varies with d:** 40,776 / 32,962 / 28,280 trips.
+
+**Shown for review, not failed:** some external workplaces have national factors above
+4.0. At central d that's 3 MSOAs, 8 base commuters and 102 trips:
+- Dacorum 017, ×31 (60,650 BRES jobs against 892 census arrivals, which looks like
+  head-office registration, drawback 4);
+- Trafford 024 and Hackney 026, both ×6.5.
+
+At low d it's 15 MSOAs (160 base commuters, 814 trips), mostly central London. The
+in-extent check does not cover them.
+
+#### Car-availability fallback
+
+Share of base commuters (internal and external) at each level:
+
+| level | cells | commuters | share |
+|---|---|---|---|
+| pair (≥ 10) | 7,343 pairs | 278,766 | **75.5%** |
+| origin MSOA × destination LAD (≥ 10) | 23,258 pairs | 68,084 | **18.4%** |
+| origin MSOA | 17,058 pairs | 22,331 | **6.0%** |
+
+Round 1 put 25% on the origin fallback; 18.4 points of that now use destination-LAD
+information. CA share of trips: internal 0.874, external_in 0.945, external_out 0.910.
+
+#### Demand written (round 2)
+
+Daily HBW trips:
+
+| version | internal | external_in | external_out |
+|---|---|---|---|
+| p1-low (d 0.429) | 342,373 | 62,872 | 40,776 |
+| p1-central (d 0.539) | 276,762 | 50,824 | 32,962 |
+| p1-high (d 0.604) | 237,448 | 43,604 | 28,280 |
+
+Origins: internal at LSOA, external_in at MSOA. Destinations: internal LSOA;
+external_out at MSOA (or country). Distance for externals is now to the nearest
+internal LSOA centroid. The reconciliation steps keep upstream's
+nearest-in-map-OA-centroid definition.
+
 ## Phase status
 
 | phase | status |
 |---|---|
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
-| P1 | built 2026-09-27; upstream `correct()` at `0ea228d` on branch `analysis-grade-correct`; awaiting review |
+| P1 | round 2 built 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); awaiting review before P2 |

@@ -177,12 +177,16 @@ Confirm every URL at build time (rule 3). All OGL v3 unless stated.
 | Dataset | Use | Notes |
 |---|---|---|
 | upstream `data/interim/BRS/census.duckdb` (`subwaybuilder-bristol`) | raw commute flows, zones, PWC points, BRES jobs, TS058 | consume the raw OA table `flows`/`oa_flows` and census inputs, **read-only**. Do **not** consume `od_msoa_adj` or `base_flows` — both carry game adjustments (edge fold, external clamp) |
-| Census 2021 ODWP14EW | commute by household car availability | Nomis census_2021_od |
+| Census 2021 ODWP14EW | commute by household car availability | Nomis census_2021_od; MSOA → MSOA only |
 | Census 2021 TS061 (method of travel to work) | residence-based mode shares | lockdown-distorted; use as a secondary target only |
 | Census 2021 TS045 (car or van availability) | car-availability segmentation of non-commute demand | |
 | Census 2011 WU03EW (OD by method of travel, MSOA) | pre-COVID OD mode shares for the pivot base; v1.1 external mode shares | 2011 MSOA → 2021 MSOA lookup required |
 | National Travel Survey (NTS0403, NTS0303, trip-length tables) | trip rates by purpose, trip-length distributions, mode shares | national — filter by area type where tables allow |
-| ONS Data Science Campus travel-to-work matrix method | NTS-based fixed-workplace / travel-frequency share | derives the BRES discount (§6.1) |
+| ONS Data Science Campus travel-to-work matrix method | NTS-based fixed-workplace share | method for the BRES discount (§6.1); its rates are 2018–21 and not used |
+| NTS0412, NTS0504 (NTS 2025) | commuting trips per worker; weekday share | ceiling on the BRES discount |
+| ONS OPN working-arrangement tables | travel / hybrid / home shares | floor on the BRES discount; occupation and region breakdowns |
+| ONS LSOA 2021 population-weighted centroids | internal / external zone rule | ArcGIS `LSOA_PopCentroids_EW_2021_V4` |
+| Census 2021 ODWP01EW (OA and MSOA, national) | base flows; external_out inflow | upstream's raw download, read-only |
 | BODS timetables (GTFS, England) | bus network | watch for superseded duplicate services |
 | National Rail timetable (CIF) via UK2GTFS | rail network | |
 | Darwin Push Port (own dataset, Athena) | observed rail punctuality/cancellations | v1: validation only; see §12 |
@@ -293,62 +297,70 @@ ops:
 
 ### 6.1 Commute (HBW)
 
-*Amended at P0 (2026-09-27). The earlier draft consumed `od_msoa_adj` and spread
-external flows onto edge zones; both are withdrawn — see `sources.md` P0.*
+*Amended at P0 and again after P1 review (2026-09-27). The earlier drafts consumed
+`od_msoa_adj` and spread external flows onto edge zones; both are withdrawn — see
+`sources.md` P0 and P1.*
 
-**Source.** Build from the raw OA → OA table `flows` (265,473 pairs) in the upstream
-DB, plus the census inputs (TS058, BRES, lookups, PWC). Do **not** consume
-`od_msoa_adj` or `base_flows`: both are downstream of the edge fold and external clamp.
-Aggregate to LSOA → MSOA (upstream's measured finest level above record-swapping noise;
-re-measure and log).
+**What the matrix is.** People **present at a fixed workplace on an average weekday**,
+not people by where they mainly work (the census definition). The BRES discount is
+what turns one into the other.
 
-**Lockdown correction — reuse, don't re-implement.** Preferred route: an upstream
-change to `ons_to_subwaybuilder` exposing an analysis-grade stage that takes raw flows
-at a chosen grain and returns the lockdown-corrected matrix (no-fixed-place
-redistribution via TS058, then BRES rescale) **before** any point placement, folding or
-clamping. The game path calls it and continues; the lab calls it and stops. It is a
-separate upstream commit, the upstream Bristol regression test must still pass, and it
-is proposed to the user before it is made. Fallback, if upstream is too tangled to split
-cleanly: re-implement in the lab, with a test that runs both implementations on the
-same input and compares.
+**Zones.** An LSOA is internal only if its ONS population-weighted centroid is inside
+the extent — the same rule upstream uses for demand points. Every other zone is
+external: MSOA level, or country for Scotland and Northern Ireland. Destination MSOAs
+for the correction are the internal part of each MSOA (its internal LSOAs).
 
-**BRES discount — not the census 36.2%.** The census TS058 home-working share (36.2%)
-is who worked mainly from home in March 2021; it is already removed on the census side
-and must not be applied again. The BRES discount is the share of jobs whose holder does
-not travel to the workplace on an average weekday *now* (hybrid working, part-time
-days). Derive it with the ONS Data Science Campus / NTS approach and tag it `[SOURCED]`.
-Order: **discount BRES → rescale → check whether the 4.0 cap still binds.** If it no
-longer binds, drop it rather than carrying a game-era safety rail. Log the result
-either way.
+**Source.** Build from the national Census 2021 ODWP01EW OA file (upstream's raw
+download, read-only), plus TS058, BRES and the ONS lookups and centroids. Do **not**
+consume `od_msoa_adj` or `base_flows`: both are downstream of the edge fold and
+external clamp. Aggregate to LSOA → MSOA (upstream's measured finest level above
+record-swapping noise). Under upstream's classification the national file must
+reproduce upstream's raw `oa_flows` exactly; the change to the lab's classification is
+reconciled as a listed reclassification.
 
-**Car availability.** After the correction, split each OD pair into CA/NCA using
-ODWP14EW proportions, at the finest level that stays above record-swapping noise
-(re-measure).
+**Lockdown correction — reuse, don't re-implement.** Upstream `covid.correct` (merged
+to upstream `main`, first introduced in `0ea228d`) does the no-fixed-place
+redistribution via TS058 and then the BRES rescale, with no point placement, folding or
+clamping. The game path calls it and continues; the lab calls it and stops.
 
-**Destination grain.** Decided (2026-09-27): each destination MSOA is split across its
-LSOAs by BRES LSOA jobs — discounted jobs if the discount varies by area. Assumption,
-logged: within an MSOA every origin gets the same destination pattern. Chosen because
-LSOA → LSOA was measured too noisy upstream (21.5% of commuters in flows ≤ 2).
+**BRES discount.** d = 1 − (workers attending a fixed workplace on an average weekday
+÷ BRES jobs). Not the census TS058 36.2%, which is March 2021 lockdown home-working and
+is already removed on the census side. Low / central / high = 0.429 / 0.539 / 0.604
+[MODELLED], bracketed by ONS OPN (over-counts attendance: floor on d) and NTS
+(under-counts: ceiling); central is the midpoint. National: no industry, regional-at-
+the-right-grain or area-type breakdown usable with BRES exists (sources.md P1). Where
+no factor is extreme, destination totals are BRES × (1 − d), so d sets the level of
+the whole matrix: P1 outputs all three, later phases use central, and P5 chooses the
+default (§9).
 
-**BRES discount definition.** d = 1 − (workers attending a fixed workplace on an
-average weekday ÷ BRES jobs): the fixed-workplace share and average days attended,
-combined. Method from the ONS Data Science Campus travel-to-work matrix report; rate
-from current NTS / ONS hybrid-working statistics. Where the cap does not bind,
-destination totals are BRES × (1 − d), so d sets the level of the whole matrix: P1
-outputs the matrix at low / central / high d; later phases use central, with the range
-for sensitivity runs.
+**No cap; a check.** The correction runs uncapped. Any in-extent destination factor
+above `commute.destination_factor_check` (4.0 [MODELLED]) fails the build — a zoning or
+data artefact to fix, not to clip.
 
-**Order.** `correct()` (no-fixed-place redistribution → BRES discount → rescale → cap
-check) first, then the CA/NCA split. Assumption, logged: redistributed no-fixed-place
+**External_out on the same basis.** Each external workplace MSOA gets a national
+factor: BRES × (1 − d) ÷ census fixed-workplace inflow from all England and Wales
+origins, applied to the base flow. Where none can be computed (Scotland, Northern
+Ireland), the in-extent overall factor for that d [MODELLED].
+
+**Order.** `correct()` (no-fixed-place redistribution → BRES discount → rescale →
+factor check) first, then the CA/NCA split. Assumption: redistributed no-fixed-place
 workers share their origin's car-availability split.
 
-**External commuters.** P1 builds them uncut at their real external origin or
-destination MSOA, with distance attached (no clamping, no spreading; the 30 km cut is a
-v1.1 decision), tags them by direction — `external_in` (external origin → internal
-workplace) or `external_out` (internal residence → external workplace) — in the demand
-table, and stops. v1 excludes them from mode choice,
-assignment and connectivity metrics. v1.1 adds them through gateways (§11b) on top of
-the P1 table rather than rebuilding it.
+**Car availability.** ODWP14EW proportions (published at MSOA → MSOA only): the pair's
+own split if it has ≥ `commute.ca_min_commuters` (10 [MODELLED]), then origin MSOA ×
+destination LAD at the same threshold, then origin MSOA.
+
+**Destination grain.** Each destination MSOA is split across its internal LSOAs by
+BRES LSOA jobs. Assumption: within an MSOA every origin gets the same destination
+pattern. Chosen because LSOA → LSOA was measured too noisy upstream (21.5% of commuters
+in flows ≤ 2).
+
+**External commuters.** Built uncut at their real external MSOA, with distance to the
+nearest internal LSOA centroid attached, tagged `external_in` or `external_out`. No
+clamping, no spreading; the 30 km cut is a v1.1 decision. External ↔ external flows
+(both ends outside after reclassification) are not lab trips and are dropped, counted.
+v1 excludes externals from mode choice, assignment and connectivity metrics; v1.1 adds
+them through gateways (§11b).
 
 ### 6.2 Other purposes
 
@@ -520,6 +532,12 @@ explain (see §11 item 13).
 Also a **regression test**: commute totals must reconcile to upstream **in parts**
 (see P1 acceptance) before any discount is applied.
 
+**Choosing the BRES discount.** P5 runs the calibration with each of the three P1
+demand versions (`p1-low`, `p1-central`, `p1-high`). Whichever `d` best fits the
+station-usage, BUS01 and traffic-count gates becomes the default for later phases. The
+fit for all three is logged in the calibration report, whichever wins. The central
+value is only the default until then.
+
 ---
 
 ## 10. Build phases
@@ -536,11 +554,15 @@ the tested fallback); BRES discount → rescale → cap check; CA/NCA split; des
 grain decision; external flows built and tagged, not spread.
 *Acceptance* (reconcile in parts, not against one total — upstream's 356,286 includes
 the 30 km cut and clamping, so a rebuild from raw flows should not match it):
-- internal → internal flows match upstream exactly, before correction;
-- external flows reconciled as a separate line;
-- median correction factor close to upstream's 1.43, with any difference measured and
-  explained in `sources.md`;
-- the BRES discount is sourced, and the cap decision is logged.
+- under upstream's classification, internal → internal, external_in and external_out
+  match upstream's raw flows exactly, before correction;
+- the move to the LSOA-centroid zone rule is reconciled as a listed reclassification
+  that accounts for every commuter;
+- from upstream-equivalent inputs, upstream's covid-stage inputs are reproduced
+  exactly and the median correction factor is close to upstream's 1.43, with each
+  difference measured and explained in `sources.md`;
+- the BRES discount is derived from recorded inputs at low / central / high, and no
+  destination factor exceeds the check.
 
 **P2 — Baseline supply and skims.** OSM networks; BODS GTFS clipped and de-duplicated;
 rail GTFS; `B2026` and `B2028`; AM and IP skims; baseline accessibility.
@@ -797,5 +819,12 @@ addresses.
   blog post is fine at any time and needs no bridge.
 - **FUTURE — Animated trip playback** in the viewer (deck.gl trips layer), once
   assignment produces paths worth animating.
+- **FUTURE — Industry- or occupation-varying attendance.** Vary the BRES discount by
+  destination employment mix instead of using one national rate. Blocked in v1: no
+  current source gives attendance by industry (SIC), which is what BRES is classified
+  by. ONS OPN does publish it by occupation (e.g. professional occupations 30%
+  travel-only / 41% hybrid, elementary 78% / 1%, Apr–Jun 2026), so a route exists via
+  a workplace occupation mix (Census 2021 workplace-population tables) if one proves
+  robust. Addresses 1.
 - **FUTURE — Generalisation.** Parameterise by `CityConfig` alongside the
   `ons_to_subwaybuilder` package so the lab runs for any English or Welsh city.
