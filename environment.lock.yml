@@ -182,6 +182,7 @@ dependencies:
   - pyarrow-core=25.0.0
   - pygments=2.21.0
   - pyogrio=0.13.0
+  - pyosmium=4.3.1
   - pyparsing=3.3.3
   - pyproj=3.8.0
   - pysocks=1.7.1
@@ -226,3 +227,4 @@ dependencies:
   - zlib-ng=2.3.3
   - zstd=1.5.7
   - pip:
+      - bristol-transit-lab==0.0.1

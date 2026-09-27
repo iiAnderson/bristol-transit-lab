@@ -23,4 +23,6 @@ dependencies:
   - pytest
   - odfpy            # NTS tables are ODS
   - openpyxl         # ONS tables are XLSX
+  - pyosmium=4.3.1   # OSM parsing for the car network table (P2b)
+  - requests         # feed downloads (P2)
   - pip
