@@ -18,7 +18,8 @@ own correction code, never from upstream's game-adjusted tables:
    `commute.destination_factor_check` fails the build instead of being clipped.
 4. **External_out on the same basis.** Each external workplace MSOA gets its own
    national factor, BRES × (1 − d) ÷ census fixed-workplace inflow from all England and
-   Wales origins, applied to the base flow.
+   Wales origins, applied to the base flow. Above the factor check it falls back to the
+   in-extent factor for that d [MODELLED], and is listed in the run log.
 5. **Destination split** MSOA → internal LSOAs by BRES LSOA jobs. Assumption: within an
    MSOA every origin gets the same destination pattern.
 6. **CA / NCA split** by ODWP14EW, after the correction: the pair's own split, else
@@ -218,18 +219,32 @@ def _ext_out_factors(con, raw: Path) -> None:
         LEFT JOIN inflow i USING (msoa) LEFT JOIN bres b USING (msoa)""")
 
 
-def _ext_out_for_variant(con, v: str, d: float) -> dict:
-    """Factor per external workplace; the in-extent overall factor where none exists."""
+def _ext_out_for_variant(con, v: str, d: float, factor_check: float) -> dict:
+    """Factor per external workplace, with the in-extent overall factor as fallback.
+
+    The fallback [MODELLED] applies where no national factor exists (Scotland, Northern
+    Ireland) and where the national factor exceeds `factor_check`. Those are not capped
+    and do not fail the build: some are head-office registration artefacts (BRES jobs
+    far above anyone arriving), others may be genuine lockdown effects in central
+    London. v1.1 separates the two with Census 2011 arrivals (SPEC §11b).
+    """
     fallback = con.execute(f"""SELECT sum(bres) / sum(modelled)
                                FROM hbw_{v}_dest_factor""").fetchone()[0]
     con.execute(f"""CREATE OR REPLACE TABLE hbw_{v}_ext_out_factor AS
-        SELECT b.d_msoa AS msoa,
-               CASE WHEN e.inflow > 0 AND e.jobs IS NOT NULL
-                    THEN e.jobs * (1 - {d}) / e.inflow ELSE {fallback} END AS factor,
-               CASE WHEN e.inflow > 0 AND e.jobs IS NOT NULL
-                    THEN 'national' ELSE 'in-extent fallback [MODELLED]' END AS basis
-        FROM (SELECT DISTINCT d_msoa FROM hbw_base WHERE external='external_out') b
-        LEFT JOIN ext_out_msoa e ON e.msoa=b.d_msoa""")
+        WITH r AS (
+            SELECT b.d_msoa AS msoa, e.jobs, e.inflow,
+                   CASE WHEN e.inflow > 0 AND e.jobs IS NOT NULL
+                        THEN e.jobs * (1 - {d}) / e.inflow END AS raw_factor
+            FROM (SELECT DISTINCT d_msoa FROM hbw_base WHERE external='external_out') b
+            LEFT JOIN ext_out_msoa e ON e.msoa=b.d_msoa)
+        SELECT msoa, jobs, inflow, raw_factor,
+               CASE WHEN raw_factor IS NOT NULL AND raw_factor <= {factor_check}
+                    THEN raw_factor ELSE {fallback} END AS factor,
+               CASE WHEN raw_factor IS NULL THEN 'fallback: no national factor [MODELLED]'
+                    WHEN raw_factor > {factor_check}
+                    THEN 'fallback: national factor above check [MODELLED]'
+                    ELSE 'national' END AS basis
+        FROM r""")
     r = con.execute(f"""
         SELECT median(factor) FILTER (WHERE basis='national'),
                quantile_cont(factor, 0.9) FILTER (WHERE basis='national'),
@@ -238,8 +253,18 @@ def _ext_out_for_variant(con, v: str, d: float) -> dict:
         FROM hbw_{v}_ext_out_factor f
         JOIN (SELECT d_msoa, sum(n) n FROM hbw_base WHERE external='external_out'
               GROUP BY 1) b ON b.d_msoa=f.msoa""").fetchone()
+    over = [dict(zip(("msoa", "name", "bres_jobs", "census_arrivals", "raw_factor",
+                      "base_commuters"), row))
+            for row in con.execute(f"""
+                SELECT f.msoa, n.MSOA21NM, f.jobs, f.inflow, f.raw_factor, b.n
+                FROM hbw_{v}_ext_out_factor f
+                JOIN (SELECT d_msoa, sum(n) n FROM hbw_base WHERE external='external_out'
+                      GROUP BY 1) b ON b.d_msoa=f.msoa
+                LEFT JOIN (SELECT DISTINCT MSOA21CD, MSOA21NM FROM up.oa_lu_all) n
+                  ON n.MSOA21CD=f.msoa
+                WHERE f.raw_factor > {factor_check} ORDER BY f.raw_factor DESC""").fetchall()]
     return {"median": r[0], "p90": r[1], "max": r[2], "fallback_factor": fallback,
-            "fallback_commuters": r[3] or 0.0}
+            "fallback_commuters": r[3] or 0.0, "above_check": over}
 
 
 # --- destinations and segments --------------------------------------------------------
@@ -569,7 +594,7 @@ def run(cfg: LabConfig, con: duckdb.DuckDBPyConnection | None = None) -> Build:
                 f"d={d:.3f} ({v}): destination factor above {factor_check} in "
                 + ", ".join(f"{m} x{f:.1f}" for m, f in over)
                 + " — not clipped; look at these zones")
-        eo = _ext_out_for_variant(con, v, d)
+        eo = _ext_out_for_variant(con, v, d, factor_check)
         summaries[v] = {**s, "d": d, "ext_out": eo}
         split_destinations(con, v)
     ca = build_ca_shares(con, raw / "census2021" / "ODWP14EW_MSOA.csv",

@@ -88,6 +88,20 @@ def test_no_destination_factor_above_check(built, cfg):
         assert b.summaries[v]["max_raw_factor"] <= check
 
 
+def test_external_factors_above_check_fall_back(built, cfg):
+    b, con = built
+    check = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}[
+        "commute.destination_factor_check"]
+    for v in commute.VARIANTS:
+        assert one(con, f"SELECT max(factor) FROM hbw_{v}_ext_out_factor") <= check
+        listed = {z["msoa"] for z in b.summaries[v]["ext_out"]["above_check"]}
+        flagged = {r[0] for r in con.execute(
+            f"SELECT msoa FROM hbw_{v}_ext_out_factor WHERE raw_factor > {check}").fetchall()}
+        assert listed == flagged
+        assert all(z["bres_jobs"] and z["census_arrivals"] for z in
+                   b.summaries[v]["ext_out"]["above_check"])
+
+
 def test_demand_versions_and_segments(built):
     _, con = built
     rows = con.execute("""SELECT demand_version, count(DISTINCT segment), min(trips)

@@ -544,7 +544,7 @@ in-extent overall factor for that d, [MODELLED].
 
 **External_out now varies with d:** 40,776 / 32,962 / 28,280 trips.
 
-**Shown for review, not failed:** some external workplaces have national factors above
+**Shown for review, not failed (superseded by the decision below — these now fall back):** some external workplaces have national factors above
 4.0. At central d that's 3 MSOAs, 8 base commuters and 102 trips:
 - Dacorum 017, ×31 (60,650 BRES jobs against 892 census arrivals, which looks like
   head-office registration, drawback 4);
@@ -552,6 +552,35 @@ in-extent overall factor for that d, [MODELLED].
 
 At low d it's 15 MSOAs (160 base commuters, 814 trips), mostly central London. The
 in-extent check does not cover them.
+
+#### External factors above the check (user decision, 2026-09-27)
+
+External workplace MSOAs whose national factor exceeds the 4.0 check are neither capped
+nor failed. They fall back to the in-extent overall factor for that d [MODELLED], and
+each is listed in the run log (`result.summaries.<variant>.ext_out.above_check`) with
+its BRES jobs, census arrivals and raw factor.
+
+**Why not a cap or a failure:**
+- **Dacorum 017 (×31 at central d) is almost certainly head-office registration.**
+  BRES records 60,650 jobs against 892 census arrivals. Nobody should be scaled up to
+  match that.
+- **The central London zones above 4.0 at low d may be genuine lockdown effects.**
+  These include City of London 001 (675,600 BRES against 85,057 arrivals), Camden 028
+  and Islington 022/023. London offices were hit hardest in March 2021.
+- **A blanket cap would undercount London-bound rail commuters.** The fallback is a
+  holding position. SPEC §11b (v1.1) replaces it with a test against Census 2011
+  arrivals: high against 2011 means an artefact, high only against 2021 means a
+  lockdown effect.
+
+**Zones falling back:**
+- central and high d: Dacorum 017, Trafford 024, Hackney 026;
+- low d: those three plus 12 more, mostly central London (City of London 001, Camden
+  028, Islington 022/023, Southwark 035, Tower Hamlets 015, Hackney 033, Waltham
+  Forest 007), and Test Valley 017, West Suffolk 016, Bracknell Forest 013 and
+  Birmingham 064.
+
+**External_out trips:** 40,125 / 32,867 / 28,198 (low / central / high), from 40,776 /
+32,962 / 28,280. Internal and external_in are unchanged.
 
 #### Car-availability fallback
 
@@ -572,9 +601,9 @@ Daily HBW trips:
 
 | version | internal | external_in | external_out |
 |---|---|---|---|
-| p1-low (d 0.429) | 342,373 | 62,872 | 40,776 |
-| p1-central (d 0.539) | 276,762 | 50,824 | 32,962 |
-| p1-high (d 0.604) | 237,448 | 43,604 | 28,280 |
+| p1-low (d 0.429) | 342,373 | 62,872 | 40,125 |
+| p1-central (d 0.539) | 276,762 | 50,824 | 32,867 |
+| p1-high (d 0.604) | 237,448 | 43,604 | 28,198 |
 
 Origins: internal at LSOA, external_in at MSOA. Destinations: internal LSOA;
 external_out at MSOA (or country). Distance for externals is now to the nearest
@@ -586,4 +615,4 @@ nearest-in-map-OA-centroid definition.
 | phase | status |
 |---|---|
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
-| P1 | round 2 built 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); awaiting review before P2 |
+| P1 | approved 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); external-factor fallback added after approval |

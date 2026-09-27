@@ -340,7 +340,10 @@ data artefact to fix, not to clip.
 **External_out on the same basis.** Each external workplace MSOA gets a national
 factor: BRES × (1 − d) ÷ census fixed-workplace inflow from all England and Wales
 origins, applied to the base flow. Where none can be computed (Scotland, Northern
-Ireland), the in-extent overall factor for that d [MODELLED].
+Ireland), or where it exceeds `commute.destination_factor_check`, the in-extent overall
+factor for that d [MODELLED]. External zones above the check are not capped and do not
+fail the build; each is listed in the run log with its BRES jobs, census arrivals and
+raw factor. v1.1 replaces this fallback (§11b).
 
 **Order.** `correct()` (no-fixed-place redistribution → BRES discount → rescale →
 factor check) first, then the CA/NCA split. Assumption: redistributed no-fixed-place
@@ -706,6 +709,13 @@ Parkway and the other stations, which load the internal network like any other t
   choice.
 - **Validation.** DfT road traffic count points on gateway roads are a sanity check
   only (they count vehicles, not commuters).
+- **External factors: artefact or lockdown.** In v1, an external workplace whose
+  national factor (BRES × (1 − d) ÷ 2021 census arrivals) exceeds the factor check falls
+  back to the in-extent factor. v1.1 replaces that fallback with a test against Census
+  2011 WU arrivals. A zone with a high BRES ÷ 2011-arrivals ratio is a head-office
+  registration artefact (fall back). A zone that is high only against 2021 is a
+  lockdown effect (keep its national factor). London offices were hit hardest in
+  March 2021, so a blanket fallback undercounts London-bound rail commuters.
 
 ---
 
@@ -826,5 +836,9 @@ addresses.
   travel-only / 41% hybrid, elementary 78% / 1%, Apr–Jun 2026), so a route exists via
   a workplace occupation mix (Census 2021 workplace-population tables) if one proves
   robust. Addresses 1.
+- **FUTURE — `d` by approximated social grade.** ODWP09EW gives OD flows by
+  approximated social grade, which tracks occupation. Map ONS occupation-level hybrid
+  rates onto social grade to vary `d` per flow rather than per destination.
+  Addresses 1.
 - **FUTURE — Generalisation.** Parameterise by `CityConfig` alongside the
   `ons_to_subwaybuilder` package so the lab runs for any English or Welsh city.

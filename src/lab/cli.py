@@ -124,6 +124,10 @@ def demand_commute() -> None:
         click.echo(f"  {v:<8} d={s['d']:.3f}  median factor {s['median_raw_factor']:.3f}  "
                    f"max {s['max_raw_factor']:.2f}  external_out median factor "
                    f"{s['ext_out']['median']:.3f}")
+        for z in s["ext_out"]["above_check"]:
+            click.echo(f"           external {z['msoa']} {z['name']}: BRES {z['bres_jobs']:,}, "
+                       f"census arrivals {z['census_arrivals']:,}, raw factor "
+                       f"x{z['raw_factor']:.2f} -> in-extent fallback [MODELLED]")
     click.echo(f"wrote {path}")
 
 
