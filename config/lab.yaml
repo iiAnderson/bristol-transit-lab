@@ -48,8 +48,13 @@ authorities:
   Monmouthshire: W06000021
   Wiltshire: E06000054
 
-# B1: Metrobus route IDs, set from the modelled-date bus GTFS in A4.
-metrobus_route_ids: []
+# B1: Metrobus (from the modelled-date bus GTFS, 2026-09-27). Its vehicles are excluded
+# from bus-speed data entirely: they run largely on segregated busway and bus lanes.
+metrobus:
+  operator: FBRI
+  lines: [m1, m2, m3, m3x, m4]
+  route_ids: ["south_west:3144", "south_west:3145", "south_west:18502",
+              "south_west:30244", "south_west:69980"]
 
 paths:
   lab_db: data/interim/lab.duckdb

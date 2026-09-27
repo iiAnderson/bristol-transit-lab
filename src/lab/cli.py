@@ -614,6 +614,60 @@ def congestion_srn(max_match_m: float) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@congestion.command("avl")
+@click.option("--day", "days", multiple=True, required=True, help="YYYY-MM-DD; repeatable.")
+@click.option("--source", type=click.Choice(["archive", "live"]), default="archive",
+              show_default=True)
+def congestion_avl(days: tuple[str, ...], source: str) -> None:
+    """B2: map-match one or more closed AVL days; write per-day segment traversals."""
+    import io
+    import zipfile
+    import duckdb
+    import yaml
+    from .congestion import avl_speeds as av
+    from .supply import feeds, osrm
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    p = {k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("congestion.")}
+    periods = {k: tuple(ps[f"periods.{k}"].split("-")) for k in ("AM", "IP", "PM")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    busways = d / "busway_points.parquet"
+    if not busways.is_file():
+        av.busway_points(cfg.root / raw["osm"]["clip"], busways)
+    stops = d / "bus_stops.parquet"
+    with zipfile.ZipFile(cfg.root / raw["bus"]["out"]) as z:
+        (d / "_stops.txt").write_bytes(z.read("stops.txt"))
+    duckdb.connect().execute(f"""COPY (SELECT stop_lon::DOUBLE lon, stop_lat::DOUBLE lat
+        FROM read_csv('{d / '_stops.txt'}', all_varchar=true)) TO '{stops}' (FORMAT parquet)""")
+    (d / "_stops.txt").unlink()
+    avl_dir = cfg.root / raw["paths"]["avl"] / source
+    stem = "sirivm" if source == "archive" else "sirivm_live"
+    base = cfg.root / raw["osm"]["osrm_base"]
+    osrm.customize(base)                                  # free-flow speeds for matching
+    rec = runrecord.build(cfg, command="congestion-avl", inputs=[
+        {"name": str(avl_dir / f"{stem}_{x}.parquet"),
+         "sha256": params.file_hash(avl_dir / f"{stem}_{x}.parquet")} for x in days]
+        + [{"name": "bus_gtfs", "sha256": feeds.get(cfg, "bus_gtfs")["sha256"]},
+           {"name": "osrm", "version": osrm.version()}])
+    runrecord.write(cfg, rec)
+    res = {}
+    try:
+        with osrm.Server(base) as srv:
+            for x in days:
+                res[x] = av.process_day(avl_dir / f"{stem}_{x}.parquet", srv.port, stops,
+                                        busways, raw["metrobus"], p, periods,
+                                        raw["avl"]["timezone"],
+                                        d / "avl" / f"traversals_{source}_{x}.parquet")
+                click.echo(f"  {x}: {res[x]}")
+    except Exception:
+        rec["result"] = res
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @congestion.command("webtris")
 def congestion_webtris() -> None:
     """Fetch 15-minute WebTRIS data for every active site in the clip box (resumable)."""

@@ -144,20 +144,58 @@ supply:
 # notes give the starting values to test.
 congestion:
   stop_buffer_m:
-    value: null
+    value: 30
     unit: m from a GTFS stop
     tag: PLACEHOLDER
-    note: bus positions this close to a stop are dropped before computing moving speeds; start at 30
+    note: a leg with either end this close to a stop is dropped (dwell); starting value, tuned in P2b
   min_moving_kmh:
-    value: null
+    value: 5
     unit: km/h
     tag: PLACEHOLDER
-    note: positions slower than this are treated as dwelling, not moving; start at 5
+    note: legs slower than this are treated as dwelling, not moving; starting value
   min_obs_per_link:
-    value: null
-    unit: traversals per way × direction × period
+    value: 10
+    unit: traversals per segment × direction × period
     tag: PLACEHOLDER
-    note: a link's bus speed is used only with at least this many neutral-day traversals; start at 10
+    note: a segment's bus speed is used only with at least this many neutral-day traversals; starting value
+  match_radius_m:
+    value: 25
+    unit: m (OSRM match radius per position)
+    tag: MODELLED
+    reasoning: >-
+      GPS error of bus AVL is typically 5–15 m; 25 m tolerates it without letting
+      positions jump to parallel streets.
+  trace_gap_s:
+    value: 120
+    unit: s
+    tag: MODELLED
+    reasoning: >-
+      A vehicle trace is split where consecutive fixes are further apart than this;
+      fixes are ~31 s apart at the median (8 Sep), p90 60 s.
+  max_leg_s:
+    value: 90
+    unit: s between consecutive fixes in a leg
+    tag: MODELLED
+    reasoning: Longer legs average over stops and turns; p90 of fix spacing is 60 s.
+  max_kmh:
+    value: 130
+    unit: km/h
+    tag: MODELLED
+    reasoning: Implausible leg speeds (matching errors) are dropped.
+  match_min_confidence:
+    value: 0.3
+    unit: OSRM matching confidence (0–1)
+    tag: MODELLED
+    reasoning: >-
+      Low-confidence matchings (often buses on bus-only links the car profile lacks) are
+      dropped; the drop rate is reported by area type.
+  busway_buffer_m:
+    value: 25
+    unit: m
+    tag: MODELLED
+    reasoning: >-
+      Positions this close to a busway or bus-only link are dropped (B1): the car-profile
+      matcher would snap them onto nearby general roads.
   spacing_bias_threshold:
     value: 0.05
     unit: share, |30 s speed ÷ 10 s speed − 1|
