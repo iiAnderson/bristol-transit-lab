@@ -85,3 +85,17 @@ rail:
     HENBURY: not open; Darwin reference only
     PILL: not open; Darwin reference only
     PRTSHD: Portishead, not open; Darwin reference only
+
+# OSM (plans/P2.md A3): upstream's five Geofabrik extracts (Geofabrik has no
+# south-west-england extract; see upstream sources.md). `-latest` URLs are resolved to
+# the dated file, which is what gets recorded.
+osm:
+  extracts:
+    - https://download.geofabrik.de/europe/united-kingdom/england/bristol-latest.osm.pbf
+    - https://download.geofabrik.de/europe/united-kingdom/england/somerset-latest.osm.pbf
+    - https://download.geofabrik.de/europe/united-kingdom/england/gloucestershire-latest.osm.pbf
+    - https://download.geofabrik.de/europe/united-kingdom/england/wiltshire-latest.osm.pbf
+    - https://download.geofabrik.de/europe/united-kingdom/wales-latest.osm.pbf
+  raw_dir: data/raw/osm
+  merged: data/interim/osm/merged.osm.pbf
+  clip: data/interim/osm/b2026_clip.osm.pbf

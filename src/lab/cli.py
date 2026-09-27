@@ -243,6 +243,52 @@ def supply_rail() -> None:
     click.echo(f"wrote {path}")
 
 
+@supply.command("osm")
+def supply_osm() -> None:
+    """Download, verify, merge and clip the OSM extracts; register them as feeds."""
+    import datetime as dt
+    import os
+    import yaml
+    from .supply import avl as a, feeds, osm
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    oc = raw["osm"]
+    ua = a.user_agent(cfg, _env_secret("LAB_CONTACT_EMAIL"))
+    rec = runrecord.build(cfg, command="supply-osm")
+    runrecord.write(cfg, rec)
+    try:
+        got = []
+        for u in oc["extracts"]:
+            url = osm.resolve(u, ua)
+            d = osm.download(url, cfg.root / oc["raw_dir"] / url.rsplit("/", 1)[1], ua)
+            got.append(d)
+            click.echo(f"  {d['path'].name}: md5 ok, data to {d['replication_timestamp']}")
+        clip = cfg.root / oc["clip"]
+        stats = osm.merge_and_clip([d["path"] for d in got], a.clip_box(cfg),
+                                   cfg.root / oc["merged"], clip)
+        now = dt.datetime.now(dt.timezone.utc)
+        for d in got:
+            feeds.register(cfg, feed_id=f"osm_{d['path'].name.split('-')[0]}", kind="osm",
+                           source_url=d["url"], path=d["path"], downloaded_at=now,
+                           licence="ODbL 1.0 (© OpenStreetMap contributors)",
+                           notes=f"md5 {d['md5']}; replication {d['replication_timestamp']}")
+        dates = sorted({d["replication_timestamp"] for d in got})
+        feeds.register(cfg, feed_id="osm_clip", kind="osm", source_url="merged + clipped "
+                       "by `lab supply osm`", path=clip, downloaded_at=now,
+                       licence="ODbL 1.0 (© OpenStreetMap contributors)",
+                       notes=f"{stats}; OSM data dates {dates}; modelled date "
+                             f"{raw['modelled_date']}; {osm.osmium_version()}")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["inputs"] = [{"name": d["url"], "md5": d["md5"],
+                      "version": d["replication_timestamp"]} for d in got]
+    rec["result"] = {**stats, "osm_dates": dates, "modelled_date": str(raw["modelled_date"]),
+                     "osmium": osm.osmium_version()}
+    click.echo(f"  clip: {stats['nodes']:,} nodes, {stats['ways']:,} ways; OSM dates {dates}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @avl.command("archive")
 @click.option("--clear-halt", is_flag=True,
               help="Resume after a circuit-breaker halt (a human decision).")
