@@ -10,9 +10,10 @@ def test_help_works():
     r = CliRunner().invoke(cli, ["--help"])
     assert r.exit_code == 0
     for cmd in ["build-baseline", "scenario", "run", "compare", "calibrate",
-                "export-game", "import-game", "params"]:
+                "export-viz", "view", "embed", "params"]:
         assert cmd in r.output
     assert "sketch-planning" in r.output
+    assert "game" not in r.output          # the bridge is SPEC §12 FUTURE
 
 
 def test_unbuilt_commands_fail_loudly():

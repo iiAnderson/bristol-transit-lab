@@ -7,8 +7,9 @@
     lab run --noop                          # P0: writes a run record and nothing else
     lab compare S015-a4-brt B2028
     lab calibrate
-    lab export-game S015-a4-brt
-    lab import-game <game_export.json>
+    lab export-viz <run_id> [--compare <run_id>]
+    lab view
+    lab embed <component> <run_id> [--compare <run_id>] --out viz/embeds/<slug>
     lab params                              # list parameters and placeholders
 
 Commands not yet built fail with a non-zero exit naming the phase that builds them.
@@ -94,18 +95,30 @@ def calibrate() -> None:
     _not_yet("P5")
 
 
-@cli.command("export-game")
-@click.argument("scenario_id")
-def export_game(scenario_id: str) -> None:
-    """Export a scenario for the Subway Builder mod."""
-    _not_yet("P7")
+@cli.command("export-viz")
+@click.argument("run_id")
+@click.option("--compare", "compare_id", default=None, help="Run to compare against.")
+def export_viz(run_id: str, compare_id: str | None) -> None:
+    """Write tiles and JSON for the viewer and blog components."""
+    _not_yet("P7a")
 
 
-@cli.command("import-game")
-@click.argument("game_export", type=click.Path(exists=True))
-def import_game(game_export: str) -> None:
-    """Import a Subway Builder game state as a scenario."""
-    _not_yet("P7")
+@cli.command()
+def view() -> None:
+    """Serve the viewer locally."""
+    _not_yet("P7a")
+
+
+@cli.command()
+@click.argument("component", type=click.Choice(
+    ["swipe-choropleth", "gap-map", "line-loads", "scorecard-bars"]))
+@click.argument("run_id")
+@click.option("--compare", "compare_id", default=None, help="Run to compare against.")
+@click.option("--out", "out_dir", required=True, type=click.Path(),
+              help="viz/embeds/<slug>")
+def embed(component: str, run_id: str, compare_id: str | None, out_dir: str) -> None:
+    """Build a self-contained blog embed from a recorded run."""
+    _not_yet("P7a (gap-map) / P7b (the rest)")
 
 
 @cli.command("params")
