@@ -69,10 +69,13 @@ driver, car passenger.
 restraint, land-use feedback, **external commuters** (built in P1, excluded from v1
 behaviour and metrics — see §6.1 and §11b). See §12 for the future list.
 
-**Base years:** `B2026` (current network) and `B2028` (current + committed schemes:
-Portishead line with Portishead and Pill stations at an hourly service to Temple
-Meads; confirm the Henbury-line stations' status at build time). All scenarios compare
-against `B2028` by default.
+**Base years:** `B2026` (current network, built in P2) and `B2028` (built in P3 from
+`B2026` by scenario ops: + the Portishead line with Portishead and Pill stations at an
+hourly service to Temple Meads). All scenarios compare against `B2028` by default.
+*Amended at P2a (2026-09-27):* the Henbury-line stations (Henbury, North Filton) are
+not open — Darwin on 28 Sep 2026 has Henbury with no services and North Filton not in
+the reference data — so they are in neither base year. `B2028` moves to P3 because it
+is an `add_line` job for P3's generator.
 
 ---
 
@@ -110,7 +113,10 @@ against `B2028` by default.
   is pinned inside the conda env (conda-forge `openjdk=21`), not taken from Homebrew
   as upstream's `env.sh` does; see `sources.md` P0.
 - `AequilibraE` for PT assignment in Phase 6 (optional — see §7.5)
-- `UK2GTFS` (R) for rail CIF → GTFS, run once per timetable and cached
+- Rail GTFS from the lab's own Darwin Push Port timetable → GTFS converter
+  (`src/lab/supply/gtfs_rail.py`), run once per timetable snapshot and cached. *Amended
+  at P2a:* the timetable arrives as Darwin XML, not CIF, so UK2GTFS and the R toolchain
+  are not used.
 
 ### Repo layout
 
@@ -187,10 +193,20 @@ Confirm every URL at build time (rule 3). All OGL v3 unless stated.
 | ONS OPN working-arrangement tables | travel / hybrid / home shares | floor on the BRES discount; occupation and region breakdowns |
 | ONS LSOA 2021 population-weighted centroids | internal / external zone rule | ArcGIS `LSOA_PopCentroids_EW_2021_V4` |
 | Census 2021 ODWP01EW (OA and MSOA, national) | base flows; external_out inflow | upstream's raw download, read-only |
-| BODS timetables (GTFS, England) | bus network | watch for superseded duplicate services |
-| National Rail timetable (CIF) via UK2GTFS | rail network | |
+| BODS timetables (GTFS, regional) | bus network | watch for superseded duplicate services. The modelled-date feed comes from the National Data Library BODS archive (daily regional GTFS; Open Innovations) |
+| Darwin Push Port timetable (`_v8`) and reference (`_ref`) files | rail network (replaces CIF via UK2GTFS) | one snapshot covers ~48 h, so it must be the snapshot generated on the modelled date; National Rail open-data terms (not OGL) — confirm wording before use |
+| NaPTAN | rail station coordinates (TIPLOC/CRS → point) | |
+| TNDS (Welsh buses) | — | **not pursued in v1**; see §11 item 18 and plans/P2.md D8 |
 | Darwin Push Port (own dataset, Athena) | observed rail punctuality/cancellations | v1: validation only; see §12 |
-| BODS vehicle location (SIRI-VM / GTFS-RT) | observed bus speeds → car congestion factors | sample a representative week |
+| BODS vehicle location (SIRI-VM) | observed bus speeds → shape of car congestion factors | *Amended at P2a:* nine neutral September days from the National Data Library archive (30 s snapshots) for calibration, plus three days of live 10 s polling to measure the spacing bias |
+| DfT travel time measures, local A roads (by local highway authority) | calibration target for local A-road speeds | England only; grain (period, urban/rural) confirmed in P2a A7 |
+| National Highways WebTRIS | SRN speeds by site, direction and 15 min | England only |
+| DfT AADF by link and direction | flow-weighting modelled speeds like-for-like with DfT | |
+| ONS 2021 rural–urban classification | area types (D4) | confirm Wales coverage |
+| Open Data Bristol "Historic journey times" | validation (relative pattern only if pre-2020) | existence and licence to confirm |
+| Bristol City Council ATC speeds | validation (optional, re-run when received) | requested, not received |
+| MobilityData GTFS validator | feed checks | Java jar |
+| Google Maps Platform | — | **excluded from all inputs:** its terms prohibit caching and creating content from results |
 | OSM (Geofabrik — the same five extracts as upstream) | walk, cycle, car networks | |
 | DfT Transport Connectivity Metric (OA/LSOA ODS) | baseline accessibility validation | experimental; not reproducible exactly |
 | ORR Estimates of station usage | station entries/exits validation | |
@@ -395,11 +411,16 @@ home-based purposes is an acceptable v1 simplification — say so in reports.
 ### 7.1 Skims
 
 - `r5py.TravelTimeMatrix` per scenario × mode × period, with a departure time window
-  (default 60 min) and percentiles (25, 50, 75). Use the expanded/detailed output to get
-  walk, wait, in-vehicle and transfer components for PT.
-- Car: free-flow R5 times × `congestion_factor[period][road_class]`, calibrated against
-  BODS vehicle-location speeds on shared links [CALIBRATED]. Parking time/cost by
-  destination zone type [MODELLED].
+  (default 60 min) and percentiles (25, 50, 75). *Amended at P2a:* r5py 1.1.7's matrix
+  returns total times only — there is no expanded output with walk, wait, in-vehicle and
+  transfer components. Components come from a `DetailedItineraries` sample instead
+  (plans/P2.md D7); the approved method is copied here at the P2a stop.
+- Car: *amended at P2a* — link time = free-flow time ×
+  `factor[period][direction][road_class][area_type]`, fitted to absolute speeds (DfT
+  local-A-road measures by authority, WebTRIS on the SRN) with bus moving speeds
+  shaping the pattern within each authority, and validated on held-out data
+  (plans/P2.md §5; copied here when P2b is approved). Parking search and access walk by
+  destination area type [PLACEHOLDER until sourced].
 - Check GTFS `calendar.txt` covers the chosen modelled date; fail otherwise.
 
 ### 7.2 Generalised cost (in minutes)
@@ -568,15 +589,19 @@ the 30 km cut and clamping, so a rebuild from raw flows should not match it):
   destination factor exceeds the check.
 
 **P2 — Baseline supply and skims.** OSM networks; BODS GTFS clipped and de-duplicated;
-rail GTFS; `B2026` and `B2028`; AM and IP skims; baseline accessibility.
-*Acceptance:* journey-time spot checks pass; accessibility vs DfT metric ρ ≥ 0.8.
+rail GTFS from Darwin; `B2026`; calibrated car congestion; AM and IP skims; baseline
+accessibility; draft gap map. Working plan: `plans/P2.md` (stops after P2a, P2b, P2c).
+*Acceptance:* journey-time spot checks pass (car and PT, ≥ 16 of 20 within ±15%);
+accessibility vs DfT metric ρ ≥ 0.8; congestion calibration within the plan's
+tolerances. *Amended at P2a:* `B2028` moves to P3.
 *First publishable output:* the **gap map** — large commute flows where PT GC ÷ car GC
 is highest. This needs no behavioural model.
 
 **P3 — Scenario engine and costs.** YAML schema + validator, GTFS generator, patching,
 `costs.yaml`, connectivity and cost metrics, `lab compare`.
 *Acceptance:* a test scenario (e.g. one frequency change) round-trips; a new-line
-scenario produces sensible run times, fleet size and capex.
+scenario produces sensible run times, fleet size and capex; `B2028` is built from
+`B2026` via scenario ops (moved from P2 at P2a).
 
 **P4 — Demand expansion.** Gravity models for non-commute purposes; time periods.
 *Acceptance:* trip-length calibration within tolerance; purpose totals match NTS rates
@@ -777,6 +802,18 @@ matter for the scenario being reported.
 17. **Maps imply more precision than the model has.** Demand-derived layers are shown
     no finer than LSOA; accessibility at OA; line loads rounded to a sensible precision.
     Every visual carries the fidelity disclaimer or links to it.
+
+**Supply (added at P2a)**
+
+18. **No Welsh bus timetables** (TNDS not pursued): Newport-area zones are masked from
+    PT accessibility, the DfT comparison and the gap map, shown as "no bus data", not as
+    low access. *Under review:* the BODS archive has a Wales region and Newport Bus
+    appears in BODS vehicle locations; if A4 finds its coverage adequate, the mask is
+    proposed for removal (plans/P2.md D8).
+19. **No car-speed calibration targets in Wales.** DfT local-road measures and WebTRIS
+    cover England only, so factors for the same road class, area type and direction are
+    transferred from the English side, `[MODELLED]`. Newport Bus positions are in BODS
+    and can check the pattern, but give no absolute target.
 
 ---
 

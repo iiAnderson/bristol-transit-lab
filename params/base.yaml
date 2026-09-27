@@ -127,3 +127,47 @@ supply:
       Feeds (OSM, bus GTFS, vehicle locations) are clipped to the extent plus this
       margin so that routes and bus tracks near the edge are not truncated. 5 km is
       about one inter-urban bus stage; the plan's default (plans/P2.md A3).
+
+# P2 car congestion (plans/P2.md §5). Set in P2b from the vehicle-location data; the
+# notes give the starting values to test.
+congestion:
+  stop_buffer_m:
+    value: null
+    unit: m from a GTFS stop
+    tag: PLACEHOLDER
+    note: bus positions this close to a stop are dropped before computing moving speeds; start at 30
+  min_moving_kmh:
+    value: null
+    unit: km/h
+    tag: PLACEHOLDER
+    note: positions slower than this are treated as dwelling, not moving; start at 5
+  min_obs_per_link:
+    value: null
+    unit: traversals per way × direction × period
+    tag: PLACEHOLDER
+    note: a link's bus speed is used only with at least this many neutral-day traversals; start at 10
+  spacing_bias_threshold:
+    value: 0.05
+    unit: share, |30 s speed ÷ 10 s speed − 1|
+    tag: MODELLED
+    reasoning: >-
+      Robbie, 2026-09-27: if the bias from 30 s spacing exceeds this in any road class ×
+      area type cell, the measured correction is applied to archive speeds.
+
+# P2 area types (plans/P2.md D4). Centre = urban LSOAs above this job density.
+area_type:
+  centre_job_density:
+    value: null
+    unit: BRES jobs per km²
+    tag: PLACEHOLDER
+    note: chosen in P2a so that it produces a few contiguous centres; plotted for review
+
+car:
+  parking_search_min:
+    centre: {value: null, unit: min, tag: PLACEHOLDER, note: by destination area type}
+    urban: {value: null, unit: min, tag: PLACEHOLDER, note: by destination area type}
+    rural: {value: null, unit: min, tag: PLACEHOLDER, note: by destination area type}
+  access_walk_min:
+    centre: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
+    urban: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
+    rural: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
