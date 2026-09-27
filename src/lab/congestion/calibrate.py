@@ -148,6 +148,10 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
     """Returns (link_speed long table, report)."""
     periods = fit.PERIODS
     seg = seg.copy()
+    seg["aadf_2way"] = pd.to_numeric(seg["aadf_2way"], errors="coerce").astype(float)
+    cov = cov.copy()
+    for c in ("km_total", "km_inside"):
+        cov[c] = pd.to_numeric(cov[c], errors="coerce").astype(float)
     seg["ff"] = free_flow(seg, ff_p)
     rep: dict = {"segments": len(seg)}
 

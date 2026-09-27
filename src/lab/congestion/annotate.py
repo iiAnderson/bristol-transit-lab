@@ -74,7 +74,7 @@ def annotate(con, segments: Path, lad_geojson: Path, lsoa_geojson: Path, ruc_csv
     con.execute(f"""CREATE OR REPLACE TEMP TABLE _cp AS
         SELECT count_point_id cp_id, local_authority_code lad, road_name road_ref,
                any_value(road_category) cp_category, any_value(longitude) lon,
-               any_value(latitude) lat, sum(all_motor_vehicles) aadf_2way
+               any_value(latitude) lat, sum(all_motor_vehicles)::DOUBLE aadf_2way
         FROM read_parquet('{aadf_parquet}') WHERE year = 2025 GROUP BY 1, 2, 3""")
     con.execute(f"""CREATE OR REPLACE TEMP TABLE _segcp AS
         SELECT s.way_id, s.seq, s.forward,
