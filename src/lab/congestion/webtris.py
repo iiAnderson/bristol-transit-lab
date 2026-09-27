@@ -100,7 +100,7 @@ def process(con: duckdb.DuckDBPyConnection, webtris_dir: Path, sites: list[dict]
         WHERE r.site_id IN (SELECT site_id FROM wsite) AND r.avg_mph > 0 AND r.volume > 0""")
     # weekday peaks only on neutral days; OP on neutral days; WE on weekends
     con.execute("""CREATE OR REPLACE TEMP TABLE wspeed AS
-        SELECT site_id, period, count(DISTINCT date) days, sum(volume) volume,
+        SELECT site_id, period, count(DISTINCT date) n_days, sum(volume) volume,
                sum(volume) / sum(volume / kmh) kmh_hmean
         FROM wrow WHERE (period = 'WE') OR (day_type = 'neutral')
         GROUP BY ALL""")
@@ -141,5 +141,5 @@ def process(con: duckdb.DuckDBPyConnection, webtris_dir: Path, sites: list[dict]
                        "(SELECT site_id FROM wmatch) ORDER BY 1")[:40],
         "days": q("SELECT day_type, count(*) FROM dtype GROUP BY 1 ORDER BY 1"),
         "speed_by_period_median": q("""SELECT period, count(*), round(median(kmh_hmean), 1),
-            round(median(days)) FROM wspeed GROUP BY 1 ORDER BY 1"""),
+            round(median(n_days)) FROM wspeed GROUP BY 1 ORDER BY 1"""),
     }
