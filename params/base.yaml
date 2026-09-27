@@ -277,3 +277,43 @@ routing:
     reasoning: >-
       Robbie, 2026-09-27 (D7): a pair is PT-unreachable if fewer than half the departure
       minutes have a route; this matches r5py's p50 (undefined below 50%).
+
+# Free-flow speed for car segments without a numeric OSM maxspeed (plans/P2.md §5).
+# The calibrated factor multiplies these; they are limits, not observed speeds.
+free_flow:
+  urban_england_kmh:
+    value: 48.28
+    unit: km/h (30 mph)
+    tag: SOURCED
+    source: >-
+      Road Traffic Regulation Act 1984 s.81(1): "It shall not be lawful for a person to
+      drive a motor vehicle on a restricted road at a speed exceeding 30 miles per hour."
+      https://www.legislation.gov.uk/ukpga/1984/27/section/81 (checked 2026-09-27).
+  urban_wales_kmh:
+    value: 32.19
+    unit: km/h (20 mph)
+    tag: SOURCED
+    source: >-
+      The Restricted Roads (20 mph Speed Limit) (Wales) Order 2022 (SI 2022/800 (W. 178)),
+      art. 2(1) reduces the s.81(1) rate to 20 mph; in force 17 September 2023 (art. 1(3)).
+      https://www.legislation.gov.uk/wsi/2022/800/made (checked 2026-09-27).
+  rural_minor_kmh:
+    value: 64.37
+    unit: km/h (40 mph)
+    tag: MODELLED
+    reasoning: >-
+      The national limit (60 mph) is rarely attainable on untagged rural minor roads;
+      40 mph is a starting value; the fitted factor absorbs the difference.
+  rural_main_kmh:
+    value: 96.56
+    unit: km/h (60 mph, national limit, single carriageway)
+    tag: MODELLED
+    reasoning: >-
+      The national speed limit for cars on single carriageways, used for untagged rural
+      main roads (few: 2–11% of rural main-road length is untagged). The legal
+      instrument has not been opened, so not tagged SOURCED.
+  service_kmh:
+    value: 24.14
+    unit: km/h (15 mph)
+    tag: MODELLED
+    reasoning: Service roads, living streets and car parks; slow by design.
