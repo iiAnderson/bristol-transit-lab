@@ -307,6 +307,50 @@ def supply_bus() -> None:
     click.echo(f"wrote {path}")
 
 
+@supply.command("smoke")
+@click.option("--itin-pairs", default=200, show_default=True)
+def supply_smoke(itin_pairs: int) -> None:
+    """A8: build the B2026 network, route 50 pairs, and project skim runtimes (D3, D7)."""
+    import datetime as dt
+    import duckdb
+    import yaml
+    from .supply import feeds, smoke
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    for fid in ("osm_clip", "bus_gtfs", "rail_gtfs"):
+        feeds.check_file_unchanged(feeds.get(cfg, fid))
+    for fid in ("bus_gtfs", "rail_gtfs"):
+        feeds.require_covers(feeds.get(cfg, fid), day)
+    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+        lsoa = con.execute("SELECT LSOA21CD id, lon, lat FROM int_lsoa ORDER BY 1").df()
+        oa_ids = con.execute("SELECT OA21CD FROM int_oa").df()
+    with duckdb.connect(str(cfg.upstream_db), read_only=True) as up:   # rule 10
+        pwc = up.execute("SELECT OA21CD id, lon, lat FROM pwc ORDER BY 1").df()
+    oa = pwc[pwc["id"].isin(set(oa_ids["OA21CD"]))].reset_index(drop=True)
+    if len(oa) != len(oa_ids):
+        raise click.ClickException(f"{len(oa_ids) - len(oa)} internal OAs have no PWC")
+    rec = runrecord.build(cfg, command="supply-smoke", inputs=[
+        {"name": fid, "sha256": feeds.get(cfg, fid)["sha256"]}
+        for fid in ("osm_clip", "bus_gtfs", "rail_gtfs")])
+    runrecord.write(cfg, rec)
+    try:
+        res = smoke.run(str(cfg.root / raw["osm"]["clip"]),
+                        [str(cfg.root / raw["bus"]["out"]), str(cfg.root / raw["rail"]["out"])],
+                        lsoa, oa, dt.datetime.combine(day, dt.time(8, 0)),
+                        itin_pairs=itin_pairs)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    path = runrecord.finish(cfg, rec, "ok")
+    for k, v in res.items():
+        if k != "pairs":
+            click.echo(f"  {k}: {v}")
+    click.echo(f"wrote {path}")
+
+
 @supply.command("osm")
 def supply_osm() -> None:
     """Download, verify, merge and clip the OSM extracts; register them as feeds."""
