@@ -7,3 +7,5 @@ export LAB_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]:-$0}" )" && pwd )"
 export CONDA_ENV="/opt/homebrew/Caskroom/miniforge/base/envs/transit-lab"
 export JAVA_HOME="$CONDA_ENV/lib/jvm"
 export PATH="$CONDA_ENV/bin:$JAVA_HOME/bin:$PATH"
+# Secrets (BODS_API_KEY) live outside the repo; loaded only if the file exists.
+[ -f "$HOME/.config/bristol-transit-lab/secrets.env" ] && . "$HOME/.config/bristol-transit-lab/secrets.env"
