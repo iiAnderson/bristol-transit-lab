@@ -610,9 +610,47 @@ external_out at MSOA (or country). Distance for externals is now to the nearest
 internal LSOA centroid. The reconciliation steps keep upstream's
 nearest-in-map-OA-centroid definition.
 
+## P2 — Baseline supply and skims
+
+Working plan and progress log: `plans/P2.md`.
+
+### Datasets
+
+| dataset | URL | accessed | licence | version / notes |
+|---|---|---|---|---|
+| BODS vehicle locations, archived (SIRI-VM) | https://data.datalibrary.uk/transport/BODS-ARCHIVE/sirivm/ | 2026-09-27 | OGL v3 (BODS data). Attribution: archive by Open Innovations for the National Data Library; data from the DfT Bus Open Data Service | National `siri.xml` every ~30 s (filenames UTC), archived since 18 Jun 2025; known outage 28 Jul–27 Aug 2026. Used: Tue–Thu 8–10, 15–17, 22–24 Sep 2026, 07:00–16:00 local; clipped to the extent + `supply.clip_buffer_km`; national files never stored. Per-snapshot SHA-256 in `data/raw/avl/archive/manifest.jsonl`, per-day file hashes in `days.jsonl`. Fetched at ≤ 1 request / 5 s under the policy in `config/lab.yaml` |
+| BODS regional timetables, archived (GTFS) | https://data.datalibrary.uk/transport/BODS-ARCHIVE/timetables/ | 2026-09-27 | OGL v3, attribution as above | Daily regional GTFS; `itm_south_west_gtfs_20260923.zip` (01:30 on 23 Sep) is the modelled-date bus feed (A4, not yet downloaded) |
+| BODS API, SIRI-VM datafeed | https://data.bus-data.dft.gov.uk/api/v1/datafeed/ | 2026-09-27 | OGL v3 (BODS terms) | Live, 10 s polling over the clip box, 29 Sep–1 Oct 2026 07:00–16:00, for the spacing-bias test only. Key registered 2026-09-27, held outside the repo. API docs are behind the BODS login |
+
+### School calendars (A6 day check, 2026-09-27)
+
+All nine archive days (8–10, 15–17, 22–24 Sep 2026) and the live days (29 Sep–1 Oct) are
+term time in all four councils; no bank holidays fall in September. Term 1 2026/27:
+
+| council | term 1 | source |
+|---|---|---|
+| Bristol | 3 Sep – 23 Oct 2026 | https://www.bristol.gov.uk/residents/schools-learning-and-early-years/school-term-and-holiday-dates |
+| South Gloucestershire | 1 Sep – 23 Oct 2026 | https://consultations.southglos.gov.uk/gf2.ti/f/1719074/238668389.1/PDF/-/School%20Term%20Holiday%20Dates%202026-27.pdf |
+| North Somerset | 3 Sep – 23 Oct 2026 | https://n-somerset.gov.uk/my-services/schools-learning/local-schools/school-term-dates/2026-27-term-dates |
+| Bath and North East Somerset | 2 Sep – 23 Oct 2026 | https://www.bathnes.gov.uk/school-term-dates |
+
+INSET days are set by each school (and academies set their own terms), so no council
+calendar can rule them out; a scattered INSET day is not a network-wide effect.
+
+### Findings
+
+- **SIRI-VM records are often stale.** In the 07:00 BST snapshot of 23 Sep, 102 of the
+  598 positions in the clip box were over an hour old; median age 22 s. Positions are
+  de-duplicated per vehicle and old ones flagged (`stale`, `age_s`), not dropped, at
+  fetch time; B2 applies the filter.
+- **Newport Bus (`NWPT`) appears in BODS vehicle locations** (15 vehicles in that
+  snapshot), although the plan assumed BODS covers England only. Relevant to D8; the
+  timetable side is measured in A4.
+
 ## Phase status
 
 | phase | status |
 |---|---|
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
 | P1 | approved 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); external-factor fallback added after approval |
+| P2 | P2a in progress: A0 done (`7525703`); A6 archive fetch running |

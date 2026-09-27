@@ -16,3 +16,39 @@ extent: [-3.02, 51.32, -2.28, 51.60]
 paths:
   lab_db: data/interim/lab.duckdb
   runs: runs
+  avl: data/raw/avl
+  progress_log: plans/P2.md            # halt records from the AVL fetcher go in its §9
+
+# Bus vehicle locations, BODS SIRI-VM (plans/P2.md A6, decided 2026-09-27).
+avl:
+  timezone: Europe/London              # hours below are local; archive filenames are UTC
+  # Contact comes from LAB_CONTACT_EMAIL (secrets file, not committed).
+  user_agent: "bristol-transit-lab/{version} (transport research; https://github.com/iiAnderson/bristol-transit-lab; contact: {contact})"
+  archive:
+    # National Data Library BODS archive (Open Innovations), OGL v3. One zip per ~30 s
+    # snapshot, holding the national siri.xml.
+    base_url: https://data.datalibrary.uk/transport/BODS-ARCHIVE/sirivm/
+    # Tue–Thu of the first three full term weeks; 1–3 Sep excluded (first week of term).
+    days: [2026-09-08, 2026-09-09, 2026-09-10, 2026-09-15, 2026-09-16, 2026-09-17,
+           2026-09-22, 2026-09-23, 2026-09-24]
+    hours: ["07:00", "16:00"]          # [start, end), local
+    # Fetch policy agreed with Robbie (courtesy to a small volunteer service).
+    policy:
+      min_interval_s: 5                # between request starts; one request at a time
+      max_interval_s: 20               # latency guard doubles 5 -> 10 -> 20
+      timeout_s: 60
+      backoff_start_s: 30
+      backoff_max_s: 900
+      breaker_consecutive: 5
+      breaker_window_s: 900
+      breaker_fail_share: 0.10
+      breaker_min_requests: 20         # the share rule needs this many requests in the window
+      latency_window: 50
+      latency_factor: 2.0
+  live:
+    # BODS API (DfT). Key from BODS_API_KEY; never written anywhere.
+    endpoint: https://data.bus-data.dft.gov.uk/api/v1/datafeed/
+    days: [2026-09-29, 2026-09-30, 2026-10-01]
+    hours: ["07:00", "16:00"]
+    poll_s: 10
+    flush_every_polls: 60

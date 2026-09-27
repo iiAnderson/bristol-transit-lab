@@ -148,6 +148,111 @@ def commute_inputs(cfg: LabConfig) -> list[dict]:
     return out
 
 
+@cli.group()
+def supply() -> None:
+    """P2 supply feeds."""
+
+
+@supply.group()
+def avl() -> None:
+    """Bus vehicle locations (BODS SIRI-VM): archive fetch, live collection, status."""
+
+
+def _env_secret(name: str) -> str:
+    import os
+    v = os.environ.get(name)
+    if not v:
+        raise click.ClickException(
+            f"{name} is not set; it lives in ~/.config/bristol-transit-lab/secrets.env, "
+            "which env.sh sources")
+    return v
+
+
+def _on_signal(obj) -> None:
+    import signal
+
+    def handler(signum, frame):
+        obj.stop = True
+    signal.signal(signal.SIGTERM, handler)
+    signal.signal(signal.SIGINT, handler)
+
+
+@avl.command("archive")
+@click.option("--clear-halt", is_flag=True,
+              help="Resume after a circuit-breaker halt (a human decision).")
+def avl_archive(clear_halt: bool) -> None:
+    """Fetch, clip and de-duplicate NDL archive snapshots (resumable; PAUSE file pauses)."""
+    from .supply import avl as a
+    cfg = LabConfig.load()
+    ac = a.avl_config(cfg)
+    get = a.requests_get(a.user_agent(cfg, _env_secret("LAB_CONTACT_EMAIL")),
+                         ac["archive"]["policy"]["timeout_s"])
+    f = a.ArchiveFetch(cfg, get)
+    _on_signal(f)
+    rec = runrecord.build(cfg, command="supply-avl-archive", inputs=[
+        {"name": "NDL BODS-ARCHIVE sirivm", "url": ac["archive"]["base_url"],
+         "version": [d.isoformat() for d in ac["archive"]["days"]]}])
+    runrecord.write(cfg, rec)
+    try:
+        status = f.run(clear_halt=clear_halt)
+    except a.Halted as e:
+        rec["result"] = {**f.counters(), "halt": str(e)}
+        runrecord.finish(cfg, rec, "halted")
+        raise click.ClickException(f"HALTED: {e}")
+    except Exception:
+        rec["result"] = f.counters()
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {**f.counters(), "status": a.archive_status(cfg)}
+    click.echo(f"archive fetch {status}; wrote {runrecord.finish(cfg, rec, status)}")
+
+
+@avl.command("live")
+def avl_live() -> None:
+    """Poll the BODS API through today's window, if today is a collection day."""
+    from .supply import avl as a
+    cfg = LabConfig.load()
+    ac = a.avl_config(cfg)
+    get = a.requests_get(a.user_agent(cfg, _env_secret("LAB_CONTACT_EMAIL")), 30)
+    c = a.LiveCollect(cfg, get, _env_secret("BODS_API_KEY"))
+    _on_signal(c)
+    rec = runrecord.build(cfg, command="supply-avl-live", inputs=[
+        {"name": "BODS SIRI-VM datafeed", "url": ac["live"]["endpoint"]}])
+    runrecord.write(cfg, rec)
+    try:
+        status = c.run()
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"status": status, "live": a.live_status(cfg)}
+    runrecord.finish(cfg, rec, "paused" if status == "stopped" else "ok")
+    click.echo(f"live collection: {status}")
+
+
+@avl.command("status")
+def avl_status() -> None:
+    """Per-day progress, requests, failures, backoff and gaps for both sources."""
+    from .supply import avl as a
+    cfg = LabConfig.load()
+    s = a.archive_status(cfg)
+    click.echo(f"archive: {s['state']}; {s['requests']} requests, {s['failed']} failed, "
+               f"{s['backoff_s']} s in backoff")
+    if s["halt"]:
+        click.echo(f"  HALT: {s['halt']}")
+    for d in s["days"]:
+        click.echo(f"  {d['day']}  listed {d['listed'] if d['listed'] is not None else '-':>5}"
+                   f"  done {d['done']:>5}  gaps {d['gap']:>3}  rows {d['rows']:>9,}"
+                   f"  {'closed ' + d['sha256'][:12] if d['closed'] else ''}")
+    for e in s["policy_events"]:
+        click.echo(f"  policy: {e}")
+    for d in a.live_status(cfg)["days"]:
+        click.echo(f"live {d['day']}: {d['ok_polls']} ok polls, {d['failed_polls']} failed, "
+                   f"{d['rows']:,} rows, {d['gap_minutes']} min of gaps"
+                   f"{'  closed ' + d['sha256'][:12] if d['closed'] else ''}")
+    if s["state"] == "halted":
+        sys.exit(2)
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")

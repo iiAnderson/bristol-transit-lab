@@ -23,7 +23,8 @@ from . import __version__, params, upstream
 from .config import LabConfig
 
 SCHEMA_VERSION = 1
-STATUSES = {"running", "ok", "failed"}
+# paused/halted: long-running fetches that stopped cleanly, or on a circuit breaker.
+STATUSES = {"running", "ok", "failed", "paused", "halted"}
 
 
 class RunRecordError(ValueError):

@@ -117,3 +117,13 @@ periods:
   AM: {value: "07:00-10:00", tag: MODELLED, reasoning: spec §6.3 period definition}
   IP: {value: "10:00-16:00", tag: MODELLED, reasoning: spec §6.3 period definition}
   PM: {value: "16:00-19:00", tag: MODELLED, reasoning: spec §6.3 period definition}
+
+supply:
+  clip_buffer_km:
+    value: 5
+    unit: km beyond the extent
+    tag: MODELLED
+    reasoning: >-
+      Feeds (OSM, bus GTFS, vehicle locations) are clipped to the extent plus this
+      margin so that routes and bus tracks near the edge are not truncated. 5 km is
+      about one inter-urban bus stage; the plan's default (plans/P2.md A3).
