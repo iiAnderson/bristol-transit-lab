@@ -572,7 +572,8 @@ def spike() -> None:
 
 @spike.command("d2")
 @click.option("--ways", default=20, show_default=True)
-def spike_d2(ways: int) -> None:
+@click.option("--synthetic", is_flag=True, help="One straight road; no alternatives.")
+def spike_d2(ways: int, synthetic: bool) -> None:
     """Does R5 honour per-direction maxspeed edits? (D2 option A)"""
     import datetime as dt
     import yaml
@@ -584,14 +585,18 @@ def spike_d2(ways: int) -> None:
     rec = runrecord.build(cfg, command="spike-d2")
     runrecord.write(cfg, rec)
     try:
-        res = d2.run(cfg.root / raw["osm"]["clip"], tuple(raw["spikes"]["d2_box"]),
-                     cfg.runs_dir / rec["run_id"] / "work",
-                     dt.datetime.combine(day, dt.time(8, 0)), n=ways)
+        dep = dt.datetime.combine(day, dt.time(8, 0))
+        work = cfg.runs_dir / rec["run_id"] / "work"
+        box = tuple(raw["spikes"]["d2_box"])
+        if synthetic:
+            res = d2.run_synthetic(work, dep, (box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+        else:
+            res = d2.run(cfg.root / raw["osm"]["clip"], box, work, dep, n=ways)
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
     rec["result"] = res
-    click.echo(f"  {res['summary']}")
+    click.echo(f"  {res.get('summary', res)}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 

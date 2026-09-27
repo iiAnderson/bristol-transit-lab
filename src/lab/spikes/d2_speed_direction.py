@@ -1,6 +1,10 @@
 """
 Spike for D2 (plans/P2.md): does R5 (via r5py) honour per-direction speed edits?
 
+First version (``run``): real ways in a small extract. It cannot discriminate: routes
+between a way's end nodes take 0–1 minute at R5's minute resolution, and a slowed way
+is bypassed on parallel streets. Kept for the record. ``run_synthetic`` is the test:
+
 On a small extract, pick two-way primary/secondary ways and route by car between each
 way's end nodes in both directions on three networks:
 
@@ -81,7 +85,8 @@ def route(pbf: Path, ways: list[dict], departure: dt.datetime) -> dict[tuple, fl
             d = gpd.GeoDataFrame({"id": ["d"]}, geometry=[Point(*b)], crs="EPSG:4326")
             r = TravelTimeMatrix(net, origins=o, destinations=d, departure=departure,
                                  transport_modes=[TransportMode.CAR], snap_to_network=True)
-            out[(w["id"], direction)] = r["travel_time"].iloc[0]
+            v = r["travel_time"].iloc[0]
+            out[(w["id"], direction)] = None if v is None or v != v else int(v)
     return out
 
 
@@ -111,10 +116,12 @@ def run(src: Path, box: tuple, work: Path, departure: dt.datetime, n: int = 20,
 
     def rose(r, net, d):
         b, x = r[f"baseline_{d}"], r[f"{net}_{d}"]
-        return b is not None and x is not None and not (np.isnan(b) or np.isnan(x)) and x > b
+        return b is not None and x is not None and x > b
 
     summary = {
         "ways": len(rows),
+        "baseline_zero_minute_routes": sum(r[f"baseline_{d}"] == 0 for r in rows
+                                           for d in ("fwd", "bwd")),
         "forward_rises_fwd": sum(rose(r, "forward", "fwd") for r in rows),
         "forward_rises_bwd": sum(rose(r, "forward", "bwd") for r in rows),
         "both_rises_fwd": sum(rose(r, "both", "fwd") for r in rows),
@@ -125,3 +132,73 @@ def run(src: Path, box: tuple, work: Path, departure: dt.datetime, n: int = 20,
         and summary["forward_rises_bwd"] <= 0.1 * len(rows)
         and summary["both_rises_bwd"] >= 0.8 * len(rows) else "fail")
     return {"summary": summary, "rows": rows}
+
+
+def synthetic_osm(out: Path, tags: dict[str, str], lon0: float, lat0: float,
+                  km: float = 5.0, n: int = 51) -> tuple:
+    """One straight two-way primary road of ``km`` with nothing parallel to it."""
+    dlon = km / (111.32 * math.cos(math.radians(lat0))) / (n - 1)
+    nodes = [(i + 1, lon0 + i * dlon, lat0) for i in range(n)]
+    xml = ['<?xml version="1.0" encoding="UTF-8"?>', '<osm version="0.6" generator="lab">']
+    xml += [f'<node id="{i}" version="1" lat="{la:.7f}" lon="{lo:.7f}"/>' for i, lo, la in nodes]
+    split = tags.pop("_split", None)       # (forward speed, backward speed)
+    offset = tags.pop("_offset_deg", 0.0)  # draw the backward way apart, like a dual carriageway
+    if split and offset:
+        back = [(20000 + i, lo, la - offset) for i, lo, la in nodes]
+        xml += [f'<node id="{i}" version="1" lat="{la:.7f}" lon="{lo:.7f}"/>' for i, lo, la in back]
+        # join the two carriageways at both ends
+        back = [nodes[0], *back[1:-1], nodes[-1]]
+    else:
+        back = nodes
+    ways = ([("1", nodes, {"oneway": "yes", "maxspeed": split[0]}),
+             ("2", back[::-1], {"oneway": "yes", "maxspeed": split[1]})]
+            if split else [("1", nodes, tags)])
+    for wid, seq, t in ways:
+        xml.append(f'<way id="{wid}" version="1">')
+        xml += [f'<nd ref="{i}"/>' for i, _, _ in seq]
+        for k, v in {"highway": "primary", **t}.items():
+            xml.append(f'<tag k="{k}" v="{v}"/>')
+        xml.append("</way>")
+    # Dead-end side streets at every node: enough junctions that R5 keeps the component
+    # (it prunes small islands), with no alternative route along the main road.
+    for i, lo, la in nodes[1:-1]:
+        xml.append(f'<node id="{10000 + i}" version="1" lat="{la + 0.0006:.7f}" lon="{lo:.7f}"/>')
+        xml.append(f'<way id="{10000 + i}" version="1"><nd ref="{i}"/><nd ref="{10000 + i}"/>'
+                   '<tag k="highway" v="residential"/></way>')
+    xml.append("</osm>")
+    x = out.with_suffix(".osm")
+    x.write_text("\n".join(xml))
+    _osmium("cat", "-O", "-o", str(out), str(x))
+    return (nodes[0][1], lat0), (nodes[-1][1], lat0)
+
+
+def run_synthetic(work: Path, departure: dt.datetime, lon0: float, lat0: float) -> dict:
+    """A→B follows the way's direction (forward). Expected at 5 km: 10 mph ≈ 19 min,
+    60 mph ≈ 3 min."""
+    work.mkdir(parents=True, exist_ok=True)
+    cases = {
+        "default": {},
+        "maxspeed_10mph": {"maxspeed": "10 mph"},
+        "forward_10_backward_60": {"maxspeed:forward": "10 mph", "maxspeed:backward": "60 mph"},
+        "forward_60_backward_10": {"maxspeed:forward": "60 mph", "maxspeed:backward": "10 mph"},
+        # Workaround: the two-way road as two opposite one-way ways, one maxspeed each.
+        "split_60_10": {"_split": ("60 mph", "10 mph")},
+        "split_10_60": {"_split": ("10 mph", "60 mph")},
+        "split_offset_60_10": {"_split": ("60 mph", "10 mph"), "_offset_deg": 0.00007},
+        "split_offset_10_60": {"_split": ("10 mph", "60 mph"), "_offset_deg": 0.00007},
+    }
+    out = {}
+    for name, tags in cases.items():
+        a, b = synthetic_osm(work / f"{name}.osm.pbf", dict(tags), lon0, lat0)
+        w = [{"id": name, "start": a, "end": b}]
+        t = route(work / f"{name}.osm.pbf", w, departure)
+        out[name] = {"fwd_min": t[(name, "fwd")], "bwd_min": t[(name, "bwd")]}
+    def directional(x, slow_fwd):
+        return x["fwd_min"] > 2 * x["bwd_min"] if slow_fwd else x["bwd_min"] > 2 * x["fwd_min"]
+    out["maxspeed_honoured"] = out["maxspeed_10mph"]["fwd_min"] > 2 * out["default"]["fwd_min"]
+    out["forward_backward_tags_directional"] = (
+        directional(out["forward_10_backward_60"], True)
+        and directional(out["forward_60_backward_10"], False))
+    out["split_oneway_directional"] = (directional(out["split_10_60"], True)
+                                       and directional(out["split_60_10"], False))
+    return out
