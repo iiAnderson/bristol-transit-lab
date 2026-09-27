@@ -177,6 +177,65 @@ def _on_signal(obj) -> None:
     signal.signal(signal.SIGINT, handler)
 
 
+@supply.command("rail")
+def supply_rail() -> None:
+    """Darwin timetable -> rail GTFS for the modelled date; presence check; feed registry."""
+    import datetime as dt
+    import yaml
+    from .supply import avl as a, feeds, gtfs_rail as g
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    rc = raw["rail"]
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    box = a.clip_box(cfg)
+    paths = {k: cfg.root / rc[k] for k in ("darwin_timetable", "darwin_ref", "naptan", "out")}
+    rec = runrecord.build(cfg, command="supply-rail", inputs=[
+        {"name": str(paths[k]), "sha256": feeds.sha256(paths[k])}
+        for k in ("darwin_timetable", "darwin_ref", "naptan")])
+    runrecord.write(cfg, rec)
+    try:
+        ref = g.read_ref(paths["darwin_ref"])
+        nap = g.read_naptan(paths["naptan"])
+        res = g.convert(paths["darwin_timetable"], ref, nap, day, box)
+        pres = g.presence(res, nap, box, list(rc["not_served"]))
+        bad = pres["unserved_expected"] or pres["served_but_not_open"]
+        if bad:
+            raise click.ClickException(f"rail station presence check failed: {pres}")
+        g.write_gtfs(res, ref, paths["out"], raw["avl"]["timezone"])
+        now = dt.datetime.now(dt.timezone.utc)
+        darwin_licence = "National Rail open data terms (wording to confirm, A5)"
+        for fid, kind, p, url, lic in [
+            ("darwin_timetable", "rail_darwin", paths["darwin_timetable"],
+             "supplied by Robbie (Darwin Push Port timetable)", darwin_licence),
+            ("darwin_ref", "ref", paths["darwin_ref"],
+             "supplied by Robbie (Darwin Push Port reference)", darwin_licence),
+            ("naptan_rail", "ref", paths["naptan"], rc["naptan_url"], "OGL v3")]:
+            feeds.register(cfg, feed_id=fid, kind=kind, source_url=url, path=p,
+                           downloaded_at=dt.datetime.fromtimestamp(p.stat().st_mtime,
+                                                                   dt.timezone.utc),
+                           licence=lic, notes=f"timetable {res.timetable_id}"
+                           if fid.startswith("darwin") else None)
+        feeds.register(cfg, feed_id="rail_gtfs", kind="rail_gtfs",
+                       source_url="built by `lab supply rail`", path=paths["out"],
+                       downloaded_at=now, licence=darwin_licence,
+                       valid_from=day, valid_to=day,
+                       notes=f"darwin-{res.timetable_id}; validator not yet run")
+        feeds.require_covers(feeds.get(cfg, "rail_gtfs"), day)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"timetable_id": res.timetable_id, "service_date": day.isoformat(),
+                     "counts": dict(res.counts), "stops": len(res.stops),
+                     "calls_by_tpl": dict(res.calls_by_tpl), "presence": pres,
+                     "unmapped_not_adjacent": res.unmapped}
+    path = runrecord.finish(cfg, rec, "ok")
+    for k, v in sorted(res.counts.items()):
+        click.echo(f"  {k:<40} {v:>8,}")
+    click.echo(f"  {len(res.stops)} stations; presence check passed; wrote {paths['out']}")
+    click.echo(f"wrote {path}")
+
+
 @avl.command("archive")
 @click.option("--clear-halt", is_flag=True,
               help="Resume after a circuit-breaker halt (a human decision).")

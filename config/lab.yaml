@@ -65,3 +65,20 @@ avl:
     hours: ["07:00", "16:00"]
     poll_s: 10
     flush_every_polls: 60
+
+# Rail GTFS from Darwin (plans/P2.md A5). Files supplied by Robbie; see sources.md P2.
+rail:
+  darwin_timetable: data/raw/darwin/PPTimetable_20260923020537_v8.xml.gz
+  darwin_ref: data/raw/darwin/PPTimetable_20260923020537_ref_v4.xml.gz
+  naptan: data/raw/naptan/naptan_910_rail.csv
+  naptan_url: https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv&atcoAreaCodes=910
+  out: data/interim/gtfs/rail_darwin.zip
+  # TIPLOCs with no weekday service on the modelled date, and why. The presence check
+  # fails if any other active NaPTAN station in the clip box is unserved, or any of
+  # these is served.
+  not_served:
+    PILNING: Saturday-only service
+    NRHFILT: Bristol Brabazon (North Filton), in NaPTAN as active but not yet served
+    HENBURY: not open; Darwin reference only
+    PILL: not open; Darwin reference only
+    PRTSHD: Portishead, not open; Darwin reference only
