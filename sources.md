@@ -109,6 +109,27 @@ whatever PT serves the edge zone. Spreading is a placement fix that suits the ga
 doesn't work as a behavioural input. v1 omits externals and says so (SPEC §11 item 13);
 v1.1 models them through gateways, with a fixed main mode.
 
+### Viewer and blog components replace the game bridge (user, 2026-09-27)
+
+The Subway Builder bridge (old SPEC §11a, old P7) was doing three jobs, and the game
+turned out to be the right tool for none of them:
+
+| job | the game | verdict |
+|---|---|---|
+| sketching lines | good at it | any GeoJSON tool does it too |
+| a second opinion on ridership | weak | its model is commute-only, with no buses or cycling; the spec already said agreement with it is not validation |
+| visualising lab results | cannot do it | it shows its own simulation, not the lab's outputs |
+
+Results will be published as blog posts, so good visualisation is central to the
+project, not a finishing touch. The bridge is replaced by a static-file viewer for
+exploration and a set of self-contained blog components (MapLibre GL JS, PMTiles,
+deck.gl; SPEC §11a). Two rules come with them: every visual is generated from a
+recorded run and shows its `run_id` and data hash, and no number in a visual is
+hand-edited. P7 splits into P7a (viewer skeleton and gap map, which can start as soon
+as P2 produces the first gap map) and P7b (full viewer and the remaining components).
+P8 becomes blog production. The bridge moves to SPEC §12 FUTURE. Drawback 17 (game
+bridge) is replaced by the risk that maps imply more precision than the model has.
+
 ### SPEC amendments made at P0
 
 - Header, §0, §1, §2 stack/layout, §3: upstream name, path, package and DB; rule 10

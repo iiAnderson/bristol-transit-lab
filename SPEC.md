@@ -99,7 +99,7 @@ against `B2028` by default.
                                                            │
                                            ┌───────────────┴──────────────┐
                                            ▼                              ▼
-                                    blog / Datawrapper          Subway Builder bridge
+                                viewer (exploration)      blog components + CSV
 ```
 
 ### Stack
@@ -145,7 +145,9 @@ bristol-transit-lab/
     report.py
     runrecord.py
     cli.py
-  bridge/subway-builder/  JS mod (Phase 7)
+  viewer/                 exploration app (MapLibre + deck.gl, static files)
+  viz/components/         reusable blog graphics
+  viz/embeds/             per-post built embeds
   data/{raw,interim,out}/
   runs/<run_id>/          scorecard.json, maps/*.parquet, report.md, run.json
   tests/
@@ -159,8 +161,10 @@ lab scenario new S015-a4-brt --from B2028
 lab run S015-a4-brt [--demand D1] [--periods AM,IP]
 lab compare S015-a4-brt B2028          # writes a diff report
 lab calibrate                           # Phase 5 gates
-lab export-game S015-a4-brt             # Phase 7
-lab import-game <game_export.json>      # Phase 7
+lab export-viz <run_id> [--compare <run_id>]    # tiles + JSON for viewer and components
+lab view                                         # local dev server for the viewer
+lab embed <component> <run_id> [--compare <run_id>] --out viz/embeds/<slug>
+                                                 # self-contained embed
 ```
 
 ---
@@ -560,32 +564,93 @@ scorecard and report. Decide on AequilibraE.
 *Acceptance:* `B2026` station usage gate passes; a full scenario report generates
 end to end.
 
-**P7 — Subway Builder bridge.** See §11a.
-*Acceptance:* one scenario exported to the game, built, run, ridership imported, and
-a lab-vs-game comparison table produced.
+**P7a — Viewer skeleton + gap map.** Can start as soon as P2 produces its first gap
+map; it does not wait for P3–P6.
+- Basemap PMTiles for the extent.
+- `lab export-viz`.
+- Viewer showing the gap map for B2026.
+- The `gap-map` component as a working embed.
+- Hosting chosen and range-request test passing.
 
-**P8 — Reporting polish.** Blog-ready charts and maps (Datawrapper-friendly CSVs).
+*Acceptance:* the gap-map embed renders from static hosting on a 360 px viewport; its
+footer shows `run_id` and data hash.
+
+**P7b — Full viewer + remaining components.** All viewer layers, compare modes, URL
+state, the other three components, CSV export, and the drawing tool as a stretch.
+*Acceptance:* swipe and difference comparison between B2028 and a test scenario from
+P3; all four components pass the 360 px, PNG fallback and payload checks.
+
+**P8 — Blog production.** Embeds and static fallbacks for the first post, built only
+via `lab embed` from recorded runs.
 
 **v1.1 — External gateways.** See §11b. Committed next scope after P8.
 
 ---
 
-## 11a. Subway Builder bridge (Phase 7)
+## 11a. Visualisation (Phase 7)
 
-The game is the **sketchpad**; the lab is the **judge**.
+*Amended 2026-09-27: replaces the Subway Builder bridge, which moves to §12. Reasoning
+in `sources.md`, P0 decisions.*
 
-- **Game → lab:** a mod reads `SubwayBuilderAPI.gameState` (routes, stations, trains)
-  and writes a scenario YAML (alignment from track geometry, stops from stations,
-  headways from trains per route). `lab import-game` validates and registers it.
-- **Lab → game:** `lab export-game` writes a JSON the mod consumes to place blueprint
-  tracks (with elevation from `alignment_type`), build them, create routes (using the
-  `light-rail` train type where appropriate), buy trains and add them to routes. On
-  `onDayChange`, the mod records ridership and metrics to mod storage / an export file.
-- **Comparison:** `lab compare-game <run_id> <game_export>` — ridership by line in both.
-  Expect the game to over-predict relative to the lab where buses already serve the
-  corridor, because the game's alternatives are only driving and walking. Report the
-  gap; don't calibrate either side to the other.
-- Pin the game's API version in the mod manifest and check it at load.
+### Stack
+
+All open source, with licences recorded in `sources.md`; versions pinned.
+
+- **MapLibre GL JS** for rendering.
+- **PMTiles** for all tiled data: lab outputs via tippecanoe (already in the upstream
+  toolchain), and a self-hosted Protomaps basemap extract for the map extent. No paid
+  tile APIs. OSM attribution shown on every map.
+- **deck.gl** for layers MapLibre handles badly: OD desire lines and line-load
+  bandwidths.
+- **Static files only; no server.** Hosting is deferred to P7. Candidates are
+  Cloudflare R2/Pages, GitHub Pages, and S3 + CloudFront. Whichever is chosen must pass
+  a test that HTTP range requests work for `.pmtiles`.
+
+### Provenance rule
+
+Every visual is generated from a recorded run and carries its `run_id` and data hash
+(in the viewer UI, and in embed metadata plus a visible footer). Numbers in visuals are
+never hand-edited.
+
+### Viewer (exploration tool)
+
+- **Scenario picker:** any run, or any pair of runs.
+- **Compare modes:** swipe, and difference (scenario − parent).
+- **Layers:**
+  - PT accessibility (absolute and change) by OA;
+  - the gap map (PT GC ÷ car GC, weighted by flow);
+  - demand desire lines (filterable by purpose, period and minimum flow);
+  - line loads as bandwidths, with load-factor colouring;
+  - frequent-stop coverage (400 m / 800 m);
+  - IMD decile overlay.
+- **Scorecard panel:** headline §8 metrics for the run and the difference against the
+  comparison run.
+- **Honesty:** the fidelity disclaimer is always visible, and the panel lists the
+  `[PLACEHOLDER]` / `[MODELLED]` values that affected the run.
+- **URL state:** layers, runs, map view and compare mode are all encoded in the URL, so
+  any view is a shareable permalink.
+- **Stretch (P7b), a drawing tool:** draw a line and stops, then export
+  `lines/*.geojson`, `stops/*.geojson` and a scenario YAML stub for §5.
+
+### Blog components (for readers)
+
+Each component makes one point.
+
+- Must work at 360 px width, use colour-blind-safe palettes, have keyboard-accessible
+  controls, and include a text alternative.
+- Self-contained embed with no runtime dependencies outside the author's own host.
+- Includes a static PNG fallback for feeds and email.
+- Payload budget of about 1.5 MB per embed, excluding basemap tiles [MODELLED].
+
+The v1 set:
+
+1. `swipe-choropleth`: before/after of any OA-level metric (default: jobs within 45 min
+   by PT, AM).
+2. `gap-map`: desire lines coloured by PT ÷ car GC ratio, weighted by flow.
+3. `line-loads`: bandwidth map for one scenario, with a peak-hour load-factor legend.
+4. `scorecard-bars`: scenario vs parent on the headline metrics.
+
+Also: CSV export of any metric table for Datawrapper.
 
 ---
 
@@ -674,11 +739,11 @@ matter for the scenario being reported.
 16. **The BCR is indicative only.** No wider economic impacts, carbon, safety, health,
     reliability or agglomeration; not TAG-compliant; no uncertainty bands.
 
-**Game bridge**
+**Visualisation**
 
-17. **The game's behavioural model is different and partly opaque.** Commute-only
-    demand, driving and walking as the only alternatives, game-scale costs. Agreement
-    between lab and game is not validation.
+17. **Maps imply more precision than the model has.** Demand-derived layers are shown
+    no finer than LSOA; accessibility at OA; line loads rounded to a sensible precision.
+    Every visual carries the fidelity disclaimer or links to it.
 
 ---
 
@@ -723,6 +788,13 @@ addresses.
 - **FUTURE — External demand beyond commuting.** Non-commute external trips (shopping,
   leisure, airport passengers from outside the extent) through the v1.1 gateways.
   Addresses 13.
-- **FUTURE — Web viewer.** An interactive scenario comparison map for publishing.
+- **FUTURE — Subway Builder bridge.** Formerly §11a. Game → lab: import routes and
+  stations from `SubwayBuilderAPI.gameState` as scenario YAML. Lab → game: build a
+  scenario via the Build API, with ridership exported via `gameState`. Game ridership
+  comes from a different model (commute-only, driving and walking as the only
+  alternatives) and is never validation. Using the published Bristol map by hand for a
+  blog post is fine at any time and needs no bridge.
+- **FUTURE — Animated trip playback** in the viewer (deck.gl trips layer), once
+  assignment produces paths worth animating.
 - **FUTURE — Generalisation.** Parameterise by `CityConfig` alongside the
   `ons_to_subwaybuilder` package so the lab runs for any English or Welsh city.
