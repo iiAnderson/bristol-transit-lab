@@ -334,3 +334,15 @@ def test_live_collects_through_the_window_and_closes_the_day(root):
     assert "KEY" not in (root / "avl/live/polls.jsonl").read_text()
     s = avl.live_status(LabConfig.load(root))["days"][0]
     assert s["failed_polls"] == 1 and s["closed"]
+
+
+def test_request_log_records_start_times_at_least_the_interval_apart(root):
+    c = Clock()
+    t0 = dt.datetime(2026, 9, 27, tzinfo=UTC)
+    f = avl.ArchiveFetch(LabConfig.load(root), FakeArchive(), clock=c, sleep=c.sleep,
+                         now=lambda: t0 + dt.timedelta(seconds=c.t), rng=random.Random(0))
+    f.run()
+    reqs = [json.loads(x) for x in (root / "avl/archive/requests.jsonl").read_text().splitlines()
+            if '"kind"' in x]
+    starts = [dt.datetime.fromisoformat(r["t_start"]) for r in reqs]
+    assert all((b - a).total_seconds() >= 5 for a, b in zip(starts, starts[1:]))

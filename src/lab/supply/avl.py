@@ -481,6 +481,7 @@ class ArchiveFetch:
             if self._pausing():
                 return None
             self.gov.started()
+            t_start = self.now().isoformat()     # the rate floor is between starts
             err = None
             try:
                 r = self.get(url)
@@ -490,7 +491,7 @@ class ArchiveFetch:
             self.n_requests += 1
             self.n_failed += failed
             events = self.gov.record(failed, r.ttfb if r is not None and not failed else None)
-            self._log(kind=kind, path=url.removeprefix(self.arc["base_url"]),
+            self._log(kind=kind, t_start=t_start, path=url.removeprefix(self.arc["base_url"]),
                       http=r.status if r else None, ttfb=r.ttfb if r else None,
                       bytes=len(r.body) if r else None, error=err, attempt=attempt)
             for e in events:
