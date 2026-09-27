@@ -1,0 +1,23 @@
+# Separate R env for the D7 investigation (plans/P2.md): r5r's
+# expanded_travel_time_matrix(). Kept apart from transit-lab so the Python env is
+# untouched. r5r itself comes from CRAN (not on conda-forge); pinned in
+# src/lab/r/install_r5r.R. r5r 2.4.0 uses R5 7.5.1, the same R5 version as r5py 1.1.7.
+name: transit-lab-r
+channels: [conda-forge]
+dependencies:
+  - r-base=4.5
+  - openjdk=21
+  - r-rjava
+  - r-sf
+  - r-data.table
+  - r-checkmate
+  - r-cli
+  - r-isoband
+  - r-jsonlite
+  - r-lifecycle
+  - r-purrr
+  - r-rlang
+  - r-sfheaders
+  - r-zip
+  - r-remotes
+  - r-arrow

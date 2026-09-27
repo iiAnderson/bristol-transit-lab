@@ -636,6 +636,19 @@ Working plan and progress log: `plans/P2.md`.
 | DfT Transport connectivity metric 2025 | https://www.gov.uk/government/publications/transport-connectivity-metric → https://assets.publishing.service.gov.uk/media/68c966fc07d9e92bc5517b80/connectivity_metrics_2025.ods | 2026-09-27 | OGL v3 | V1.0.0, version date 2025-08-21, experimental; timetables Q4 2024; **England and Wales**; OA/LSOA/LAD/RGN scores 0–100 by purpose × mode. SHA-256 `4f6589ae…`. The 1 GB `content.xml` is streamed to CSV (`src/lab/supply/ods.py`). The PT employment column is labelled "Business (public transport)" |
 | Welsh trunk-road speeds | — | 2026-09-27 | — | **None published.** Traffic Wales is live-only; M4 speeds appear only in ad-hoc FOI releases (e.g. https://www.gov.wales/atisn18581). Welsh trunk roads keep transferred factors (D8). The M4 J24–J28 through Newport has 50 mph average-speed enforcement: free-flow speeds there must honour it |
 
+### r5r for PT cost components (D7, 2026-09-27)
+
+| item | source | accessed | licence | version / notes |
+|---|---|---|---|---|
+| R (conda-forge `r-base` 4.5) + OpenJDK 21, separate env `transit-lab-r` | `environment-r.yml` | 2026-09-27 | GPL-2/3 (R) | kept apart from the Python env |
+| r5r | https://cran.r-project.org/package=r5r | 2026-09-27 | MIT | **2.4.0** (published 2026-05-20), pinned via `remotes::install_version`; pins R5 **7.5.1** (`onLoad.R`: `r5_jar_version <- "7.5.1"`), the same R5 version as r5py 1.1.7 (`~/.cache/r5py/r5-v7.5.1-r5py-all.jar`) |
+
+Measured on the D3 1% sample (38 OAs × 729 LSOAs, Wed 23 Sep 08:00, 60-min window):
+expanded matrix 6.2 s (1.48M rows, one per OD × departure minute). With `max_rides = 8`
+(r5r's default is 3; r5py's 8) p50 totals match r5py: same reachable pairs, r5r − r5py
+median +0.5 min, p5–p95 0.0–0.9. Components (access + wait + ride + transfer + egress)
+sum to `total_time` within 0.05 min except walk-only rows, where r5r leaves them at 0.
+
 ### Bus GTFS (A4, 2026-09-27)
 
 Inputs: the NDL archive's `itm_south_west_gtfs_20260923.zip` (SHA-256 `cb0026b2…`) and
