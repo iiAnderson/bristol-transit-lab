@@ -243,6 +243,70 @@ def supply_rail() -> None:
     click.echo(f"wrote {path}")
 
 
+@supply.command("bus")
+def supply_bus() -> None:
+    """BODS GTFS -> clipped, de-duplicated single-date bus GTFS; validator; registry."""
+    import datetime as dt
+    import duckdb
+    import yaml
+    from .supply import avl as a, feeds, gtfs_bods as g, validate
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    bc = raw["bus"]
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    paths = {k: cfg.root / v for k, v in bc["feeds"].items()}
+    out = cfg.root / bc["out"]
+    rec = runrecord.build(cfg, command="supply-bus", inputs=[
+        {"name": str(p), "sha256": feeds.sha256(p)} for p in paths.values()])
+    runrecord.write(cfg, rec)
+    try:
+        con = duckdb.connect()
+        g.load(con, paths)
+        names = list(paths)
+        res = g.build(con, names, day, cfg.extent, a.clip_box(cfg))
+        cmp_day = bc["compare_date"]
+        now_r = g.trips_per_route_on(con, names, day)
+        later = g.trips_per_route_on(con, names, cmp_day)
+        changed = sorted(((k, now_r.get(k, 0), later.get(k, 0)) for k in set(now_r) | set(later)
+                          if now_r.get(k, 0) != later.get(k, 0)),
+                         key=lambda x: -abs(x[1] - x[2]))
+        g.write(con, names, day, out, f"bods-{'+'.join(names)}-{day:%Y%m%d}")
+        val = validate.run(cfg.root / raw["rail"]["validator"], out,
+                           out.with_suffix(".validator"), day, "gb")
+        if val["errors"]:
+            raise click.ClickException(f"bus GTFS has validator errors: {val['codes']}")
+        now = dt.datetime.now(dt.timezone.utc)
+        for name, p in paths.items():
+            feeds.register(cfg, feed_id=f"bods_{name}", kind="bus_gtfs",
+                           source_url=bc["source_url"] + p.name, path=p, downloaded_at=
+                           dt.datetime.fromtimestamp(p.stat().st_mtime, dt.timezone.utc),
+                           licence="OGL v3 (BODS; archive: Open Innovations / National Data "
+                                   "Library)", valid_from=day, valid_to=day,
+                           notes="regional BODS GTFS archived on the modelled date")
+        feeds.register(cfg, feed_id="bus_gtfs", kind="bus_gtfs",
+                       source_url="built by `lab supply bus`", path=out, downloaded_at=now,
+                       licence="OGL v3", valid_from=day, valid_to=day,
+                       validator_errors=val["errors"], validator_warnings=val["warnings"],
+                       notes=f"{val['jar']}: {val['codes']}")
+        feeds.require_covers(feeds.get(cfg, "bus_gtfs"), day)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {**{k: v for k, v in res.items()}, "validator": val,
+                     "check2_compare_date": str(cmp_day), "check2_changed_routes": changed}
+    path = runrecord.finish(cfg, rec, "ok")
+    for k, v in res.items():
+        if not isinstance(v, list):
+            click.echo(f"  {k:<36} {v:>9,}")
+    click.echo(f"  routes {len(res['per_route'])}; >10% trips removed as duplicates: "
+               f"{len(res['flagged_routes'])}; same-start groups kept: "
+               f"{len(res['same_start_groups'])}")
+    click.echo(f"  check 2 ({day} vs {cmp_day}): {len(changed)} routes differ")
+    click.echo(f"  validator {val['errors']} errors, {val['warnings']} warnings")
+    click.echo(f"wrote {path}")
+
+
 @supply.command("osm")
 def supply_osm() -> None:
     """Download, verify, merge and clip the OSM extracts; register them as feeds."""

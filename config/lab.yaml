@@ -107,3 +107,13 @@ webtris:
   end: 2026-06-30
   min_interval_s: 1
   dir: data/raw/webtris
+
+# Bus GTFS (plans/P2.md A4): the NDL archive's regional BODS GTFS for the modelled date.
+# Wales is included to measure (and, if approved, use) Newport-area coverage (D8).
+bus:
+  feeds:
+    south_west: data/raw/bods_gtfs/itm_south_west_gtfs_20260923.zip
+    wales: data/raw/bods_gtfs/itm_wales_gtfs_20260923.zip
+  source_url: https://data.datalibrary.uk/transport/BODS-ARCHIVE/timetables/2026/09/23/
+  compare_date: 2026-10-07          # A4 check 2: a later Wednesday in the same feed
+  out: data/interim/gtfs/bus_bods.zip
