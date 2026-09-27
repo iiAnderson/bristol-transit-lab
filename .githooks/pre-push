@@ -1,0 +1,12 @@
+#!/bin/sh
+# Block a push if gitleaks finds a secret anywhere in the history (CLAUDE.md setup).
+if ! command -v gitleaks >/dev/null 2>&1; then
+  echo "pre-push: gitleaks not installed (brew install gitleaks); push blocked" >&2
+  exit 1
+fi
+if ! gitleaks detect --source . --log-opts="--all" --redact --no-banner >/dev/null 2>&1; then
+  echo "pre-push: gitleaks found a possible secret; push blocked." >&2
+  echo "  inspect: gitleaks detect --source . --log-opts=--all --redact -v" >&2
+  exit 1
+fi
+echo "pre-push: gitleaks clean" >&2

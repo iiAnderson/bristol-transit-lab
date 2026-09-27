@@ -1,0 +1,10 @@
+# gitleaks config: the default rules plus the BODS API key shape (40 hex characters
+# assigned to something named like a key). Used by .githooks/pre-push.
+[extend]
+useDefault = true
+
+[[rules]]
+id = "bods-api-key"
+description = "BODS API key (40 hex) assigned to an api_key / BODS variable"
+regex = '''(?i)(?:bods|api[_-]?key)[a-z_]*["']?\s*[:=]\s*["']?([0-9a-f]{40})\b'''
+secretGroup = 1

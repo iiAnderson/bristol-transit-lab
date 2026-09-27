@@ -12,7 +12,16 @@ source env.sh                           # PATH + JAVA_HOME (the JDK inside the e
 pip install -e .
 lab --help
 pytest
+brew install gitleaks osrm-backend      # secret scan (pre-push hook); car routing (D2)
+git config core.hooksPath .githooks     # enables the gitleaks pre-push hook
+conda env create -f environment-r.yml   # transit-lab-r: r5r for PT skims (D7)
 ```
+
+The pre-push hook (`.githooks/pre-push`, rules in `.gitleaks.toml`, which adds the BODS
+key shape to gitleaks' defaults) runs `gitleaks detect` over the whole history and
+blocks the push on any finding. Push only when Robbie asks. Secrets (`BODS_API_KEY`,
+`LAB_CONTACT_EMAIL`) live in `~/.config/bristol-transit-lab/secrets.env`, which
+`env.sh` sources; never in the repo.
 
 ## Working rules (SPEC.md §0)
 
