@@ -23,8 +23,30 @@ modelled_date: 2026-09-23
 mask:
   lads: [W06000022, W06000021]         # Newport, Monmouthshire
 
-# D4/D6: centres (name, lon, lat) are set from the area-type analysis in P2a.
-centres: []
+# D6 (approved at the P2a stop): direction is measured towards the nearest attractor.
+# Each point is the population-weighted centroid of the highest-BRES-density LSOA in
+# that town (2026-09-27): Bristol 054G (95,051 jobs/km²), Bath and North East Somerset
+# 007A (34,658), Newport 014C (12,637), North Somerset 018D (8,607; North Somerset's
+# densest, 001G, is the Portbury/Portishead employment area, not Weston).
+centres:
+  - {name: Bristol, lon: -2.5878, lat: 51.4518, lsoa: E01033903}
+  - {name: Bath, lon: -2.3592, lat: 51.3843, lsoa: E01014370}
+  - {name: Newport, lon: -3.0043, lat: 51.5812, lsoa: W01001686}
+  - {name: Weston-super-Mare, lon: -2.9777, lat: 51.3514, lsoa: E01014844}
+
+# D4: centre area type = urban, >= area_type.centre_job_density, contiguous cluster of
+# >= this many LSOAs (approved at the P2a stop).
+centre_min_cluster_lsoas: 3
+
+# DfT authorities (LAD Dec 2024 codes) with internal LSOAs, for per-road targets.
+authorities:
+  Bristol: E06000023
+  Bath and North East Somerset: E06000022
+  North Somerset: E06000024
+  South Gloucestershire: E06000025
+  Newport: W06000022
+  Monmouthshire: W06000021
+  Wiltshire: E06000054
 
 # B1: Metrobus route IDs, set from the modelled-date bus GTFS in A4.
 metrobus_route_ids: []

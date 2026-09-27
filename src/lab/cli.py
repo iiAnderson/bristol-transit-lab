@@ -536,6 +536,48 @@ def congestion() -> None:
     """P2 car congestion: inputs, calibration and validation."""
 
 
+@congestion.command("network")
+def congestion_network() -> None:
+    """Car segment table from the OSM clip, annotated (authority, area type, class, direction, B1)."""
+    import duckdb
+    import yaml
+    from .congestion import annotate as an, network as nw
+    from .supply import feeds
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    geo = cfg.root / "data" / "raw" / "ons_geo"
+    for fid in ("osm_clip", "ons_lsoa21_bgc_internal", "ons_ruc21_lsoa", "dft_aadf_by_direction"):
+        feeds.check_file_unchanged(feeds.get(cfg, fid))
+    rec = runrecord.build(cfg, command="congestion-network", inputs=[
+        {"name": f, "sha256": feeds.get(cfg, f)["sha256"]}
+        for f in ("osm_clip", "ons_lsoa21_bgc_internal", "ons_ruc21_lsoa", "dft_aadf_by_direction")]
+        + [{"name": str(geo / "lad24_bgc_extent.geojson"),
+            "sha256": params.file_hash(geo / "lad24_bgc_extent.geojson")}])
+    runrecord.write(cfg, rec)
+    try:
+        seg = nw.build_segments(cfg.root / raw["osm"]["clip"], d / "segments.parquet")
+        with duckdb.connect() as con:
+            con.execute("INSTALL spatial; LOAD spatial")
+            con.execute(f"ATTACH '{cfg.lab_db}' AS lab (READ_ONLY)")
+            cl = an.centre_lsoas(con, geo / "lsoa21_bgc_internal.geojson",
+                                 cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv",
+                                 ps["area_type.centre_job_density"], raw["centre_min_cluster_lsoas"])
+            res = an.annotate(con, d / "segments.parquet", geo / "lad24_bgc_extent.geojson",
+                              geo / "lsoa21_bgc_internal.geojson",
+                              cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv",
+                              cfg.root / "data/interim/aadf_by_direction_clip.parquet",
+                              raw["centres"], cl, d / "segments_annotated.parquet")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {**seg, **res, "centre_lsoas": cl}
+    for k, v in rec["result"].items():
+        click.echo(f"  {k}: {v}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @congestion.command("webtris")
 def congestion_webtris() -> None:
     """Fetch 15-minute WebTRIS data for every active site in the clip box (resumable)."""

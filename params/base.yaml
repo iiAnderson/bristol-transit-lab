@@ -169,10 +169,13 @@ congestion:
 # P2 area types (plans/P2.md D4). Centre = urban LSOAs above this job density.
 area_type:
   centre_job_density:
-    value: null
-    unit: BRES jobs per km²
-    tag: PLACEHOLDER
-    note: chosen in P2a so that it produces a few contiguous centres; plotted for review
+    value: 10000
+    unit: BRES jobs per km² (LSOA, BGC area)
+    tag: MODELLED
+    reasoning: >-
+      Approved at the P2a stop (2026-09-27): with clusters of >= 3 contiguous urban LSOAs
+      it yields central Bristol (18 LSOAs) and central Bath (5); 5,000 adds scattered
+      suburban clusters (runs/_review/d4_centre_candidates.png).
 
 car:
   parking_search_min:
