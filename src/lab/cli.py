@@ -658,7 +658,8 @@ def congestion_avl(days: tuple[str, ...], source: str) -> None:
                 res[x] = av.process_day(avl_dir / f"{stem}_{x}.parquet", srv.port, stops,
                                         busways, raw["metrobus"], p, periods,
                                         raw["avl"]["timezone"],
-                                        d / "avl" / f"traversals_{source}_{x}.parquet")
+                                        d / "avl" / f"traversals_{source}_{x}.parquet",
+                                        progress=lambda m: click.echo(f"    {x}: {m}", err=True))
                 click.echo(f"  {x}: {res[x]}")
     except Exception:
         rec["result"] = res

@@ -28,6 +28,8 @@ import osmium
 import pyarrow as pa
 import pyarrow.parquet as pq
 import requests
+import requests.adapters
+from concurrent.futures import ThreadPoolExecutor
 
 
 class _Busways(osmium.SimpleHandler):
@@ -82,7 +84,7 @@ def _period(t_local: dt.time, periods: dict[str, tuple[str, str]]) -> str:
 
 def process_day(day_file: Path, osrm_port: int, stops_parquet: Path, busways: Path,
                 metrobus: dict, p: dict, periods: dict[str, tuple[str, str]], tz: str,
-                out: Path, chunk: int = 100) -> dict:
+                out: Path, chunk: int = 100, workers: int = 7, progress=None) -> dict:
     con = duckdb.connect()
     con.execute(f"""CREATE TEMP TABLE pos AS
         SELECT row_number() OVER () rid, operator_ref, vehicle_ref, published_line_name,
@@ -119,21 +121,29 @@ def process_day(day_file: Path, osrm_port: int, stops_parquet: Path, busways: Pa
     stats = dict(positions=n_all, metrobus_dropped=n_mb, busway_dropped=n_bw,
                  traces=len(traces), requests=0, legs=0, legs_kept=0, drop_unmatched=0,
                  drop_low_conf=0, drop_long=0, drop_stop=0, drop_slow=0, drop_fast=0)
-    s = requests.Session()
+    parts = [tr[i:i + chunk] for tr in traces for i in range(0, len(tr) - 1, chunk - 1)
+             if len(tr[i:i + chunk]) >= 2]                 # chunks overlap by one fix
+    session = requests.Session()
+    adapter = requests.adapters.HTTPAdapter(pool_maxsize=workers)
+    session.mount("http://", adapter)
+
+    def match(part):
+        coords = ";".join(f"{x[2]:.6f},{x[3]:.6f}" for x in part)
+        r = session.get(f"http://127.0.0.1:{osrm_port}/match/v1/driving/{coords}", params={
+            "timestamps": ";".join(str(int(x[1])) for x in part),
+            "radiuses": ";".join([str(p["match_radius_m"])] * len(part)),
+            "annotations": "nodes,distance", "overview": "false", "gaps": "split",
+            "tidy": "false"}, timeout=300)
+        return part, r.json()
+
     leg_id = 0
-    for tr in traces:
-        for i in range(0, len(tr) - 1, chunk - 1):          # overlap by one fix
-            part = tr[i:i + chunk]
-            if len(part) < 2:
-                continue
-            coords = ";".join(f"{x[2]:.6f},{x[3]:.6f}" for x in part)
-            r = s.get(f"http://127.0.0.1:{osrm_port}/match/v1/driving/{coords}", params={
-                "timestamps": ";".join(str(int(x[1])) for x in part),
-                "radiuses": ";".join([str(p["match_radius_m"])] * len(part)),
-                "annotations": "nodes,distance", "overview": "false", "gaps": "split",
-                "tidy": "false", "geometries": "polyline"}, timeout=120)
+    done = 0
+    with ThreadPoolExecutor(workers) as ex:
+        for part, j in ex.map(match, parts):
             stats["requests"] += 1
-            j = r.json()
+            done += 1
+            if progress and done % 2000 == 0:
+                progress(f"{done}/{len(parts)} match requests")
             if j.get("code") != "Ok":
                 stats["drop_unmatched"] += len(part) - 1
                 continue
