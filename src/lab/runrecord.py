@@ -9,6 +9,7 @@ and fails loudly; a record that does not validate is not written.
 from __future__ import annotations
 
 import datetime as dt
+import decimal
 import importlib.metadata as md
 import json
 import os
@@ -138,12 +139,21 @@ def validate(rec: dict) -> None:
         _req(rec["scenario"], "spec_hash", str, "scenario.")
 
 
+def _dumps(rec: dict) -> str:
+    """JSON with DuckDB's Decimal sums written as numbers."""
+    def enc(o):
+        if isinstance(o, decimal.Decimal):
+            return float(o)
+        raise TypeError(f"{type(o).__name__} is not JSON serialisable")
+    return json.dumps(rec, indent=2, default=enc) + "\n"
+
+
 def write(cfg: LabConfig, rec: dict) -> Path:
     validate(rec)
     out = cfg.runs_dir / rec["run_id"]
     out.mkdir(parents=True, exist_ok=False)
     path = out / "run.json"
-    path.write_text(json.dumps(rec, indent=2, sort_keys=False) + "\n")
+    path.write_text(_dumps(rec))
     return path
 
 
@@ -152,5 +162,5 @@ def finish(cfg: LabConfig, rec: dict, status: str = "ok") -> Path:
     rec["finished_at"] = dt.datetime.now().astimezone().isoformat()
     validate(rec)
     path = cfg.runs_dir / rec["run_id"] / "run.json"
-    path.write_text(json.dumps(rec, indent=2) + "\n")
+    path.write_text(_dumps(rec))
     return path

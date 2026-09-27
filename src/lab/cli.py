@@ -95,6 +95,52 @@ def calibrate() -> None:
     _not_yet("P5")
 
 
+@cli.group()
+def demand() -> None:
+    """Build demand matrices."""
+
+
+@demand.command("commute")
+def demand_commute() -> None:
+    """P1: analysis-grade HBW matrix from upstream raw flows (low/central/high d)."""
+    from .demand import commute
+    cfg = LabConfig.load()
+    rec = runrecord.build(cfg, command="demand-commute", demand_version="p1",
+                          inputs=commute_inputs(cfg))
+    runrecord.write(cfg, rec)
+    try:
+        b = commute.run(cfg)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"discounts": b.discounts, "cap": b.cap,
+                     "checks": [list(c) for c in b.checks],
+                     "summaries": b.summaries}
+    path = runrecord.finish(cfg, rec, "ok")
+    for name, lab, up, ok in b.checks:
+        fmt = ",.3f" if abs(up) < 100 else ",.2f"
+        click.echo(f"  {'ok  ' if ok else 'FAIL'} {name}: {lab:{fmt}} vs {up:{fmt}}")
+    for v in commute.VARIANTS:
+        s = b.summaries[v]
+        click.echo(f"  {v:<8} d={s['d']:.3f}  cap={b.cap[v]}  median factor "
+                   f"{s['median_raw_factor']:.3f}  total {s['after_step2']:,.0f}")
+    click.echo(f"wrote {path}")
+
+
+def commute_inputs(cfg: LabConfig) -> list[dict]:
+    """Hashes of the raw files P1 reads, for the run record."""
+    raw = cfg.root / "data" / "raw"
+    files = ["census2021/odwp14ew.zip", "nts2025/nts0412.ods", "nts2025/nts0504.ods",
+             "ons/hybridsupplementary8januaryto30march2025.xlsx"]
+    out = []
+    for f in files:
+        p = raw / f
+        if not p.is_file():
+            raise click.ClickException(f"missing input {p}; see sources.md P1")
+        out.append({"name": f, "sha256": params.file_hash(p)})
+    return out
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")

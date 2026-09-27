@@ -20,6 +20,10 @@ no URL is copied from the spec into code without being navigated to first.
 | Dataset | Level | Source | Accessed | Licence |
 |---|---|---|---|---|
 | Upstream Bristol DB | OA / LSOA / MSOA | `~/Documents/Projects/subwaybuilder-bristol/data/interim/BRS/census.duckdb`, `ons_to_subwaybuilder` 0.1.0 @ `2361e300`, sha256 `581da77d7dd7…` (full hash in every `run.json`) | 2026-09-27 | derived from OGL v3 sources; see upstream `sources.md` |
+| ODWP14EW (Census 2021 OD by household car/van availability) | MSOA → MSOA only | https://www.nomisweb.co.uk/output/census/2021/odwp14ew.zip (found via https://www.nomisweb.co.uk/sources/census_2021_od), sha256 `9f324a154ef34852…` | 2026-09-27 | OGL v3 |
+| NTS0412 (commuter trips by employment status, England) | national | https://assets.publishing.service.gov.uk/media/6a9ecd5ff36e1f225ecb7e8e/nts0412.ods (NTS 2025, published 11 Sept 2026; table updated 10 Sept 2026), sha256 `f3afe920be36fed6…` | 2026-09-27 | OGL v3 |
+| NTS0504 (trips by day of week and purpose, England) | national | https://assets.publishing.service.gov.uk/media/6a9ecd5f474b8101ece46432/nts0504.ods (NTS 2025), sha256 `6e45c7e1d7520a64…` | 2026-09-27 | OGL v3 |
+| ONS OPN, "Who has access to hybrid work in Great Britain?" supplementary tables | GB | https://www.ons.gov.uk/file?uri=/employmentandlabourmarket/peopleinwork/employmentandemployeetypes/datasets/whohasaccesstohybridworkingingreatbritainsupplementarytables/current/hybridsupplementary8januaryto30march2025.xlsx (release 11 June 2025; fieldwork 8 Jan–30 Mar 2025), sha256 `3d2ce76054548b9c…`. The `cdn.ons.gov.uk` link on the dataset page returns 404 | 2026-09-27 | OGL v3 |
 
 Every run pins the upstream it read: DB file hash, package version and commit, dirty
 flag and a `stage_log` snapshot (`src/lab/upstream.py`).
@@ -211,9 +215,178 @@ comes out. An analysis-grade stage should include them.
   **Assumption:** redistributed no-fixed-place workers share their origin's
   car-availability split.
 
+### Build (2026-09-27)
+
+`lab demand commute` (`src/lab/demand/commute.py`) writes `demand` rows
+`p1-low`, `p1-central` and `p1-high` (purpose HBW, period `DAY`, segments CA / NCA) to
+`data/interim/lab.duckdb`, plus its intermediate tables. The whole build takes a few
+seconds and writes a run record with the upstream pin and input hashes. Tests run it
+end to end into an in-memory DB.
+
+### Finding: upstream `flows` has no external codes
+
+`flows` labels every external end's LSOA and MSOA as the literal `'EXT'`. External
+MSOAs therefore come from the raw `oa_flows` and upstream's national lookup
+`oa_lu_all`. That lookup covers England and Wales only. 80 workplace OAs in Scotland
+(`S00…`, 76 OAs, 128 commuters) and Northern Ireland (`N20…`, 4 OAs, 6 commuters)
+are therefore kept at country level (`S92000003`, `N92000002`), with no distance.
+The build fails loudly if any other end is unmapped.
+
+### Reconciliation in parts
+
+All exact, against upstream's raw `oa_flows`:
+
+| | lab | upstream raw |
+|---|---|---|
+| internal → internal | 275,369 | 275,369 (and 0 difference in every destination MSOA) |
+| external_in | 66,186 | 66,186 |
+| external_out | 37,350 | 37,350 |
+
+Then from upstream-equivalent inputs to the lab's, one difference at a time, at d = 0
+and cap 4.0 (`p1_reconciliation`):
+
+| step | fixed-workplace | after no-fixed-place | median factor (all) | median, the 159 MSOAs upstream has |
+|---|---|---|---|---|
+| upstream (`base_flows`, `pops_s1`, `dest_factor`) | 356,286 | 432,002.52 | — | **1.433** |
+| 0 lab grain, upstream-equivalent inputs | **356,286** | **432,002.52** | 1.463 | **1.454** |
+| 1 external_out kept external | 328,890 | 404,607 | 1.566 | 1.518 |
+| 2 + full TS058 (edge quirk fixed) | 328,890 | 406,537 | 1.563 | 1.515 |
+| 3 + all externals uncut (the lab's inputs) | 378,905 | 456,552 | 1.524 | 1.502 |
+
+Step 0 rebuilds upstream's clamp and 30 km cut **for comparison only**. It reproduces
+upstream's covid-stage inputs exactly (both assertions are in the build). On the
+destinations both sides have, the remaining 0.021 gap in the median is grain: the lab
+uplifts origins per LSOA rather than per OA and does not fold edge-OA destinations
+into neighbouring MSOAs. The tolerance is 0.05 [MODELLED]. The "all" median is higher
+because the lab keeps 10 boundary-sliver destination MSOAs that upstream's folding
+removes (see the cap, below).
+
+Why the factor rises from step 0 to step 1: upstream clamped external_out commuters
+onto edge points, so 27,396 of them counted towards in-map destination totals and
+lowered those MSOAs' factors. In the lab they stay external.
+
+### BRES discount
+
+Definition (user): d = 1 − (workers attending a fixed workplace on an average weekday
+÷ BRES jobs). Derived by `src/lab/demand/bres_discount.py` from the raw tables; values
+in `params/base.yaml`.
+
+**Found:**
+- **Data Science Campus technical report** (27 June 2023,
+  https://datasciencecampus.ons.gov.uk/projects/technical-report-estimation-of-travel-to-work-matrices/).
+  NTS fixed-workplace share by five mobility clusters (M1 London … M5 rural), in
+  2018–19 and 2020–21 variants. Per-cluster values appear only in a figure (A16); there
+  is no days-attended term, no linked data and no code. Used for the method (an
+  NTS-based attendance share applied to employment), not for the rate.
+- **NTS 2025**, England. NTS0412 gives **222.8 commuting trips per employed person per
+  year** (2019: 276.7, −19.5%). NTS0504b gives the weekday share of commuting trips:
+  **0.899**. Attendance = 222.8 × 0.899 ÷ 2 ÷ 253 weekdays = **0.396** (2019, using
+  the "2015 to 2019" day split: 0.493).
+- **NTS definitions** (NTS 2025 notes and definitions). Commuting is only home ↔
+  usual-workplace. Trips to work from anywhere else, and all work trips by people with
+  no usual workplace, are classed as business. **So NTS under-counts attendance**, and
+  1 − 0.396 = 0.604 is a ceiling on d.
+- **ONS OPN** (GB, 8 Jan–30 Mar 2025, 5,490 working adults, past 7 days). All: travel
+  only 41%, hybrid 28%, home only 14%, neither 17%. Full-time: 40 / 34 / 16 / 10.
+  Part-time: 53 / 18 / 14 / 15. A travel-only worker who took days off that week
+  still counts as travelling, **so this over-counts attendance** and gives a floor on d.
+
+**Not found:**
+- Any official UK figure for hybrid workers' days on site. OPN, LFS and NTS do not
+  publish it. Indeed Hiring Lab (Sept 2025, job postings): 2 days in 56% of hybrid
+  postings, 2–3 days in 81%. Global Survey of Working Arrangements 2025: 1.8 remote
+  days a week on average. Both are used only to set the [MODELLED] 2.5-day central
+  and 3-day high values.
+- An NTS days-per-week-commuted table for England. It was not in the NTS 2024 or 2025
+  releases, and the 2021 working-from-home tables (NTSQ09026–28) cover all adults, not
+  workers. **Correction:** an early search summary attributed "40% travel to work 5
+  days a week, 14% 0 days" to the NTS. Those figures are from Transport Scotland's
+  2024 Scottish Household Survey and are not used.
+- Any South West or area-type breakdown of attendance. OPN has none, NTS0412 is
+  national, and the Data Science Campus cluster values are not published as data. The
+  discount is national.
+- LFS homeworking data newer than April 2021 in that series.
+
+**Result:**
+
+| | attendance per job | d | how |
+|---|---|---|---|
+| low | 0.571 | **0.429** | OPN, hybrid 3 days on site, part-time 3.5 days |
+| central | 0.461 | **0.539** | midpoint of OPN central (0.527: hybrid 2.5, part-time 3) and NTS (0.396) |
+| high | 0.396 | **0.604** | NTS0412 × NTS0504b |
+
+**Tag: `[MODELLED]`, not `[SOURCED]` as SPEC asked.** Every input is sourced. But the
+combination is not published anywhere, and it needs modelled days on site. Recorded as
+a deviation for the user to accept or change. Not adjusted for: BRES counts jobs, not
+people. Second jobs would push d up by roughly the multiple-job-holding rate, a few
+per cent.
+
+### Finding: the correction now scales the census matrix down
+
+Upstream rescaled up (median ×1.43), because it matched the census to *all* BRES
+jobs. At the central d, BRES × (1 − d) over in-map destinations is 346,119 average
+weekday commuters. The census-based matrix into the same destinations, after the
+no-fixed-place step, is 410,464. The median factor is **0.703**, with 136 of 169
+MSOAs below 1. Low d: 0.870 (112 below 1). High d: 0.603 (149).
+
+This is not a contradiction. The census counted people by where they *mainly* work;
+the discounted BRES counts people *present* on an average weekday. The two measure
+different things, and the lab's matrix is now the second, which is what a
+weekday model needs.
+
+### The 4.0 cap still binds, but only on a geography artefact
+
+With a discount, the cap binds on:
+- Cotswold 011 at every d (17 modelled commuters against 577 discounted BRES jobs at
+  central, ×34.6; ×42.8 low, ×29.7 high);
+- Sedgemoor 002 at low d (×4.3).
+
+Both are boundary slivers. BRES is by LSOA, so an LSOA that clips the extent brings
+all its jobs, while the census counts only the few in-map OAs. Upstream never saw
+this, because its edge folding moves those OAs' commuters into other MSOAs and the
+sliver has no row to scale. **Kept at 4.0** as a guard against that artefact, not as a
+lockdown correction. The proper fix is to apportion partial LSOAs' BRES by the in-map
+share (for example non-residential floorspace). That is a decision for the user.
+
+### Destination split and car availability
+
+- **Destinations:** in-map MSOA → LSOA by BRES LSOA jobs (the discount is national, so
+  discounted and raw shares are identical). Assumption, as decided: within an MSOA,
+  every origin gets the same destination pattern. External_out stays at its external
+  MSOA (or country). The split conserves trips to 1e-9 (tested).
+- **Car availability:** ODWP14EW is published at MSOA → MSOA only (5 categories;
+  place-of-work code 3 = fixed workplace in the UK). A pair's own CA share is used when
+  its ODWP14EW total is ≥ 10 [MODELLED]; otherwise the origin MSOA's share. By base
+  commuters: pair basis for 7,789 pairs / 285,497 commuters (75%), origin basis for
+  41,770 pairs / 93,408. Applied after the correction. Assumption, as decided:
+  redistributed no-fixed-place workers share their origin's split. CA share of trips:
+  internal 0.874, external_in 0.934, external_out 0.903.
+
+### Externals
+
+| | base | p1-central trips | median distance to map | beyond 30 km |
+|---|---|---|---|---|
+| external_in | 66,186 | 57,715 (rescaled with their destinations) | 26.3 km | 12,081 |
+| external_out | 37,350 | 46,088 (no-fixed-place uplift only; no BRES outside the extent) | 19.2 km | 12,134 |
+
+Distance is from the external MSOA's population-weighted centroid to the nearest
+in-map OA centroid, the same definition upstream's clamp uses. Stored uncut; the 30 km
+cut is a v1.1 decision.
+
+### Demand written
+
+| version | internal | external_in | external_out |
+|---|---|---|---|
+| p1-low | 356,126 | 71,349 | 46,088 |
+| p1-central | 287,893 | 57,715 | 46,088 |
+| p1-high | 247,003 | 49,523 | 46,088 |
+
+Origins: internal at LSOA, external_in at MSOA. Destinations: LSOA, except
+external_out at MSOA (or country).
+
 ## Phase status
 
 | phase | status |
 |---|---|
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
-| P1 | upstream `correct()` refactor in review; lab-side steps not started |
+| P1 | built 2026-09-27; upstream `correct()` at `0ea228d` on branch `analysis-grade-correct`; awaiting review |

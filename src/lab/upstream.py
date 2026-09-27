@@ -42,6 +42,31 @@ def connect(cfg: LabConfig) -> duckdb.DuckDBPyConnection:
     return duckdb.connect(str(cfg.upstream_db), read_only=True)
 
 
+def attach(con: duckdb.DuckDBPyConnection, cfg: LabConfig, alias: str = "up") -> None:
+    """Attach the upstream DB to a lab connection, read-only, as `alias`."""
+    if not cfg.upstream_db.is_file():
+        raise UpstreamError(f"upstream DB not found: {cfg.upstream_db}")
+    con.execute(f"ATTACH '{cfg.upstream_db}' AS {alias} (READ_ONLY)")
+
+
+def import_package(cfg: LabConfig):
+    """Import the upstream package from the pinned repo (not from site-packages).
+
+    The lab reuses upstream code — `covid.correct` — rather than re-implementing it,
+    and the run record pins the commit, so the import must come from that checkout.
+    """
+    import importlib
+    import sys
+    repo = str(cfg.upstream_repo)
+    if repo not in sys.path:
+        sys.path.insert(0, repo)
+    pkg = importlib.import_module(cfg.upstream_package)
+    if not Path(pkg.__file__).resolve().is_relative_to(cfg.upstream_repo.resolve()):
+        raise UpstreamError(f"{cfg.upstream_package} imported from {pkg.__file__}, "
+                            f"not the pinned repo {repo}")
+    return pkg
+
+
 def read_table(con: duckdb.DuckDBPyConnection, table: str):
     """Read an upstream table, refusing any that carries game adjustments."""
     if table in GAME_TABLES:

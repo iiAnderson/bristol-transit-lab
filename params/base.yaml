@@ -10,20 +10,45 @@ _meta:
   status: P0 skeleton
 
 commute:
+  # d = 1 − (workers attending a fixed workplace on an average weekday ÷ BRES jobs).
+  # Derived by src/lab/demand/bres_discount.py from the raw tables; tests check these
+  # values match the derivation. Not the census TS058 36.2% (lockdown home-working,
+  # already removed on the census side). See sources.md P1.
   bres_discount:
-    value: null
-    unit: share of BRES jobs not travelled to on an average weekday
-    tag: PLACEHOLDER
-    note: >-
-      P1 — ONS Data Science Campus / NTS approach. Not the census TS058 36.2%
-      (lockdown home-working, already removed on the census side).
+    low:
+      value: 0.429
+      unit: share of BRES jobs
+      tag: MODELLED
+      reasoning: >-
+        1 − ONS OPN (GB, 8 Jan–30 Mar 2025, Table_1 by working pattern) attendance with
+        hybrid workers on site 3 days/week and part-timers working 3.5 days. OPN counts
+        anyone who travelled in the past 7 days, so it over-counts attendance: floor on d.
+    central:
+      value: 0.539
+      unit: share of BRES jobs
+      tag: MODELLED
+      reasoning: >-
+        1 − midpoint of OPN attendance (hybrid 2.5 days on site, per Indeed Hiring Lab
+        Sept 2025; part-timers 3 days) and NTS attendance. The two are biased in
+        opposite directions; the midpoint is a modelled choice.
+    high:
+      value: 0.604
+      unit: share of BRES jobs
+      tag: MODELLED
+      reasoning: >-
+        1 − NTS 2025 attendance: NTS0412 222.8 commuting trips per employed person
+        per year × NTS0504b weekday share 0.899 ÷ 2 ÷ 253 weekdays. NTS counts only
+        home ↔ usual-workplace trips, so it under-counts attendance: ceiling on d.
   bres_rescale_cap:
     value: 4.0
     unit: max destination factor
     tag: MODELLED
     reasoning: >-
-      Inherited from upstream (p95 rule, Bristol 2026-08). P1 re-checks after the BRES
-      discount; if the cap no longer binds it is dropped, and the result is logged.
+      Inherited from upstream (p95 rule, Bristol 2026-08). Re-checked in P1 after the
+      discount: it still binds, but only on boundary-sliver MSOAs whose partial LSOAs
+      bring all their BRES jobs (Cotswold 011 at every d, x29.7–42.8; Sedgemoor 002
+      at low d, x4.3). Kept as a guard against that geography artefact, not as a
+      lockdown correction.
 
 generalised_cost:
   w_walk:

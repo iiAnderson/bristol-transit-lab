@@ -156,6 +156,7 @@ bristol-transit-lab/
 ### CLI
 
 ```
+lab demand commute                      # P1: HBW matrix at low / central / high d
 lab build-baseline B2026|B2028
 lab scenario new S015-a4-brt --from B2028
 lab run S015-a4-brt [--demand D1] [--periods AM,IP]

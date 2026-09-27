@@ -21,4 +21,6 @@ dependencies:
   - click
   - matplotlib
   - pytest
+  - odfpy            # NTS tables are ODS
+  - openpyxl         # ONS tables are XLSX
   - pip
