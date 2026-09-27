@@ -209,7 +209,7 @@ def supply_rail() -> None:
         if val["errors"]:
             raise click.ClickException(f"rail GTFS has validator errors: {val['codes']}")
         now = dt.datetime.now(dt.timezone.utc)
-        darwin_licence = "National Rail open data terms (wording to confirm, A5)"
+        darwin_licence = rc["darwin_licence"]
         for fid, kind, p, url, lic in [
             ("darwin_timetable", "rail_darwin", paths["darwin_timetable"],
              "supplied by Robbie (Darwin Push Port timetable)", darwin_licence),

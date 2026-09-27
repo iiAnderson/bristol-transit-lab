@@ -622,6 +622,31 @@ Working plan and progress log: `plans/P2.md`.
 | BODS regional timetables, archived (GTFS) | https://data.datalibrary.uk/transport/BODS-ARCHIVE/timetables/ | 2026-09-27 | OGL v3, attribution as above | Daily regional GTFS; `itm_south_west_gtfs_20260923.zip` (01:30 on 23 Sep) is the modelled-date bus feed (A4, not yet downloaded) |
 | BODS API, SIRI-VM datafeed | https://data.bus-data.dft.gov.uk/api/v1/datafeed/ | 2026-09-27 | OGL v3 (BODS terms) | Live, 10 s polling over the clip box, 29 Sep–1 Oct 2026 07:00–16:00, for the spacing-bias test only. Key registered 2026-09-27, held outside the repo. API docs are behind the BODS login |
 
+| Darwin Push Port timetable (`_v8`) and reference (`_ref_v4`) | supplied by Robbie: `PPTimetable_20260923020537_*` (generated 02:05 on 23 Sep); dev fixture `PPTimetable_20260927020529_*` | 2026-09-27 | **NRE OGL** (OGL v2.0 with NRE amendments); attribution to National Rail as data provider required — https://www.nationalrail.co.uk/developers/darwin-data-feeds/ | SHA-256 `6d85e50e…` (`_v8`), `18d94f33…` (`_ref_v4`); in the feed registry |
+| NaPTAN rail access nodes | https://naptan.api.dft.gov.uk/v1/access-nodes?dataFormat=csv&atcoAreaCodes=910 (API listed on https://beta-naptan.dft.gov.uk/download) | 2026-09-27 | OGL v3 | 2,768 rows (2,716 `RLY`); `9100<TIPLOC>` → coordinates; SHA-256 `e9febab7…` |
+| MobilityData GTFS validator | https://github.com/MobilityData/gtfs-validator/releases/tag/v8.0.1 (`gtfs-validator-8.0.1-cli.jar`) | 2026-09-27 | Apache 2.0 | SHA-256 `19293ddd…`; run with `-c gb -d <modelled date>` |
+
+### Rail GTFS (A5, 2026-09-27)
+
+`lab supply rail` on the 23 Sep snapshot: 34,059 journeys on the date → 613 trips kept in
+the clip box, 3,343 stop times, 37 stations, operators AW, GW, XC. Excluded: 7,456 not
+passenger, 2,101 timetabled buses (BS), 868 bus replacements (BR), 360 run-as-required,
+221 ships, 109 charters, 86 cancelled journeys, 1 deleted; 658 cancelled calls dropped
+(the snapshot was generated on the day, so it carries short-notice cancellations); 3
+public calls at a junction with no CRS dropped. GTFS validator: 0 errors, 3 warnings
+(all from a single-date feed built by the lab).
+
+- **Temple Meads reconciles:** 436 journeys call there = 435 eligible + 1 cancelled call
+  (23rd) or 1 bus replacement (28th); 3 of the 435 have no other call inside the box
+  (Temple Meads ↔ Devon non-stop), leaving 432.
+- **Correction to the repo-check record:** Portishead (`PRTSHD`, POH), Henbury (`HENBURY`,
+  HBR) and Pill (`PILL`, PIA) are all in the Darwin reference with no services, and
+  North Filton is **Bristol Brabazon** (`NRHFILT`, BBZ), also unserved on 23 and 28 Sep.
+  The earlier "Portishead and North Filton not in the reference data" was a name
+  mismatch. NaPTAN lists Bristol Brabazon as an *active* station and Darwin gives it an
+  operator (GW), which suggests an imminent opening.
+- **Pilning** is unserved on weekdays (Saturday-only service): configured as such.
+
 ### School calendars (A6 day check, 2026-09-27)
 
 All nine archive days (8–10, 15–17, 22–24 Sep 2026) and the live days (29 Sep–1 Oct) are
