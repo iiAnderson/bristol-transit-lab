@@ -99,3 +99,11 @@ osm:
   raw_dir: data/raw/osm
   merged: data/interim/osm/merged.osm.pbf
   clip: data/interim/osm/b2026_clip.osm.pbf
+
+# WebTRIS (plans/P2.md A7): the latest 12 months published. Data lags ~3 months; on
+# 2026-09-27 the last day with data was 30 Jun 2026.
+webtris:
+  start: 2025-07-01
+  end: 2026-06-30
+  min_interval_s: 1
+  dir: data/raw/webtris

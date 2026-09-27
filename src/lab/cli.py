@@ -392,6 +392,44 @@ def avl_status() -> None:
         sys.exit(2)
 
 
+@cli.group()
+def congestion() -> None:
+    """P2 car congestion: inputs, calibration and validation."""
+
+
+@congestion.command("webtris")
+def congestion_webtris() -> None:
+    """Fetch 15-minute WebTRIS data for every active site in the clip box (resumable)."""
+    import yaml
+    from .supply import avl as a, webtris as w
+    cfg = LabConfig.load()
+    wc = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())["webtris"]
+    out = cfg.root / wc["dir"]
+    c = w.Client(a.user_agent(cfg, _env_secret("LAB_CONTACT_EMAIL")), wc["min_interval_s"])
+    rec = runrecord.build(cfg, command="congestion-webtris", inputs=[
+        {"name": "WebTRIS API", "url": w.BASE,
+         "version": f"{wc['start']}..{wc['end']}"}])
+    runrecord.write(cfg, rec)
+    try:
+        sites = w.sites_in_box(c, a.clip_box(cfg), out / "sites_all.json")
+        active = [s for s in sites if s["Status"] == "Active"]
+        click.echo(f"{len(sites)} sites in the clip box, {len(active)} active", err=True)
+        done = []
+        for i, s in enumerate(active, 1):
+            r = w.fetch_site(c, s, wc["start"], wc["end"], out)
+            done.append(r)
+            click.echo(f"  [{i}/{len(active)}] {s['Name']}: {r}", err=True)
+    except Exception:
+        rec["result"] = {"requests": c.requests}
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"sites_in_box": len(sites), "active": len(active),
+                     "requests": c.requests,
+                     "rows": sum(d.get("rows", 0) for d in done),
+                     "empty_sites": [d["site"] for d in done if d.get("rows") == 0]}
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")
