@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bristol-transit-lab"
+version = "0.0.1"
+description = "Scenario-driven sketch-planning model for the Bristol–Bath city region"
+requires-python = ">=3.13"
+dependencies = ["click>=8", "pyyaml>=6", "duckdb>=1.5"]
+
+[project.scripts]
+lab = "lab.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

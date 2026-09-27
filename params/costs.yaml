@@ -1,0 +1,55 @@
+# Unit cost library (SPEC §8.3). Every entry: value, unit, price_year, source, tag.
+# Seed figures from the spec are PLACEHOLDER until the cited publication has been
+# opened and the figure confirmed (rule 3); the claimed source is in `note`.
+# Capex is ±50% at best (SPEC §11 item 14) — report ranges, not points, once sourced.
+
+_meta:
+  currency: GBP
+  price_base_year: null    # choose one base year and deflate every entry to it (P3)
+  status: P0 skeleton
+
+capex_per_route_km:
+  light_rail:
+    at_grade_street:
+      value: 25.0e6
+      range: [20.0e6, 30.0e6]
+      unit: GBP per route-km, incl. vehicles
+      price_year: null
+      tag: PLACEHOLDER
+      note: UK tram ballpark per spec — Bath & Bristol Trams / D. Walmsley; verify
+    low_cost_vlr:
+      value: 7.0e6
+      unit: GBP per route-km
+      price_year: null
+      tag: PLACEHOLDER
+      note: Coventry VLR claim per spec; unproven even once sourced
+  bus: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: not yet sourced}
+  brt: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: not yet sourced}
+
+alignment_multiplier:          # applied to at-grade cost
+  tunnel:
+    value: 5.0
+    range: [4.0, 6.0]
+    unit: x at-grade
+    tag: PLACEHOLDER
+    note: Halcrow Fox 2000 via Flyvbjerg et al., per spec; verify
+  elevated:
+    value: 2.25
+    range: [2.0, 2.5]
+    unit: x at-grade
+    tag: PLACEHOLDER
+    note: Halcrow Fox 2000 via Flyvbjerg et al., per spec; verify
+
+optimism_bias:
+  note_only:
+    value: null
+    unit: uplift by project stage
+    tag: PLACEHOLDER
+    note: TAG A1.2 table by scheme type and stage; enter in P3
+
+fleet:
+  spare_ratio:
+    value: 0.1
+    unit: share of peak fleet
+    tag: PLACEHOLDER
+    note: typical figure; source in P3

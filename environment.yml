@@ -1,0 +1,24 @@
+# Conda environment for Bristol Transit Lab.
+# Python matches upstream subwaybuilder-bristol (3.13) so the two envs read the same
+# DuckDB files. Java is pinned *inside* the env (conda-forge openjdk 21) rather than
+# taken from Homebrew: r5py needs JDK >= 21, and R5 is built and tested against the 21 LTS.
+name: transit-lab
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - openjdk=21
+  - r5py=1.1.7
+  - python-duckdb=1.5.3   # same as upstream, so file formats match
+  - geopandas
+  - pyarrow
+  - pyogrio
+  - shapely
+  - numpy
+  - pandas
+  - scipy
+  - pyyaml
+  - click
+  - matplotlib
+  - pytest
+  - pip

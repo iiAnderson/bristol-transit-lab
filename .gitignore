@@ -1,0 +1,28 @@
+# Data: everything under data/ is downloaded or derived, never committed.
+data/
+# Run outputs (run.json, scorecards, maps). The directory itself is kept.
+runs/*
+!runs/.gitkeep
+# Downloaded or built artefacts, wherever they land. r5py caches its R5 jar and
+# network builds in ~/.cache/r5py, outside the repo; these patterns catch any copy
+# that ends up inside it.
+*.jar
+*.osm.pbf
+*.pbf
+*.zip
+*.gz
+*.duckdb
+*.duckdb.wal
+*.omx
+*.parquet
+*.gtfs
+gtfs/
+cache/
+# Python
+__pycache__/
+*.egg-info/
+.pytest_cache/
+# OS / editors
+.DS_Store
+.vscode/
+.idea/

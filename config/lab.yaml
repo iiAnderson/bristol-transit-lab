@@ -1,0 +1,17 @@
+# Where the lab finds its inputs. Place-specific configuration lives here, not in src/
+# (CLAUDE.md rule 6).
+
+# Upstream: subwaybuilder-bristol, packaged as ons_to_subwaybuilder (`otsb`).
+# Opened read-only, always (rule 10). Override the repo path with LAB_UPSTREAM_REPO.
+upstream:
+  repo: ~/Documents/Projects/subwaybuilder-bristol
+  db: data/interim/BRS/census.duckdb      # NOT data/interim/census.duckdb (pre-package build)
+  package: ons_to_subwaybuilder
+  city_config: ons_to_subwaybuilder/cities/bristol.yml
+
+# Same extent as upstream Bristol & Bath: [min_lon, min_lat, max_lon, max_lat]
+extent: [-3.02, 51.32, -2.28, 51.60]
+
+paths:
+  lab_db: data/interim/lab.duckdb
+  runs: runs

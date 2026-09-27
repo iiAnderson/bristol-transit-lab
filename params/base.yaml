@@ -1,0 +1,86 @@
+# Behavioural and model parameters. Every value carries a tag (CLAUDE.md rule 2):
+#   SOURCED needs `source`; CALIBRATED needs `target`; MODELLED needs `reasoning`;
+#   PLACEHOLDER must be resolved before any published output.
+# Values the spec attributes to a publication stay PLACEHOLDER until that publication
+# has been opened and the figure confirmed (rule 3) — the claimed source is in `note`.
+# `lab params` lists them; src/lab/params.py enforces the schema.
+
+_meta:
+  price_base: null        # set when the TAG data book values are entered (P5)
+  status: P0 skeleton
+
+commute:
+  bres_discount:
+    value: null
+    unit: share of BRES jobs not travelled to on an average weekday
+    tag: PLACEHOLDER
+    note: >-
+      P1 — ONS Data Science Campus / NTS approach. Not the census TS058 36.2%
+      (lockdown home-working, already removed on the census side).
+  bres_rescale_cap:
+    value: 4.0
+    unit: max destination factor
+    tag: MODELLED
+    reasoning: >-
+      Inherited from upstream (p95 rule, Bristol 2026-08). P1 re-checks after the BRES
+      discount; if the cap no longer binds it is dropped, and the result is logged.
+
+generalised_cost:
+  w_walk:
+    value: 2.0
+    unit: IVT-min per walk-min
+    tag: PLACEHOLDER
+    note: spec default; confirm against TAG M3.2
+  w_wait:
+    value: 2.0
+    unit: IVT-min per wait-min
+    tag: PLACEHOLDER
+    note: spec default; confirm against TAG M3.2
+  p_interchange:
+    value: 7.5
+    range: [5, 10]
+    unit: min per transfer
+    tag: PLACEHOLDER
+    note: spec gives 5–10 min; source from TAG / literature
+  mode_constant_mass_transit:
+    value: 0.0
+    unit: min
+    tag: MODELLED
+    reasoning: >-
+      Zero by default (SPEC §7.2). A non-zero quality bonus is the easiest way to
+      flatter a scheme; if one is introduced, always report a run without it.
+  game_weights:
+    w_walk:
+      value: 1.39
+      unit: IVT-min per walk-min
+      tag: PLACEHOLDER
+      note: Subway Builder published weights, per spec; sensitivity runs only; verify
+    w_wait:
+      value: 1.37
+      unit: IVT-min per wait-min
+      tag: PLACEHOLDER
+      note: Subway Builder published weights, per spec; sensitivity runs only; verify
+
+skims:
+  departure_window_min:
+    value: 60
+    unit: min
+    tag: MODELLED
+    reasoning: spec default (§7.1); smooths timetable phase without spanning periods
+  percentiles:
+    value: [25, 50, 75]
+    unit: percentile
+    tag: MODELLED
+    reasoning: spec default (§7.1); p50 for accessibility, p25/p75 for spread
+
+assignment:
+  crowding_flag_load_factor:
+    value: 0.8
+    unit: pax / capacity
+    tag: MODELLED
+    reasoning: spec threshold (§7.4) for flagging links; no feedback into GC in v1
+
+periods:
+  AM: {value: "07:00-10:00", tag: MODELLED, reasoning: spec §6.3 period definition}
+  IP: {value: "10:00-16:00", tag: MODELLED, reasoning: spec §6.3 period definition}
+  PM: {value: "16:00-19:00", tag: MODELLED, reasoning: spec §6.3 period definition}
