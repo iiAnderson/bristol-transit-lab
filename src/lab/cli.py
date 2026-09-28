@@ -268,7 +268,8 @@ def supply_bus() -> None:
         if not zones.is_file():
             raise click.ClickException(f"{zones} missing: internal LSOA polygons are needed "
                                        "to keep trips serving zones beyond the extent")
-        res = g.build(con, names, day, cfg.extent, a.clip_box(cfg), zones)
+        res = g.build(con, names, day, cfg.extent, a.clip_box(cfg), zones,
+                      bc.get("exclude_trips", {}).get("trip_ids"))
         cmp_day = bc["compare_date"]
         now_r = g.trips_per_route_on(con, names, day)
         later = g.trips_per_route_on(con, names, cmp_day)
