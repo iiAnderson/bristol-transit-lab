@@ -230,6 +230,26 @@ congestion:
       (Robbie, 2026-09-27: match each road); the ridge keeps them near 1 where the
       class × area level already fits. Held-out validation tests whether they
       generalise; the parsimonious fit (no road multipliers) is reported alongside.
+  validation_folds:
+    value: 5
+    unit: spatial folds for the bus hold-out
+    tag: MODELLED
+    reasoning: standard K for cross-validation; each fold holds ~20% of 2 km blocks
+  validation_block_km:
+    value: 2.0
+    unit: km (square blocks)
+    tag: MODELLED
+    reasoning: >-
+      Larger than a typical corridor segment run, so held-out segments are not
+      neighbours of training segments on the same street (spatial blocking, plans/P2.md §5).
+  validation_max_len_diff:
+    value: 0.2
+    unit: share |routed length ÷ ANPR link length − 1|
+    tag: MODELLED
+    reasoning: >-
+      An ANPR link whose OSRM route differs from its recorded path by more than this
+      is probably routed differently (one-way systems, bus gates); such links are
+      excluded and listed.
   target_min_coverage:
     value: 0.8
     unit: share of an authority × road's DfT-local length inside the clip box

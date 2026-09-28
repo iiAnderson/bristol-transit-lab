@@ -671,6 +671,35 @@ def congestion_avl(days: tuple[str, ...], source: str) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+def _calibration_inputs(cfg, raw, trav_files) -> dict:
+    """Everything `lab congestion calibrate` and `validate` read, loaded once."""
+    import duckdb
+    import pandas as pd
+    from .congestion import calibrate as cal, fit, targets as tg
+    from .supply import avl as a
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    periods = {k: tuple(ps[f"periods.{k}"].split("-")) for k in ("AM", "IP", "PM")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    dc = cfg.root / "data" / "raw" / "dft_congestion"
+    targets = tg.dft_targets(dc / "cgn0503.ods", dc / "cgn0509.ods")
+    targets = targets[targets["lad"].isin(raw["authorities"].values())]
+    cov = tg.coverage(duckdb.connect(), d / "main_roads_full.parquet",
+                      cfg.root / "data/raw/ons_geo/lad24_bgc_extent.geojson",
+                      cfg.root / "data/interim/aadf_by_direction_clip.parquet", a.clip_box(cfg))
+    year, prof = tg.tra0307_profile(
+        cfg.root / "data/raw/dft_traffic/tra0307-traffic-distribution-by-time-of-day.ods")
+    months = [f"{m} 2025" for m in ("April", "May", "June", "July", "August", "September",
+                                    "October", "November", "December")] + \
+             [f"{m} 2026" for m in ("January", "February", "March")]
+    return {"seg": pd.read_parquet(d / "segments_annotated.parquet"),
+            "trav": pd.concat([pd.read_parquet(f) for f in trav_files], ignore_index=True),
+            "wspeed": pd.read_parquet(d / "webtris_speed.parquet"),
+            "wsites": pd.read_parquet(d / "webtris_sites.parquet"),
+            "targets": targets, "cov": cov, "P": fit.period_weights(prof, periods),
+            "national": cal.dft_national_ratios(str(dc / "cgn0503.ods"), months),
+            "year": year, "periods": periods}
+
+
 @congestion.command("calibrate")
 @click.option("--days", default=None, help="Comma-separated AVL days to use (default: all "
               "closed archive days).")
@@ -702,24 +731,10 @@ def congestion_calibrate(days: str | None) -> None:
          d / "webtris_sites.parquet", *trav_files]])
     runrecord.write(cfg, rec)
     try:
-        seg = pd.read_parquet(d / "segments_annotated.parquet")
-        trav = pd.concat([pd.read_parquet(f) for f in trav_files], ignore_index=True)
-        wspeed = pd.read_parquet(d / "webtris_speed.parquet")
-        wsites = pd.read_parquet(d / "webtris_sites.parquet")
-        dc = cfg.root / "data" / "raw" / "dft_congestion"
-        targets = tg.dft_targets(dc / "cgn0503.ods", dc / "cgn0509.ods")
-        targets = targets[targets["lad"].isin(raw["authorities"].values())]
-        cov = tg.coverage(duckdb.connect(), d / "main_roads_full.parquet",
-                          cfg.root / "data/raw/ons_geo/lad24_bgc_extent.geojson",
-                          cfg.root / "data/interim/aadf_by_direction_clip.parquet",
-                          a.clip_box(cfg))
-        year, prof = tg.tra0307_profile(
-            cfg.root / "data/raw/dft_traffic/tra0307-traffic-distribution-by-time-of-day.ods")
-        P = fit.period_weights(prof, periods)
-        months = [f"{m} 2025" for m in ("April", "May", "June", "July", "August", "September",
-                                        "October", "November", "December")] + \
-                 [f"{m} 2026" for m in ("January", "February", "March")]
-        national = cal.dft_national_ratios(str(dc / "cgn0503.ods"), months)
+        inp = _calibration_inputs(cfg, raw, trav_files)
+        seg, trav, wspeed, wsites, targets, cov, P, national, year = (
+            inp[k] for k in ("seg", "trav", "wspeed", "wsites", "targets", "cov", "P",
+                             "national", "year"))
         ls, ls_base, rep = cal.run(seg, trav, wspeed, wsites, targets, cov, P, p, ffp, national,
                           p["target_min_coverage"], p["fit_ridge_lambda"],
                           p["fit_road_ridge_lambda"])
@@ -750,6 +765,99 @@ def congestion_calibrate(days: str | None) -> None:
     click.echo(f"  leave-one-road-out: median |err| {lo['median_abs_rel_error']:.3f}, p90 "
                f"{lo['p90_abs_rel_error']:.3f}, pass (<=15%): {lo['passes_15pct_median']}")
     click.echo(f"  median factor by period {rep['median_factor']}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@congestion.command("validate")
+@click.option("--days", default=None, help="Comma-separated AVL days (default: all closed).")
+def congestion_validate(days: str | None) -> None:
+    """P2b held-out validation (spatially blocked bus speeds; ANPR 2023–24), hybrid vs base,
+    against the pre-registered rule."""
+    import json
+    import pandas as pd
+    import yaml
+    from .congestion import calibrate as cal, validate as va
+    from .supply import osrm
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    p = {k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("congestion.")}
+    ffp = {k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("free_flow.")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    avl_dir = cfg.root / raw["paths"]["avl"] / "archive"
+    closed = [json.loads(x)["day"] for x in (avl_dir / "days.jsonl").read_text().splitlines()]
+    use_days = days.split(",") if days else closed
+    trav_files = [d / "avl" / f"traversals_archive_{x}.parquet" for x in use_days]
+    rec = runrecord.build(cfg, command="congestion-validate", inputs=[
+        {"name": str(f), "sha256": params.file_hash(f)} for f in trav_files])
+    runrecord.write(cfg, rec)
+    try:
+        inp = _calibration_inputs(cfg, raw, trav_files)
+
+        def run_cal(trav):
+            ls, ls_b, rep = cal.run(inp["seg"], trav, inp["wspeed"], inp["wsites"],
+                                    inp["targets"], inp["cov"], inp["P"], p, ffp,
+                                    inp["national"], p["target_min_coverage"],
+                                    p["fit_ridge_lambda"], p["fit_road_ridge_lambda"])
+            return ls, ls_b, rep
+        ls_h, ls_b, rep = run_cal(inp["trav"])
+        seg = inp["seg"].copy()
+        # bus hold-out
+        k = int(p["validation_folds"])
+        fold = va.blocks(seg, p["validation_block_km"], k)
+        bus = va.bus_holdout(seg, inp["trav"], fold, k, lambda t: run_cal(t)[:2],
+                             p["min_obs_per_link"])
+        bus_sum = {v: va.summarise(g["rel_error"]) for v, g in bus.groupby("variant")}
+        bus_by = bus.groupby(["variant", "road_class", "area_type", "period"])["rel_error"] \
+            .agg(n="size", median_abs=lambda e: float(e.abs().median())).reset_index()
+        # ANPR
+        obs = va.anpr_observed([cfg.root / "data/raw/bristol_anpr/journey_counts_2023.parquet",
+                                cfg.root / "data/raw/bristol_anpr/journey_counts_2024.parquet"],
+                               inp["periods"], raw["avl"]["timezone"])
+        base = cfg.root / raw["osm"]["osrm_base"]
+        for variant, ls in (("hybrid", ls_h), ("base", ls_b)):
+            cal.write_speed_files(ls, d / f"val_speeds_{variant}")
+        anpr_rows = []
+        for variant in ("hybrid", "base"):
+            for per in ("AM", "IP"):
+                ds = va.period_dataset(base, d / f"val_speeds_{variant}" / f"speeds_{per}.csv",
+                                       d / "osrm_val" / f"{variant}_{per}")
+                with osrm.Server(ds) as srv:
+                    m = va.anpr_modelled(cfg.root / "data/raw/bristol_anpr/journey_links.geojson",
+                                         srv.port)
+                m["variant"], m["period"] = variant, per
+                anpr_rows.append(m)
+        anpr = pd.concat(anpr_rows).merge(obs, on=["link_id", "period"], how="inner")
+        anpr["len_ratio"] = anpr["route_m"] / anpr["link_m"]
+        ok = (anpr["len_ratio"] - 1).abs() <= p["validation_max_len_diff"]
+        excluded = anpr[~ok & (anpr["variant"] == "hybrid") & (anpr["period"] == "AM")][
+            ["link_id", "desc", "len_ratio"]].round(3).to_dict("records")
+        anpr = anpr[ok].copy()
+        anpr["rel_error"] = anpr["mod_s"] / anpr["obs_s"] - 1
+        anpr_sum = {v: va.summarise(g["rel_error"]) for v, g in anpr.groupby("variant")}
+        # pre-registered rule
+        lo = rep["leave_one_road_out"]["median_abs_rel_error"]
+        worse_bus = bus_sum["hybrid"]["median_abs_rel_error"] - bus_sum["base"]["median_abs_rel_error"]
+        worse_anpr = anpr_sum["hybrid"]["median_abs_rel_error"] - anpr_sum["base"]["median_abs_rel_error"]
+        rule = {"loro_median_le_15pct": lo <= 0.15,
+                "bus_hybrid_minus_base_pp": round(100 * worse_bus, 2),
+                "anpr_hybrid_minus_base_pp": round(100 * worse_anpr, 2),
+                "keep_road_multipliers": bool(worse_bus <= 0.01 and worse_anpr <= 0.01)}
+        rule["verdict"] = ("keep per-road adjustments" if rule["keep_road_multipliers"]
+                           else "drop per-road adjustments (held-out validation worse)")
+        out = cfg.runs_dir / rec["run_id"]
+        bus.to_parquet(out / "bus_holdout.parquet")
+        anpr.to_parquet(out / "anpr.parquet")
+        (out / "validation.json").write_text(json.dumps(
+            {"days": use_days, "rule": rule, "leave_one_road_out": rep["leave_one_road_out"],
+             "bus": bus_sum, "bus_by_cell": bus_by.to_dict("records"), "anpr": anpr_sum,
+             "anpr_excluded_links": excluded}, indent=1, default=str))
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"days": use_days, "rule": rule, "bus": bus_sum, "anpr": anpr_sum,
+                     "anpr_links_excluded": len(excluded)}
+    click.echo(json.dumps(rec["result"], indent=1, default=str))
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
