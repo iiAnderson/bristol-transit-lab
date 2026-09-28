@@ -1077,6 +1077,62 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@skims.command("car")
+@click.option("--period", "periods", multiple=True, default=["AM", "IP"], show_default=True)
+@click.option("--variant", type=click.Choice(["hybrid", "base"]), default="hybrid",
+              show_default=True)
+def skims_car(periods: tuple[str, ...], variant: str) -> None:
+    """Car skims OA -> clip-box LSOAs from OSRM with calibrated per-period speeds."""
+    import duckdb
+    import numpy as np
+    import pandas as pd
+    import yaml
+    from .congestion import validate as va
+    from .supply import osrm
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    sp = d / ("osrm_speeds" if variant == "hybrid" else "osrm_speeds_base")
+    base = cfg.root / raw["osm"]["osrm_base"]
+    rec = runrecord.build(cfg, command="skims-car", inputs=[
+        {"name": str(sp / f"speeds_{p}.csv"), "sha256": params.file_hash(sp / f"speeds_{p}.csv")}
+        for p in periods] + [{"name": "osrm", "version": osrm.version()}])
+    runrecord.write(cfg, rec)
+    res = {}
+    try:
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            o = con.execute("SELECT OA21CD id, lon, lat FROM int_oa_pwc ORDER BY 1").df()
+            dst = con.execute("""SELECT d.LSOA21CD id, d.lon, d.lat,
+                CASE WHEN d.internal THEN 1 ELSE 0 END internal FROM skim_dest d ORDER BY 1""").df()
+        park = {k: ps.get(f"car.parking_search_min.{k}") for k in ("centre", "urban", "rural")}
+        walk = {k: ps.get(f"car.access_walk_min.{k}") for k in ("centre", "urban", "rural")}
+        for per in periods:
+            ds = va.period_dataset(base, sp / f"speeds_{per}.csv",
+                                   cfg.root / "data" / "interim" / "osrm" / f"{variant}_{per}")
+            with osrm.Server(ds) as srv:
+                m = srv.table(list(zip(o.lon, o.lat)), list(zip(dst.lon, dst.lat))) / 60
+            t = pd.DataFrame({"from_id": np.repeat(o["id"].to_numpy(), len(dst)),
+                              "to_id": np.tile(dst["id"].to_numpy(), len(o)),
+                              "ivt_min": m.ravel()})
+            t["parking_search_min"] = np.nan    # PLACEHOLDER by destination area type
+            t["access_walk_min"] = np.nan       # PLACEHOLDER by destination area type
+            t["gc_min"] = np.nan                # needs the two above; flagged
+            t["variant"], t["period"] = variant, per
+            out = cfg.root / "data" / "interim" / "skims" / f"car_{per}_oa_lsoa.parquet"
+            t.to_parquet(out, compression="zstd")
+            res[per] = {"pairs": len(t), "unroutable": int(t["ivt_min"].isna().sum()),
+                        "median_ivt_min": float(t["ivt_min"].median())}
+            click.echo(f"  {per}: {res[per]}")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"variant": variant, **res,
+                     "note": "car GC pending: car.parking_search_min and car.access_walk_min "
+                             "are PLACEHOLDER (null)"}
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @skims.command("active")
 def skims_active() -> None:
     """Walk and cycle skims OA -> clip-box LSOAs (r5py, shared routing settings)."""
