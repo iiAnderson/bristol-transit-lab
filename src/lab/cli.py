@@ -709,6 +709,24 @@ def congestion_avl(days: tuple[str, ...], source: str) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+def _anpr_inputs(cfg) -> dict | None:
+    """ANPR constraint inputs from `lab congestion anpr-prep`, if present."""
+    import pandas as pd
+    d = cfg.root / "data" / "interim" / "congestion"
+    if not (d / "anpr_paths.parquet").is_file():
+        return None
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    paths = pd.read_parquet(d / "anpr_paths.parquet")
+    ratio = (paths.groupby("link_id")["route_m"].first()
+             / paths.groupby("link_id")["link_m"].first())
+    bad = ratio[(ratio - 1).abs() > ps["congestion.validation_max_len_diff"]]
+    return {"paths": paths[~paths["link_id"].isin(bad.index)],
+            "obs": pd.read_parquet(d / "anpr_obs.parquet"),
+            "signals": set(pd.read_parquet(d / "signal_nodes.parquet")["node"]),
+            "excluded": [{"link_id": k, "route_over_link": round(float(v), 3)}
+                         for k, v in bad.items()]}
+
+
 def _calibration_inputs(cfg, raw, trav_files) -> dict:
     """Everything `lab congestion calibrate` and `validate` read, loaded once."""
     import duckdb
@@ -773,9 +791,10 @@ def congestion_calibrate(days: str | None) -> None:
         seg, trav, wspeed, wsites, targets, cov, P, national, year = (
             inp[k] for k in ("seg", "trav", "wspeed", "wsites", "targets", "cov", "P",
                              "national", "year"))
+        anpr = _anpr_inputs(cfg)
         ls, ls_base, rep = cal.run(seg, trav, wspeed, wsites, targets, cov, P, p, ffp, national,
                           p["target_min_coverage"], p["fit_ridge_lambda"],
-                          p["fit_road_ridge_lambda"])
+                          p["fit_road_ridge_lambda"], anpr)
         ls.to_parquet(d / "link_speed.parquet", compression="zstd")
         ls_base.to_parquet(d / "link_speed_base.parquet", compression="zstd")
         files = cal.write_speed_files(ls, d / "osrm_speeds")
@@ -803,6 +822,49 @@ def congestion_calibrate(days: str | None) -> None:
     click.echo(f"  leave-one-road-out: median |err| {lo['median_abs_rel_error']:.3f}, p90 "
                f"{lo['p90_abs_rel_error']:.3f}, pass (<=15%): {lo['passes_15pct_median']}")
     click.echo(f"  median factor by period {rep['median_factor']}")
+    if rep.get("signals", {}).get("enabled"):
+        click.echo(f"  signal delays (s): {rep['signals']['delays_s']}")
+        for k, v in rep["anpr"].items():
+            click.echo(f"  ANPR {k}: n {v['n']}, median modelled/observed {v['median_ratio']:.3f}, "
+                       f"median |err| {v['median_abs_rel_error']:.3f}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@congestion.command("anpr-prep")
+@click.option("--block-km", default=1.5, show_default=True)
+def congestion_anpr_prep(block_km: float) -> None:
+    """ANPR constraint inputs: free-flow link paths, spatial calibration/validation split,
+    observed times (IP; AM peak hour under both hour conventions)."""
+    import yaml
+    from .congestion import signals as sg
+    from .supply import osrm
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    d = cfg.root / "data" / "interim" / "congestion"
+    an = cfg.root / "data" / "raw" / "bristol_anpr"
+    base = cfg.root / raw["osm"]["osrm_base"]
+    osrm.customize(base)                                  # free flow for path finding
+    rec = runrecord.build(cfg, command="congestion-anpr-prep")
+    runrecord.write(cfg, rec)
+    with osrm.Server(base) as srv:
+        paths = sg.link_paths(an / "journey_links.geojson", srv.port)
+    split = sg.split_links(paths, block_km)
+    paths["half"] = paths["link_id"].map(split)
+    obs = sg.anpr_obs_by_label([an / "journey_counts_2023.parquet",
+                                an / "journey_counts_2024.parquet"], raw["avl"]["timezone"])
+    obs["half"] = obs["link_id"].map(split)
+    sig = sg.signal_nodes(cfg.root / raw["osm"]["clip"])
+    paths.to_parquet(d / "anpr_paths.parquet")
+    obs.to_parquet(d / "anpr_obs.parquet")
+    import pandas as pd
+    pd.DataFrame({"node": sorted(sig)}).to_parquet(d / "signal_nodes.parquet")
+    res = {"links_routed": int(paths["link_id"].nunique()),
+           "by_half": split.value_counts().to_dict(),
+           "obs_by_period": obs.groupby(["period", "half"]).size().to_dict(),
+           "signal_nodes": len(sig), "block_km": block_km}
+    rec["result"] = {k: {str(kk): vv for kk, vv in v.items()} if isinstance(v, dict) else v
+                     for k, v in res.items()}
+    click.echo(rec["result"])
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
@@ -836,7 +898,8 @@ def congestion_validate(days: str | None) -> None:
             ls, ls_b, rep = cal.run(inp["seg"], trav, inp["wspeed"], inp["wsites"],
                                     inp["targets"], inp["cov"], inp["P"], p, ffp,
                                     inp["national"], p["target_min_coverage"],
-                                    p["fit_ridge_lambda"], p["fit_road_ridge_lambda"])
+                                    p["fit_ridge_lambda"], p["fit_road_ridge_lambda"],
+                                    _anpr_inputs(cfg))
             return ls, ls_b, rep
         ls_h, ls_b, rep = run_cal(inp["trav"])
         seg = inp["seg"].copy()
@@ -848,31 +911,19 @@ def congestion_validate(days: str | None) -> None:
         bus_sum = {v: va.summarise(g["rel_error"]) for v, g in bus.groupby("variant")}
         bus_by = bus.groupby(["variant", "road_class", "area_type", "period"])["rel_error"] \
             .agg(n="size", median_abs=lambda e: float(e.abs().median())).reset_index()
-        # ANPR
-        obs = va.anpr_observed([cfg.root / "data/raw/bristol_anpr/journey_counts_2023.parquet",
-                                cfg.root / "data/raw/bristol_anpr/journey_counts_2024.parquet"],
-                               inp["periods"], raw["avl"]["timezone"])
-        base = cfg.root / raw["osm"]["osrm_base"]
-        for variant, ls in (("hybrid", ls_h), ("base", ls_b)):
-            cal.write_speed_files(ls, d / f"val_speeds_{variant}")
-        anpr_rows = []
-        for variant in ("hybrid", "base"):
-            for per in ("AM", "IP"):
-                ds = va.period_dataset(base, d / f"val_speeds_{variant}" / f"speeds_{per}.csv",
-                                       d / "osrm_val" / f"{variant}_{per}")
-                with osrm.Server(ds) as srv:
-                    m = va.anpr_modelled(cfg.root / "data/raw/bristol_anpr/journey_links.geojson",
-                                         srv.port)
-                m["variant"], m["period"] = variant, per
-                anpr_rows.append(m)
-        anpr = pd.concat(anpr_rows).merge(obs, on=["link_id", "period"], how="inner")
-        anpr["len_ratio"] = anpr["route_m"] / anpr["link_m"]
-        ok = (anpr["len_ratio"] - 1).abs() <= p["validation_max_len_diff"]
-        excluded = anpr[~ok & (anpr["variant"] == "hybrid") & (anpr["period"] == "AM")][
-            ["link_id", "desc", "len_ratio"]].round(3).to_dict("records")
-        anpr = anpr[ok].copy()
-        anpr["rel_error"] = anpr["mod_s"] / anpr["obs_s"] - 1
-        anpr_sum = {v: va.summarise(g["rel_error"]) for v, g in anpr.groupby("variant")}
+        # data noise floor and corridor-level comparison (bus)
+        nf = va.noise_floor(inp["trav"], seg, p["min_obs_per_link"])
+        nf_by = nf.groupby(["road_class", "area_type"])["rel_diff"].agg(
+            n="size", median_abs_half_diff="median").reset_index()
+        cor = va.corridors(bus, seg)
+        cor_sum = {v: va.summarise(g["rel_error"]) for v, g in cor.groupby("variant")}
+        # ANPR validation half (the calibration half fed the signal-delay fit); IP uses hour
+        # labels 11–15 (convention-proof); the AM peak hour is shown under both conventions
+        an = rep.get("anpr", {})
+        anpr_sum = {v: {"median_abs_rel_error": an[f"{v}|IP|validation"]["median_abs_rel_error"],
+                        "median_ratio": an[f"{v}|IP|validation"]["median_ratio"],
+                        "n": an[f"{v}|IP|validation"]["n"]} for v in ("hybrid", "base")}
+        excluded = rep.get("anpr_excluded_links", [])
         # pre-registered rule
         lo = rep["leave_one_road_out"]["median_abs_rel_error"]
         worse_bus = bus_sum["hybrid"]["median_abs_rel_error"] - bus_sum["base"]["median_abs_rel_error"]
@@ -885,16 +936,23 @@ def congestion_validate(days: str | None) -> None:
                            else "drop per-road adjustments (held-out validation worse)")
         out = cfg.runs_dir / rec["run_id"]
         bus.to_parquet(out / "bus_holdout.parquet")
-        anpr.to_parquet(out / "anpr.parquet")
+        cor.to_parquet(out / "corridors.parquet")
+        nf.to_parquet(out / "noise_floor.parquet")
         (out / "validation.json").write_text(json.dumps(
             {"days": use_days, "rule": rule, "leave_one_road_out": rep["leave_one_road_out"],
-             "bus": bus_sum, "bus_by_cell": bus_by.to_dict("records"), "anpr": anpr_sum,
-             "anpr_excluded_links": excluded}, indent=1, default=str))
+             "bus_cell": bus_sum, "bus_by_cell": bus_by.to_dict("records"),
+             "bus_corridor": cor_sum, "noise_floor_by_class_area": nf_by.to_dict("records"),
+             "noise_floor_overall": float(nf["rel_diff"].median()),
+             "anpr_validation_half": anpr_sum, "anpr_all": an,
+             "signals": rep.get("signals"), "anpr_excluded_links": excluded},
+            indent=1, default=str))
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
-    rec["result"] = {"days": use_days, "rule": rule, "bus": bus_sum, "anpr": anpr_sum,
-                     "anpr_links_excluded": len(excluded)}
+    rec["result"] = {"days": use_days, "rule": rule, "bus_cell": bus_sum,
+                     "bus_corridor": cor_sum, "noise_floor_overall": float(nf["rel_diff"].median()),
+                     "noise_floor_by_class_area": nf_by.round(4).to_dict("records"),
+                     "anpr_validation_half": anpr_sum, "signals": rep.get("signals")}
     click.echo(json.dumps(rec["result"], indent=1, default=str))
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 

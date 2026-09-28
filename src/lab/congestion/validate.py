@@ -127,3 +127,55 @@ def bus_holdout(seg: pd.DataFrame, trav: pd.DataFrame, fold: pd.Series, k: int,
     r = pd.concat(out, ignore_index=True)
     r["rel_error"] = r["pred"] / r["bus"] - 1
     return r
+
+
+def noise_floor(trav: pd.DataFrame, seg: pd.DataFrame, min_obs: int, seed: int = 0) -> pd.DataFrame:
+    """The data's own disagreement: for each segment × period (AM, IP) with at least
+    2 × min_obs legs, split its legs at random into two halves and compare the halves'
+    harmonic mean speeds (|h1 − h2| / mean). Returns per-cell rows with class and area."""
+    t = trav[trav["period"].isin(["AM", "IP"])]
+    n = t.groupby(["u", "v", "period"])["leg"].nunique().rename("n").reset_index()
+    t = t.merge(n[n["n"] >= 2 * min_obs], on=["u", "v", "period"])
+    rng = np.random.default_rng(seed)
+    legs = t[["u", "v", "period", "leg"]].drop_duplicates()
+    legs["half"] = rng.integers(0, 2, len(legs))
+    t = t.merge(legs, on=["u", "v", "period", "leg"])
+    h = t.groupby(["u", "v", "period", "half"])["kmh"].agg(lambda x: len(x) / (1 / x).sum()) \
+        .unstack("half").dropna()
+    h["rel_diff"] = (h[0] - h[1]).abs() / ((h[0] + h[1]) / 2)
+    info = seg[["u", "v", "road_class", "area_type"]].drop_duplicates(["u", "v"])
+    return h.reset_index().merge(info, on=["u", "v"])
+
+
+def corridors(held: pd.DataFrame, seg: pd.DataFrame, min_km: float = 1.0) -> pd.DataFrame:
+    """Chain held-out segments of one road (same ``ref``, else same ``name``) that share
+    nodes, within a variant × period × fold, into corridors ≥ ``min_km``; compare the
+    length-weighted harmonic speeds of prediction and observation."""
+    info = seg[["u", "v", "ref", "name", "length_m"]].drop_duplicates(["u", "v"])
+    h = held.merge(info, on=["u", "v"])
+    h["road"] = h["ref"].fillna(h["name"])
+    h = h.dropna(subset=["road"])
+    rows = []
+    for key, g in h.groupby(["variant", "period", "fold_k", "road"]):
+        parent: dict = {}
+
+        def f(x):
+            parent.setdefault(x, x)
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+        for u, v in zip(g["u"], g["v"]):
+            parent[f(u)] = f(v)
+        comp = [f(u) for u in g["u"]]
+        g = g.assign(comp=comp)
+        for c, gc in g.groupby("comp"):
+            L = gc["length_m"].sum()
+            if L < min_km * 1000:
+                continue
+            obs = L / (gc["length_m"] / gc["bus"]).sum()
+            pred = L / (gc["length_m"] / gc["pred"]).sum()
+            rows.append({"variant": key[0], "period": key[1], "fold_k": key[2],
+                         "road": key[3], "km": L / 1000, "segments": len(gc),
+                         "obs_kmh": obs, "pred_kmh": pred, "rel_error": pred / obs - 1})
+    return pd.DataFrame(rows)

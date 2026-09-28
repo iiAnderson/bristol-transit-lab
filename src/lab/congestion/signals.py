@@ -108,3 +108,24 @@ def delay_arrays(seg: pd.DataFrame, signals: set[int], delays: dict[str, dict[st
         dp = delays.get(p, delays.get("IP", {}))
         out[p] = np.where(is_sig, np.array([dp.get(a, dp.get("urban", 0.0)) for a in area]), 0.0)
     return out
+
+
+def anpr_obs_by_label(counts: list[Path], tz: str) -> pd.DataFrame:
+    """Observed link times (plate-match-weighted mean s) by ANPR hour label, Tue–Thu,
+    excluding August and the Christmas / late-July–early-September windows (approximate
+    neutral days; the 2023/24 and 2024/25 calendars were not checked). Periods:
+    IP = local labels 11–15 (inside 10:00–16:00 under either hour convention);
+    AMPH_if_start = label 08 (stamp = hour start); AMPH_if_end = label 09 (stamp = hour end)."""
+    x = pd.concat([pd.read_parquet(f) for f in counts], ignore_index=True)
+    t = pd.to_datetime(x["t_ms"], unit="ms", utc=True).dt.tz_convert(tz)
+    keep = (t.dt.weekday.isin([1, 2, 3]) & (t.dt.month != 8)
+            & ~((t.dt.month == 12) & (t.dt.day >= 18)) & ~((t.dt.month == 1) & (t.dt.day <= 4))
+            & ~((t.dt.month == 7) & (t.dt.day >= 22)) & ~((t.dt.month == 9) & (t.dt.day <= 3))
+            & (x["matches"] > 0) & (x["journey_s"] > 0))
+    x = x[keep.to_numpy()].assign(h=t[keep].dt.hour.to_numpy())
+    lab = {**{h: "IP" for h in range(11, 16)}, 8: "AMPH_if_start", 9: "AMPH_if_end"}
+    x["period"] = x["h"].map(lab)
+    x = x.dropna(subset=["period"])
+    g = x.groupby(["link_id", "period"])
+    return pd.DataFrame({"obs_s": g.apply(lambda d: np.average(d["journey_s"], weights=d["matches"])),
+                         "hours": g.size()}).reset_index()
