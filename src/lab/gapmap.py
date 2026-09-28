@@ -4,8 +4,10 @@ P2c C5: the draft gap map (plans/P2.md C5; SPEC §10 first publishable output).
 For each internal HBW OD pair (``p1-central``, daily flows — P4 adds periods), the
 ratio of PT GC to car GC in the AM peak hour, weighted by flow.
 
-* OA → LSOA skims are aggregated to LSOA → LSOA with OA population weights (Census 2021
-  TS001), computing GC per OA pair first (SPEC §4). OA pairs unreachable by PT drop out
+* OA → LSOA skims are aggregated to LSOA → LSOA with OA weights = the OA's resident
+  commuters (Census 2021 OA origin–destination flows, ``nat_oa_flows``, summed over
+  destinations; TS001 population is not in the lab and commuters suit HBW better),
+  computing GC per OA pair first (SPEC §4). OA pairs unreachable by PT drop out
   and the weights renormalise; a pair with no reachable OA is "no PT".
 * Car GC = in-vehicle time + parking search + access walk by destination area type
   (PLACEHOLDER values), and a sensitivity with both set to zero.
@@ -24,13 +26,13 @@ LABEL = ("Provisional: placeholder car parking/access times; time-based GC. Comm
 
 def lsoa_gc(con: duckdb.DuckDBPyConnection, skim_parquet: str, gc_col: str,
             ok_expr: str = "true") -> pd.DataFrame:
-    """Population-weighted OA → LSOA GC to LSOA → LSOA (origin LSOA = the OA's LSOA)."""
+    """Commuter-weighted OA → LSOA GC to LSOA → LSOA (origin LSOA = the OA's LSOA)."""
     return con.execute(f"""
         WITH s AS (SELECT from_id OA21CD, to_id d_zone, {gc_col} gc
                    FROM read_parquet('{skim_parquet}') WHERE {ok_expr} AND {gc_col} IS NOT NULL)
         SELECT o.LSOA21CD o_zone, s.d_zone,
-               sum(s.gc * p.pop) / sum(p.pop) gc, sum(p.pop) pop_reached
-        FROM s JOIN int_oa o USING (OA21CD) JOIN oa_pop p USING (OA21CD)
+               sum(s.gc * p.w) / sum(p.w) gc, sum(p.w) w_reached
+        FROM s JOIN int_oa o USING (OA21CD) JOIN oa_w p USING (OA21CD)
         GROUP BY ALL""").df()
 
 

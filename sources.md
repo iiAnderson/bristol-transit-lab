@@ -836,6 +836,13 @@ term time in all four councils; no bank holidays fall in September. Term 1 2026/
 INSET days are set by each school (and academies set their own terms), so no council
 calendar can rule them out; a scattered INSET day is not a network-wide effect.
 
+### P2b round 2 findings (2026-09-28)
+
+- **Zero-distance AVL legs.** Once slow legs away from stops are kept, 0.2% of traversal rows have matched distance 0 (both fixes snapped to one point). Their speed is undefined and they zero harmonic means, so they are dropped.
+- **ANPR hour stamp most likely marks the end of the hour.** Journey-time peaks sit at labels 9 and 18 in both GMT and BST; the volume profile matches TRA0307 with SSE 0.39 (r 0.84) under hour-end vs 1.32 (r 0.30) under hour-start. Not confirmed by Bristol City Council.
+- **Signal delays do not remove the central IP bias.** The fitted centre delay is 0 s, and urban delays (24 s per approach) are offset by the DfT level fit. ANPR validation half IP: 0.86.
+- **Bus noise floor.** Random half-splits differ by a median 6.1% (≈ 3% sampling error for a full cell). Held-out errors (cell 27%, corridor 19%) are far above it, so they are model structure, not sampling noise.
+
 ### Findings
 
 - **SIRI-VM records are often stale.** In the 07:00 BST snapshot of 23 Sep, 102 of the

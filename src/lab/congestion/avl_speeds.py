@@ -8,8 +8,8 @@ B2 (plans/P2.md §5): bus moving speeds per car segment × direction × period.
 3. Legs: consecutive matched fixes ≤ ``max_leg_s`` apart. Leg speed = matched path
    distance ÷ elapsed time. A leg is dropped if either end is within ``stop_buffer_m`` of
    a GTFS stop *and* slower than ``min_moving_kmh`` (dwell; slow legs elsewhere are
-   queueing and kept), if faster than ``max_kmh``, or if its matching's confidence is
-   below ``match_min_confidence``.
+   queueing and kept), if its matched distance is zero (no speed), if faster than
+   ``max_kmh``, or if its matching's confidence is below ``match_min_confidence``.
 4. Traversals: each kept leg's speed is given to every OSM node pair on its path (the
    keys OSRM's segment speed files use). Period by the leg's local start time.
 
@@ -166,6 +166,10 @@ def process_day(day_file: Path, osrm_port: int, stops_parquet: Path, busways: Pa
                         continue
                     ann = leg.get("annotation") or {}
                     dist = sum(ann.get("distance", [])) or leg["distance"]
+                    if dist <= 0:
+                        # both fixes snapped to one point: no distance, no speed
+                        stats["drop_zero_dist"] = stats.get("drop_zero_dist", 0) + 1
+                        continue
                     kmh = dist / dt_s * 3.6
                     # Slow legs are dwell only near a stop (Robbie, 2026-09-28): drop a
                     # leg below min_moving_kmh if either end is within stop_buffer_m of

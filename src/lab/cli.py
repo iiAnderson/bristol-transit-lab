@@ -747,8 +747,14 @@ def _calibration_inputs(cfg, raw, trav_files) -> dict:
     months = [f"{m} 2025" for m in ("April", "May", "June", "July", "August", "September",
                                     "October", "November", "December")] + \
              [f"{m} 2026" for m in ("January", "February", "March")]
+    trav = pd.concat([pd.read_parquet(f) for f in trav_files], ignore_index=True)
+    # Zero-distance legs (both fixes snapped to one point) have no speed: they zero the
+    # harmonic means. Dropped here for traversal files written before avl_speeds did.
+    zero = trav["kmh"] <= 0
+    click.echo(f"  dropped {int(zero.sum())} zero-distance traversal rows "
+               f"({trav.loc[zero, 'leg'].nunique()} legs)", err=True)
     return {"seg": pd.read_parquet(d / "segments_annotated.parquet"),
-            "trav": pd.concat([pd.read_parquet(f) for f in trav_files], ignore_index=True),
+            "trav": trav[~zero].reset_index(drop=True),
             "wspeed": pd.read_parquet(d / "webtris_speed.parquet"),
             "wsites": pd.read_parquet(d / "webtris_sites.parquet"),
             "targets": targets, "cov": cov, "P": fit.period_weights(prof, periods),
@@ -1402,6 +1408,88 @@ Two pairings; a row passes if EITHER passes:
 Acceptance: at least 16 of the 20 AM rows and 16 of the 20 IP rows pass, each failure
 explained.
 """
+
+
+@cli.command("gapmap")
+@click.option("--car-period", default="AMPH", show_default=True)
+@click.option("--pt-period", default="AM", show_default=True,
+              help="PT AM skim is the 08:00–09:00 window (skims.window_start).")
+def gapmap_cmd(car_period: str, pt_period: str) -> None:
+    """C5: provisional gap map — PT GC ÷ car GC per internal HBW LSOA pair, with the
+    zero parking/access sensitivity."""
+    import duckdb
+    import geopandas as gpd
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import yaml
+    from . import gapmap as gm
+    from .congestion import annotate as an
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    sk = cfg.root / "data" / "interim" / "skims"
+    geo = cfg.root / "data" / "raw" / "ons_geo"
+    ruc = cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv"
+    pt, car = sk / f"pt_{pt_period}_oa_lsoa.parquet", sk / f"car_{car_period}_oa_lsoa.parquet"
+    park = {k: ps[f"car.parking_search_min.{k}"] for k in ("centre", "urban", "rural")}
+    walk = {k: ps[f"car.access_walk_min.{k}"] for k in ("centre", "urban", "rural")}
+    rec = runrecord.build(cfg, command="gapmap", inputs=[
+        {"name": str(f), "sha256": params.file_hash(f)} for f in (pt, car, ruc)])
+    runrecord.write(cfg, rec)
+    out = cfg.runs_dir / rec["run_id"]
+    try:
+        with duckdb.connect() as con:
+            con.execute("INSTALL spatial; LOAD spatial")
+            con.execute(f"ATTACH '{cfg.lab_db}' AS lab (READ_ONLY)")
+            cl = an.centre_lsoas(con, geo / "lsoa21_bgc_internal.geojson", ruc,
+                                 ps["area_type.centre_job_density"], raw["centre_min_cluster_lsoas"])
+            con.execute("CREATE TEMP TABLE int_oa AS SELECT * FROM lab.int_oa")
+            con.execute("CREATE TEMP TABLE demand AS SELECT * FROM lab.demand")
+            con.execute("""CREATE TEMP TABLE oa_w AS
+                SELECT o_oa OA21CD, sum(n)::DOUBLE w FROM lab.nat_oa_flows GROUP BY 1""")
+            con.execute(f"""CREATE TEMP TABLE lsoa_area_type AS
+                SELECT LSOA21CD, CASE WHEN LSOA21CD IN (SELECT unnest(?)) THEN 'centre'
+                                      WHEN Urban_rural_flag = 'Urban' THEN 'urban'
+                                      ELSE 'rural' END area_type
+                FROM read_csv('{ruc}')""", [cl])
+            m = gm.build(con, str(pt), str(car), park, walk)
+        summ = gm.summaries(m)
+        orig = gm.origin_summary(m)
+        top = gm.top_pairs(m)
+        m.to_parquet(out / "gapmap_od.parquet", compression="zstd")
+        top.to_csv(out / "gapmap_top50.csv", index=False)
+        z = gpd.read_file(geo / "lsoa21_bgc_internal.geojson")[["LSOA21CD", "geometry"]]
+        g = z.merge(orig, left_on="LSOA21CD", right_on="o_zone", how="left")
+        g.drop(columns="o_zone").to_file(out / "gapmap_origin.geojson", driver="GeoJSON")
+        fig, ax = plt.subplots(1, 2, figsize=(16, 8))
+        for a, col, t in ((ax[0], "ratio", "placeholder parking/access"),
+                          (ax[1], "ratio_zero_parking", "sensitivity: parking/access = 0")):
+            g.plot(column=col, ax=a, cmap="RdYlGn_r", vmin=1, vmax=8, legend=True,
+                   missing_kwds={"color": "lightgrey"}, linewidth=0,
+                   legend_kwds={"label": "PT GC ÷ car GC (flow-weighted, HBW)"})
+            a.set_title(t)
+            a.set_axis_off()
+        fig.suptitle(gm.LABEL, fontsize=9)
+        fig.savefig(out / "gapmap.png", dpi=150, bbox_inches="tight")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    q = orig["ratio"].quantile([0.1, 0.5, 0.9]).round(3).tolist()
+    qz = orig["ratio_zero_parking"].quantile([0.1, 0.5, 0.9]).round(3).tolist()
+    by_area = m.dropna(subset=["ratio"]).groupby("area_type").apply(
+        lambda d: {"trips": round(float(d["trips"].sum())),
+                   "ratio": round(float((d["ratio"] * d["trips"]).sum() / d["trips"].sum()), 3),
+                   "ratio_zero_parking": round(float((d["ratio_zero_parking"] * d["trips"]).sum()
+                                                     / d["trips"].sum()), 3)}).to_dict()
+    rec["result"] = {**summ, "origin_ratio_p10_p50_p90": q,
+                     "origin_ratio_zero_parking_p10_p50_p90": qz,
+                     "by_destination_area_type": by_area, "centre_lsoas": len(cl),
+                     "car_period": car_period, "pt_period": pt_period,
+                     "weights": "OA resident commuters (nat_oa_flows)", "label": gm.LABEL}
+    for k, v in rec["result"].items():
+        click.echo(f"  {k}: {v}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
 @cli.command("spotchecks")
