@@ -1171,7 +1171,9 @@ def skims_pt_gc(periods: tuple[str, ...]) -> None:
 
 
 @skims.command("car")
-@click.option("--period", "periods", multiple=True, default=["AM", "IP"], show_default=True)
+@click.option("--period", "periods", multiple=True, default=["AMPH", "IP", "AM"],
+              show_default=True, help="AMPH = 08:00–09:00 skim hour; AM (07:00–10:00) is "
+              "the stored sensitivity.")
 @click.option("--variant", type=click.Choice(["hybrid", "base"]), default="hybrid",
               show_default=True)
 def skims_car(periods: tuple[str, ...], variant: str) -> None:
@@ -1467,6 +1469,78 @@ def spotchecks_car(variant: str) -> None:
                .to_string(index=False))
     click.echo(f"wrote {out}")
     runrecord.finish(cfg, rec, "ok")
+
+
+@cli.command("gapmap")
+@click.option("--pt-period", default="AM", show_default=True)
+@click.option("--car-period", default="AMPH", show_default=True)
+def gapmap_cmd(pt_period: str, car_period: str) -> None:
+    """C5: provisional gap map — PT GC ÷ car GC over internal HBW flows (AM peak hour),
+    with placeholder car parking/access and a zero sensitivity."""
+    import json
+    import duckdb
+    import geopandas as gpd
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import pandas as pd
+    from shapely.geometry import LineString
+    from . import gapmap as gm
+    cfg = LabConfig.load()
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    park = {k: ps[f"car.parking_search_min.{k}"] for k in ("centre", "urban", "rural")}
+    walk = {k: ps[f"car.access_walk_min.{k}"] for k in ("centre", "urban", "rural")}
+    sk = cfg.root / "data" / "interim" / "skims"
+    pt, car = sk / f"pt_{pt_period}_oa_lsoa.parquet", sk / f"car_{car_period}_oa_lsoa.parquet"
+    ts001 = cfg.upstream_raw / "ts001" / "census2021-ts001-oa.csv"
+    rec = runrecord.build(cfg, command="gapmap", demand_version="p1-central", inputs=[
+        {"name": str(f), "sha256": params.file_hash(f)} for f in (pt, car, ts001)])
+    runrecord.write(cfg, rec)
+    out = cfg.runs_dir / rec["run_id"]
+    try:
+        with duckdb.connect(str(cfg.lab_db)) as con:
+            con.execute(f"""CREATE OR REPLACE TEMP TABLE oa_pop AS
+                SELECT "geography code" OA21CD, "Residence type: Total; measures: Value" pop
+                FROM read_csv('{ts001}')""")
+            con.execute("INSTALL spatial; LOAD spatial")
+            con.execute(f"""CREATE OR REPLACE TEMP TABLE lsoa_area_type AS
+                SELECT d.LSOA21CD,
+                       CASE WHEN d.LSOA21CD IN (SELECT unnest(?)) THEN 'centre'
+                            WHEN r.Urban_rural_flag = 'Urban' THEN 'urban' ELSE 'rural' END area_type
+                FROM skim_dest d LEFT JOIN read_csv('{cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv"}') r
+                USING (LSOA21CD)""", [json.loads(sorted(cfg.runs_dir.glob("*-congestion-network-*"))[-1]
+                                      .joinpath("run.json").read_text())["result"]["centre_lsoas"]])
+            m = gm.build(con, str(pt), str(car), park, walk)
+            pts = con.execute("SELECT LSOA21CD, lon, lat FROM int_lsoa").df().set_index("LSOA21CD")
+        summ = gm.summaries(m)
+        org = gm.origin_summary(m)
+        top = gm.top_pairs(m)
+        geo = gpd.GeoDataFrame(m, crs="EPSG:4326", geometry=[
+            LineString([pts.loc[o, ["lon", "lat"]], pts.loc[d, ["lon", "lat"]]])
+            for o, d in zip(m["o_zone"], m["d_zone"])])
+        geo["label"] = gm.LABEL
+        geo.to_parquet(out / "gapmap_od.parquet")
+        org.to_parquet(out / "gapmap_origin.parquet")
+        top.to_csv(out / "gapmap_top50.csv", index=False)
+        poly = gpd.read_file(cfg.root / "data/raw/ons_geo/lsoa21_bgc_internal.geojson") \
+            .merge(org, left_on="LSOA21CD", right_on="o_zone", how="left")
+        fig, axs = plt.subplots(1, 2, figsize=(16, 7))
+        for ax, col, title in ((axs[0], "ratio", "with placeholder parking/access"),
+                               (axs[1], "ratio_zero_parking", "sensitivity: parking/access = 0")):
+            poly.plot(ax=ax, column=col, cmap="magma_r", vmin=1, vmax=4, legend=True,
+                      missing_kwds={"color": "#dddddd"},
+                      legend_kwds={"label": "PT GC ÷ car GC (flow-weighted, by origin LSOA)"})
+            ax.set_title(f"Draft gap map, AM peak hour — {title}", fontsize=10)
+            ax.set_axis_off()
+        fig.text(0.5, 0.02, gm.LABEL, ha="center", fontsize=9)
+        plt.savefig(out / "gapmap.png", dpi=110, bbox_inches="tight")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {**summ, "label": gm.LABEL, "pt_period": pt_period, "car_period": car_period,
+                     "parking_search_min": park, "access_walk_min": walk}
+    click.echo(json.dumps(rec["result"], indent=1))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
 @cli.command("export-viz")
