@@ -214,43 +214,49 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
                     "dropped_targets": t[~(t["coverage"] >= min_coverage)][
                         ["lad", "ref", "coverage"]].round(3).to_dict("records")}
 
-    # 6–7. assemble per-segment factors
+    # 6–7. assemble per-segment factors: the hybrid (with per-road multipliers on the
+    # measured roads) and the base alone, so validation can compare them
+    ls_by = {}
+    for variant, mults in (("hybrid", lf["m"]), ("base", {})):
+        ls_by[variant] = _assemble(seg, base["g"] if variant == "base" else lf["g"], mults,
+                                   r, rho, level, srn, periods)
+    ls = ls_by["hybrid"]
+    ls_base = ls_by["base"]
+    rep["median_factor"] = ls.groupby("period")["factor"].median().round(3).to_dict()
+    return ls, ls_base, rep
+
+
+def _assemble(seg, g_area, mults, r, rho, level, srn, periods) -> pd.DataFrame:
     area = seg["area_type"].replace({"buffer": "rural"}).to_numpy()
-    A = np.ones(len(seg))                               # no authority terms (hybrid)
     road_key = seg["lad"].fillna("") + ":" + seg["ref"].fillna("")
-    M = np.where(seg["road_class"] == "local_a", road_key.map(lf["m"]).fillna(1.0), 1.0)
-    A = A * M
-    g = np.array([lf["g"][a] for a in area])
+    M = np.where(seg["road_class"] == "local_a", road_key.map(mults).fillna(1.0), 1.0)
+    g = np.array([g_area[a] for a in area])
     grp = np.where(seg["road_class"] == "minor", "minor", "main")
     cls_lev = np.array([1.0 if c in ("local_a", "srn") else level.get((c, a), (1.0, 0))[0]
                         for c, a in zip(seg["road_class"], area)])
-    base = g * A * cls_lev
+    base = g * M * cls_lev
     fac = {"IP": base, "OP": base * rho["OP"], "WE": base * rho["WE"]}
     for per in ("AM", "PM"):
         fac[per] = base * np.array([r[(per, d, a, gr)] for d, a, gr in
                                     zip(seg["direction"], area, grp)])
     src = np.where(seg["road_class"] == "local_a", "fit_dft_level+bus_shape",
-                   "fit_class_ratio+bus_shape")
+                   "fit_class_ratio+bus_shape").astype(object)
     is_srn = (seg["road_class"] == "srn").to_numpy()
-    s_idx = seg.reset_index(drop=True)[is_srn].index
-    srn_map = srn.drop_duplicates(["u", "v"]).set_index(["u", "v"])
-    keys = pd.MultiIndex.from_arrays([seg["u"].to_numpy()[is_srn], seg["v"].to_numpy()[is_srn]])
-    sm = srn_map.reindex(keys)
+    s_idx = np.where(is_srn)[0]
+    sm = srn.drop_duplicates(["u", "v"]).set_index(["u", "v"]).reindex(
+        pd.MultiIndex.from_arrays([seg["u"].to_numpy()[is_srn], seg["v"].to_numpy()[is_srn]]))
     for per in periods:
         fac[per] = fac[per].copy()
         fac[per][s_idx] = sm[per].to_numpy()
-    src = src.astype(object)
     src[s_idx] = sm["source"].to_numpy()
     rows = []
+    ff = seg["ff"].to_numpy()
     for per in periods:
-        speed = np.clip(seg["ff"].to_numpy() * fac[per], 3.0, seg["ff"].to_numpy() * 1.2)
         rows.append(pd.DataFrame({"period": per, "way_id": seg["way_id"].to_numpy(),
                                   "u": seg["u"].to_numpy(), "v": seg["v"].to_numpy(),
-                                  "speed_kmh": speed, "factor": fac[per], "source": src,
-                                  "tag": "CALIBRATED"}))
-    ls = pd.concat(rows, ignore_index=True)
-    rep["median_factor"] = ls.groupby("period")["factor"].median().round(3).to_dict()
-    return ls, rep
+                                  "speed_kmh": np.clip(ff * fac[per], 3.0, ff * 1.2),
+                                  "factor": fac[per], "source": src, "tag": "CALIBRATED"}))
+    return pd.concat(rows, ignore_index=True)
 
 
 def write_speed_files(ls: pd.DataFrame, out_dir) -> dict:

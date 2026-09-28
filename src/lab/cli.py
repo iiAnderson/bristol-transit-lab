@@ -720,11 +720,13 @@ def congestion_calibrate(days: str | None) -> None:
                                         "October", "November", "December")] + \
                  [f"{m} 2026" for m in ("January", "February", "March")]
         national = cal.dft_national_ratios(str(dc / "cgn0503.ods"), months)
-        ls, rep = cal.run(seg, trav, wspeed, wsites, targets, cov, P, p, ffp, national,
+        ls, ls_base, rep = cal.run(seg, trav, wspeed, wsites, targets, cov, P, p, ffp, national,
                           p["target_min_coverage"], p["fit_ridge_lambda"],
                           p["fit_road_ridge_lambda"])
         ls.to_parquet(d / "link_speed.parquet", compression="zstd")
+        ls_base.to_parquet(d / "link_speed_base.parquet", compression="zstd")
         files = cal.write_speed_files(ls, d / "osrm_speeds")
+        cal.write_speed_files(ls_base, d / "osrm_speeds_base")
         rep.update({"days": use_days, "tra0307_year": year, "period_weights": P,
                     "speed_files": {k: str(v) for k, v in files.items()}})
         (cfg.runs_dir / rec["run_id"] / "calibration.json").write_text(
