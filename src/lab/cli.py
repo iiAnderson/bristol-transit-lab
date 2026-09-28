@@ -569,6 +569,8 @@ def congestion_network() -> None:
                               cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv",
                               cfg.root / "data/interim/aadf_by_direction_clip.parquet",
                               raw["centres"], cl, d / "segments_annotated.parquet")
+            res["propagation"] = an.apply_propagation(con, d / "segments_annotated.parquet",
+                                                      d / "segments_annotated.parquet")
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise

@@ -21,6 +21,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import duckdb
+import numpy as np
 
 
 def centre_lsoas(con, lsoa_geojson: Path, ruc_csv: Path, threshold: float,
@@ -74,7 +75,8 @@ def annotate(con, segments: Path, lad_geojson: Path, lsoa_geojson: Path, ruc_csv
     con.execute(f"""CREATE OR REPLACE TEMP TABLE _cp AS
         SELECT count_point_id cp_id, local_authority_code lad, road_name road_ref,
                any_value(road_category) cp_category, any_value(longitude) lon,
-               any_value(latitude) lat, sum(all_motor_vehicles)::DOUBLE aadf_2way
+               any_value(latitude) lat, sum(all_motor_vehicles)::DOUBLE aadf_2way,
+               any_value(link_length_km) link_length_km
         FROM read_parquet('{aadf_parquet}') WHERE year = 2025 GROUP BY 1, 2, 3""")
     con.execute(f"""CREATE OR REPLACE TEMP TABLE _segcp AS
         SELECT s.way_id, s.seq, s.forward,
@@ -137,3 +139,34 @@ def annotate(con, segments: Path, lad_geojson: Path, lsoa_geojson: Path, ruc_csv
             WHERE highway NOT IN ('trunk', 'trunk_link', 'motorway', 'motorway_link') AND dft = 'srn'
             GROUP BY ALL ORDER BY 3 DESC"""),
     }
+
+
+def apply_propagation(con, annotated: Path, out: Path) -> dict:
+    """Replace road class (and the count point used for flow weights) on A-roads and
+    motorways with the along-road propagation from DfT count points (road_class.py)."""
+    import pandas as pd
+
+    from . import road_class as rc
+    seg = pd.read_parquet(annotated)
+    cps = con.execute("SELECT cp_id, road_ref, cp_category, lon, lat, link_length_km FROM _cp").df()
+    prop, bounds = rc.propagate(seg, cps)
+    seg = seg.merge(prop.rename(columns={"cp_id": "cp_id_road"}),
+                    on=["way_id", "seq", "forward"], how="left")
+    osm = np.where(seg["highway"].isin(["motorway", "motorway_link", "trunk", "trunk_link"]),
+                   "srn", "local_a")
+    numbered = seg["ref"].fillna("").str.match(r"^[AM]\d")
+    seg["class_basis"] = np.where(numbered, seg["basis"].fillna("osm_fallback"), None)
+    seg["road_class"] = np.where(numbered & seg["dft_class"].notna(), seg["dft_class"],
+                                 np.where(numbered, osm, seg["road_class"]))
+    cpw = con.execute("SELECT cp_id, aadf_2way FROM _cp").df().set_index("cp_id")["aadf_2way"]
+    seg["aadf_2way"] = np.where(seg["cp_id_road"].notna(),
+                                seg["cp_id_road"].map(cpw), seg["aadf_2way"])
+    seg = seg.drop(columns=["basis", "dft_class"])
+    seg.to_parquet(out, compression="zstd")
+    a = seg[numbered & seg["ref"].str.startswith("A")]
+    km = a.groupby("class_basis")["length_m"].sum() / 1000
+    return {"a_road_km_by_basis": km.round(1).to_dict(),
+            "a_road_share_by_basis": (km / km.sum()).round(3).to_dict(),
+            "class_boundaries": bounds,
+            "by_class_km_after": (seg.groupby("road_class")["length_m"].sum() / 1000)
+            .round(0).to_dict()}
