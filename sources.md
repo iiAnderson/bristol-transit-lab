@@ -636,6 +636,40 @@ Working plan and progress log: `plans/P2.md`.
 | DfT Transport connectivity metric 2025 | https://www.gov.uk/government/publications/transport-connectivity-metric → https://assets.publishing.service.gov.uk/media/68c966fc07d9e92bc5517b80/connectivity_metrics_2025.ods | 2026-09-27 | OGL v3 | V1.0.0, version date 2025-08-21, experimental; timetables Q4 2024; **England and Wales**; OA/LSOA/LAD/RGN scores 0–100 by purpose × mode. SHA-256 `4f6589ae…`. The 1 GB `content.xml` is streamed to CSV (`src/lab/supply/ods.py`). The PT employment column is labelled "Business (public transport)" |
 | Welsh trunk-road speeds | — | 2026-09-27 | — | **None published.** Traffic Wales is live-only; M4 speeds appear only in ad-hoc FOI releases (e.g. https://www.gov.wales/atisn18581). Welsh trunk roads keep transferred factors (D8). The M4 J24–J28 through Newport has 50 mph average-speed enforcement: free-flow speeds there must honour it |
 
+### P2b / early P2c datasets (2026-09-27 – 28)
+
+| dataset | URL | accessed | licence | version / notes |
+|---|---|---|---|---|
+| ONS LAD boundaries, December 2024, BGC | https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Local_Authority_Districts_December_2024_Boundaries_UK_BGC/FeatureServer/0 | 2026-09-27 | OGL v3 | the seven authorities with internal LSOAs; Dec 2024 because DfT names authorities as at 1 January of the data year (2025) |
+| ONS LSOA 2021 boundaries, BGC V5 | https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Lower_layer_Super_Output_Areas_December_2021_Boundaries_EW_BGC_V5/FeatureServer/0 | 2026-09-27 | OGL v3 | 729 internal LSOAs; areas from `Shape__Area` (BNG m²) |
+| ONS LSOA 2021 population-weighted centroids (clip box) | https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/LSOA_PopCentroids_EW_2021_V4/FeatureServer/0 | 2026-09-28 | OGL v3 | 890 within the clip box (729 internal + 161 external), skim and accessibility destinations |
+| ONS OA 2021 population-weighted centroids | https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/OA_December_2021_EW_PWC_V4/FeatureServer/0 | 2026-09-27 | OGL v3 | all 3,799 internal OAs (upstream's `pwc` lacks 3 whose own centroid is outside the extent); identical to upstream's on the 3,796 shared |
+| ONS RUC 2021, LSOAs | https://geoportal.statistics.gov.uk/api/download/v1/items/9dbf7613cbb147b8bb8627ddb3568cff/csv?layers=0 | 2026-09-27 | OGL v3 | area types (D4) |
+| DfT TRA0307, TRA0306 | https://www.gov.uk/government/statistical-data-sets/road-traffic-statistics-tra | 2026-09-27 | OGL v3 | TRA0307 2025: traffic index by hour × day of week, GB all roads — the flow profile for like-for-like all-day speeds (DfT's own finer weights are unpublished) |
+| DfT travel time statistics, background quality report | https://www.gov.uk/government/publications/road-congestion-and-travel-time-statistics-information/travel-time-statistics-background-quality-report | 2026-09-27 | OGL v3 | average speed = Σ(length·N)/Σ(journey time·N), N by hour, day type, month, road type and urban/rural; Inrix GPS cars and vans; free flow = 85th percentile capped at NSL (delay tables only) |
+| Bristol ANPR journey times (Journey Counts / Links) | https://maps2.bristol.gov.uk/server2/rest/services/ext/Traffic/MapServer/3 (and `/2`) | 2026-09-28 | OGL v3 | **hourly** rows (not 5-minute): `SPEED` in mph, `JOURNEY_TIME` in s, `TOTAL_MATCHES`; 2019 1.06M rows → 2023 583,769 → 2024 119,246 (to 12 Dec); 240 links. The service takes native SQL date literals (`DATE_TIME >= 'YYYY-MM-DD'`); ArcGIS `TIMESTAMP`/`date` literals fail. 2023–24 fetched for absolute validation |
+| Legislation: RTRA 1984 s.81(1); SI 2022/800 (W. 178) | https://www.legislation.gov.uk/ukpga/1984/27/section/81 ; https://www.legislation.gov.uk/wsi/2022/800/made | 2026-09-27 | OGL v3 | 30 mph restricted roads; 20 mph in Wales from 17 Sep 2023 (free-flow defaults) |
+
+### Road class and the car network (P2b, 2026-09-28)
+
+- **OSM `trunk` ≠ SRN.** OSM marks many locally managed A roads as `trunk` (A38, A37,
+  A4174, A403, …). Class comes from DfT's count-point categories, **propagated along
+  the road** (network distance over same-`ref` links): by A-road length, 69.7% by count
+  point, 21.8% propagated, 8.5% OSM fallback. Class changes on exactly three roads —
+  A36, A4 (both B&NES / Bristol) and A4042 (Newport) — at nodes listed in the run.
+- **WebTRIS directions are nominal** (the M4 "westbound" runs at 331° near Almondsbury);
+  sites are matched to the carriageway side within 90°; 309 of 323 mainline sites match.
+- **No PM bus data from the archive** (07:00–16:00 window); PM local shape is national
+  until the live 16:00–19:00 data (29 Sep – 1 Oct) replace it where coverage allows.
+
+### First Bristol 5/77 (A4, resolved 2026-09-28)
+
+On the modelled day vehicles on 5 and 77 were bound for Transport Hub (`010000012`), none
+for Black Boy Hill (`0100BRP90986`); the Black Boy Hill variant (60 trips, each with an
+exact-duplicate copy) is excluded by trip pattern via config. On 8 Sep the opposite held —
+service `6606` (to Transport Hub) began on 22 Sep — which is why the modelled-day
+vehicle data, not an earlier day, had to decide.
+
 ### Job-weighted destination points (D3 test, 2026-09-27)
 
 Census 2021 ODWP01EW OA file (upstream raw, read-only; `ODWP01EW_OA.csv`), place of work
