@@ -1333,6 +1333,44 @@ def spotchecks_cmd() -> None:
     runrecord.finish(cfg, rec, "ok")
 
 
+@cli.command("spotchecks-car")
+@click.option("--variant", type=click.Choice(["hybrid", "base"]), default="hybrid",
+              show_default=True)
+def spotchecks_car(variant: str) -> None:
+    """Car spot checks: modelled AM and IP times (OSRM, calibrated); blank observed columns."""
+    import pandas as pd
+    import requests
+    from .supply import osrm
+    cfg = LabConfig.load()
+    sc = pd.read_csv(cfg.root / "config" / "spotchecks_car.csv")
+    rec = runrecord.build(cfg, command="spotchecks-car")
+    runrecord.write(cfg, rec)
+    for per in ("AM", "IP"):
+        ds = cfg.root / "data" / "interim" / "osrm" / f"{variant}_{per}" / "b2026"
+        if not ds.with_suffix(".osrm.partition").exists():
+            raise click.ClickException(f"run `lab skims car` first ({ds.parent.name} missing)")
+        mins, kms = [], []
+        with osrm.Server(ds) as srv:
+            for _, r in sc.iterrows():
+                j = requests.get(f"http://127.0.0.1:{srv.port}/route/v1/driving/"
+                                 f"{r.o_lon},{r.o_lat};{r.d_lon},{r.d_lat}",
+                                 params={"overview": "false"}, timeout=60).json()
+                rt = j["routes"][0] if j.get("code") == "Ok" else None
+                mins.append(round(rt["duration"] / 60, 1) if rt else None)
+                kms.append(round(rt["distance"] / 1000, 2) if rt else None)
+        sc[f"model_{per}_min"], sc[f"model_{per}_km"] = mins, kms
+    for c in ("observed_AM_min", "observed_IP_min", "observed_date", "source", "comment"):
+        sc[c] = ""
+    out = cfg.runs_dir / rec["run_id"] / "car_spotchecks.csv"
+    sc.to_csv(out, index=False)
+    rec["result"] = {"csv": str(out), "variant": variant,
+                     "note": "fill observed times (in-car time, no parking); ±15% on ≥ 16 of 20 (P2b)"}
+    click.echo(sc[["id", "type", "origin", "destination", "model_AM_min", "model_IP_min"]]
+               .to_string(index=False))
+    click.echo(f"wrote {out}")
+    runrecord.finish(cfg, rec, "ok")
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")

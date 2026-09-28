@@ -1,0 +1,21 @@
+id,type,origin,o_lat,o_lon,destination,d_lat,d_lon,depart_local,note
+1,centre,Temple Meads station,51.4491,-2.5813,Clifton Village,51.4560,-2.6190,08:15,
+2,centre,Cabot Circus,51.4580,-2.5850,Bristol Harbourside (Canons Road),51.4490,-2.5990,08:15,
+3,radial,Southmead Hospital,51.4958,-2.5918,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,A38 Gloucester Road
+4,radial,Fishponds (Straits Parade),51.4816,-2.5268,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,A432
+5,radial,Hartcliffe (Symes Avenue),51.4104,-2.6041,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,A38 Bedminster
+6,radial,Kingswood (Regent Street),51.4583,-2.5053,Temple Meads station,51.4491,-2.5813,08:15,A420
+7,radial,Long Ashton,51.4290,-2.6560,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,A370
+8,radial,Keynsham High Street,51.4138,-2.4970,Temple Meads station,51.4491,-2.5813,08:15,A4
+9,orbital,Kingswood (Regent Street),51.4583,-2.5053,Cribbs Causeway (The Mall),51.5250,-2.5953,08:15,A4174 ring road
+10,orbital,Southmead Hospital,51.4958,-2.5918,UWE Frenchay campus,51.5006,-2.5486,08:15,
+11,orbital,Hengrove Park,51.4130,-2.5840,Brislington (Bath Road),51.4350,-2.5460,08:15,A4174
+12,inter-urban,Bath Abbey,51.3813,-2.3590,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,A4
+13,inter-urban,Weston-super-Mare town centre,51.3462,-2.9786,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,M5 / A370
+14,inter-urban,Clevedon town centre,51.4389,-2.8526,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,M5 / A370
+15,inter-urban,Yate Shopping Centre,51.5400,-2.4110,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,A432 / M32
+16,inter-urban,Portishead town centre,51.4840,-2.7680,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,A369 / Portway
+17,motorway,Aztec West,51.5390,-2.5700,Cribbs Causeway (The Mall),51.5250,-2.5953,08:15,M5 J16–J17
+18,motorway,Bristol city centre (Broadmead),51.4570,-2.5905,Bristol Parkway station,51.5140,-2.5420,08:15,M32 / M4
+19,Newport,Newport city centre (Friars Walk),51.5870,-2.9960,Bristol city centre (Broadmead),51.4570,-2.5905,08:15,M4 / M48 or Prince of Wales Bridge
+20,Newport,Caldicot town centre,51.5925,-2.7520,Newport city centre (Friars Walk),51.5870,-2.9960,08:15,A48
