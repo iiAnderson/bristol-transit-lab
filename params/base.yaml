@@ -95,6 +95,17 @@ generalised_cost:
       note: Subway Builder published weights, per spec; sensitivity runs only; verify
 
 skims:
+  window_start:
+    AM:
+      value: "08:00"
+      unit: local time; start of the departure window
+      tag: MODELLED
+      reasoning: the peak hour inside the AM period (07:00–10:00), where commuting departures concentrate
+    IP:
+      value: "12:00"
+      unit: local time; start of the departure window
+      tag: MODELLED
+      reasoning: mid inter-peak (10:00–16:00), away from school-run edges
   hbw_dest_point_abs_min:
     value: 2.0
     unit: min, flow-weighted median |change| in HBW PT or car time

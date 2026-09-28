@@ -856,6 +856,75 @@ def spike_d3() -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@cli.group()
+def skims() -> None:
+    """P2c skims: PT (r5r), walk and cycle (r5py)."""
+
+
+@skims.command("pt")
+@click.option("--period", type=click.Choice(["AM", "IP"]), required=True)
+@click.option("--chunk", default=100, show_default=True)
+@click.option("--provisional/--final", default=True, show_default=True,
+              help="Provisional until the First Bristol 5/77 variants are resolved.")
+def skims_pt(period: str, chunk: int, provisional: bool) -> None:
+    """PT skims OA -> clip-box LSOAs from r5r's expanded matrix (per-pair summary)."""
+    import datetime as dt
+    import shutil
+    import duckdb
+    import yaml
+    from . import skims as sk
+    from .supply import feeds
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    for fid in ("osm_clip", "bus_gtfs", "rail_gtfs"):
+        feeds.check_file_unchanged(feeds.get(cfg, fid))
+        if fid != "osm_clip":
+            feeds.require_covers(feeds.get(cfg, fid), day)
+    work = cfg.root / "data" / "interim" / "skims" / f"pt_{period}"
+    net = cfg.root / "data" / "interim" / "r5r" / "net"
+    work.mkdir(parents=True, exist_ok=True)
+    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+        con.execute("SELECT OA21CD id, lat, lon FROM int_oa_pwc ORDER BY 1").df() \
+            .to_csv(work / "origins.csv", index=False)
+        con.execute("SELECT LSOA21CD id, lat, lon FROM skim_dest ORDER BY 1").df() \
+            .to_csv(work / "destinations.csv", index=False)
+    shutil.copyfile(cfg.root / "data" / "interim" / "r5r" / "d3_origins.csv",
+                    work / "sample_ids.csv")
+    rcfg = {"net_dir": str(net), "origins": str(work / "origins.csv"),
+            "destinations": str(work / "destinations.csv"),
+            "departure": f"{day} {ps[f'skims.window_start.{period}']}",
+            "window_min": ps["skims.departure_window_min"],
+            "max_rides": ps["routing.max_rides"], "walk_speed_kmh": ps["routing.walk_speed_kmh"],
+            "max_walk_min": ps["routing.max_walk_min"], "max_trip_min": ps["routing.max_trip_min"],
+            "reach_share_min": ps["routing.pt_reachable_share_min"], "chunk": chunk,
+            "sample_ids": str(work / "sample_ids.csv"), "out_dir": str(work / "chunks"),
+            "java_mem": "10G"}
+    rec = runrecord.build(cfg, command=f"skims-pt-{period}", inputs=[
+        {"name": f, "sha256": feeds.get(cfg, f)["sha256"]} for f in
+        ("osm_clip", "bus_gtfs", "rail_gtfs")] + [{"name": "r5r", "version": "2.4.0 (R5 7.5.1)"}])
+    runrecord.write(cfg, rec)
+    try:
+        sk.run_pt(cfg.root / "src" / "lab" / "r" / "pt_skims.R", rcfg, work / "config.json",
+                  lambda m: click.echo(f"  {m}", err=True))
+        s = sk.combine(work / "chunks")
+        w = {k: ps[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
+        s["gc_min"] = sk.gc_from_components(s, w).where(~s["unreachable"])
+        s["provisional"] = provisional
+        out = cfg.root / "data" / "interim" / "skims" / f"pt_{period}_oa_lsoa.parquet"
+        s.to_parquet(out, compression="zstd")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"pairs": len(s), "unreachable_share": float(s["unreachable"].mean()),
+                     "median_p50": float(s["p50"].median()), "provisional": provisional,
+                     "out": str(out)}
+    click.echo(f"  {rec['result']}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")
