@@ -7,8 +7,9 @@ B2 (plans/P2.md §5): bus moving speeds per car segment × direction × period.
    apart; matched with OSRM ``/match`` (car profile, ``match_radius_m``), in chunks.
 3. Legs: consecutive matched fixes ≤ ``max_leg_s`` apart. Leg speed = matched path
    distance ÷ elapsed time. A leg is dropped if either end is within ``stop_buffer_m`` of
-   a GTFS stop (dwell and acceleration), if it is slower than ``min_moving_kmh`` or faster
-   than ``max_kmh``, or if its matching's confidence is below ``match_min_confidence``.
+   a GTFS stop *and* slower than ``min_moving_kmh`` (dwell; slow legs elsewhere are
+   queueing and kept), if faster than ``max_kmh``, or if its matching's confidence is
+   below ``match_min_confidence``.
 4. Traversals: each kept leg's speed is given to every OSM node pair on its path (the
    keys OSRM's segment speed files use). Period by the leg's local start time.
 
@@ -117,10 +118,11 @@ def process_day(day_file: Path, osrm_port: int, stops_parquet: Path, busways: Pa
         traces.append(cur)
 
     zone = ZoneInfo(tz)
-    out_u, out_v, out_speed, out_period, out_leg = [], [], [], [], []
+    out_u, out_v, out_speed, out_period, out_leg, out_hour = [], [], [], [], [], []
     stats = dict(positions=n_all, metrobus_dropped=n_mb, busway_dropped=n_bw,
                  traces=len(traces), requests=0, legs=0, legs_kept=0, drop_unmatched=0,
-                 drop_low_conf=0, drop_long=0, drop_stop=0, drop_slow=0, drop_fast=0)
+                 drop_low_conf=0, drop_long=0, drop_stop_dwell=0, kept_slow_queue=0,
+                 drop_fast=0)
     parts = [tr[i:i + chunk] for tr in traces for i in range(0, len(tr) - 1, chunk - 1)
              if len(tr[i:i + chunk]) >= 2]                 # chunks overlap by one fix
     session = requests.Session()
@@ -162,20 +164,23 @@ def process_day(day_file: Path, osrm_port: int, stops_parquet: Path, busways: Pa
                     if dt_s <= 0 or dt_s > p["max_leg_s"]:
                         stats["drop_long"] += 1
                         continue
-                    if a[4] or b[4]:
-                        stats["drop_stop"] += 1
-                        continue
                     ann = leg.get("annotation") or {}
                     dist = sum(ann.get("distance", [])) or leg["distance"]
                     kmh = dist / dt_s * 3.6
-                    if kmh < p["min_moving_kmh"]:
-                        stats["drop_slow"] += 1
+                    # Slow legs are dwell only near a stop (Robbie, 2026-09-28): drop a
+                    # leg below min_moving_kmh if either end is within stop_buffer_m of
+                    # a stop; elsewhere keep it — that is queueing, which cars share.
+                    if kmh < p["min_moving_kmh"] and (a[4] or b[4]):
+                        stats["drop_stop_dwell"] += 1
                         continue
+                    if kmh < p["min_moving_kmh"]:
+                        stats["kept_slow_queue"] += 1
                     if kmh > p["max_kmh"]:
                         stats["drop_fast"] += 1
                         continue
                     nodes = ann.get("nodes", [])
-                    per = _period(dt.datetime.fromtimestamp(a[1], zone).time(), periods)
+                    t_loc = dt.datetime.fromtimestamp(a[1], zone)
+                    per = _period(t_loc.time(), periods)
                     leg_id += 1
                     stats["legs_kept"] += 1
                     for u, v in zip(nodes, nodes[1:]):
@@ -184,9 +189,11 @@ def process_day(day_file: Path, osrm_port: int, stops_parquet: Path, busways: Pa
                         out_speed.append(kmh)
                         out_period.append(per)
                         out_leg.append(leg_id)
+                        out_hour.append(t_loc.hour)
     t = pa.table({"u": pa.array(out_u, pa.int64()), "v": pa.array(out_v, pa.int64()),
                   "kmh": pa.array(out_speed, pa.float32()), "period": out_period,
-                  "leg": pa.array(out_leg, pa.int32())})
+                  "leg": pa.array(out_leg, pa.int32()),
+                  "hour": pa.array(out_hour, pa.int8())})
     out.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(t, out, compression="zstd")
     stats["traversals"] = t.num_rows
