@@ -53,3 +53,30 @@ def gc_from_components(df: pd.DataFrame, w: dict) -> pd.Series:
 def combine(out_dir: Path) -> pd.DataFrame:
     return pd.concat([pd.read_parquet(f) for f in sorted(out_dir.glob("chunk_*.parquet"))],
                      ignore_index=True)
+
+
+def first_wait(effective_headway_min, curve: list[list[float]]) -> np.ndarray:
+    """Perceived first wait (min) from a wait curve [[headway, wait], ...] (TAG M3.2
+    Fig. 2 shape): linear interpolation, continued beyond the last point at the last
+    segment's slope."""
+    h = np.asarray(effective_headway_min, dtype=float)
+    xs = np.array([p[0] for p in curve], dtype=float)
+    ys = np.array([p[1] for p in curve], dtype=float)
+    out = np.interp(h, xs, ys)
+    slope = (ys[-1] - ys[-2]) / (xs[-1] - xs[-2])
+    return np.where(h > xs[-1], ys[-1] + slope * (h - xs[-1]), out)
+
+
+def gc_tag(df: pd.DataFrame, w: dict, curve: list[list[float]]) -> pd.Series:
+    """PT GC with the TAG M3.2 treatment of waiting: the first wait from the wait curve
+    applied to the effective headway (2 × initial wait, where the initial wait is the
+    mean total over the window minus the best-departure total, bounded by the mean
+    wait), transfer waits as modelled, both weighted by w_wait."""
+    total = df["access_min"] + df["wait_min"] + df["ride_min"] + df["transfer_min"] + df["egress_min"]
+    initial = (total - df["best_min"]).clip(lower=0)
+    initial = np.minimum(initial, df["wait_min"])
+    transfer_wait = (df["wait_min"] - initial).clip(lower=0)
+    walk = df["access_min"] + df["egress_min"] + df["transfer_min"]
+    fw = first_wait(2 * initial, curve)
+    return (df["ride_min"] + w["w_walk"] * walk + w["w_wait"] * (transfer_wait + fw)
+            + w["p_interchange"] * df["n_transfers"])

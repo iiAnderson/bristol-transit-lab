@@ -450,6 +450,14 @@ GC = IVT + w_walk·walk + w_wait·wait + n_transfers·P_interchange + fare / VoT
   parameter set `game_weights` (1.39 / 1.37, from Subway Builder's published weights)
   for sensitivity runs.
 - `P_interchange` default 5–10 min [PLACEHOLDER — source from TAG/literature].
+- *Amended at P2 (2026-09-28), TAG M3.2 (May 2024) §3.2:* PT waiting follows the
+  standard wait-curve treatment. The **first** wait comes from TAG's illustrative wait
+  curve (Figure 2; rises at a lower rate than headway for infrequent services, uncapped
+  per §3.2.8) applied to the pair's effective headway (2 × the mean over the departure
+  window minus the best departure); **transfer** waits are the timetable model's own.
+  Walk 2.0, wait 2.0 and interchange 7.5 min sit within TAG Table 1's indicative ranges
+  (1.5–2.0, 1.5–2.5, 2–10) and are calibrated later. Random-arrival GC (half-headway
+  first wait) is stored alongside. Accessibility stays on plain travel time.
 - `VoT` by purpose and segment from the TAG data book, in a stated price base [SOURCED].
 - Car GC includes fuel (distance × VOC) and parking.
 - Mode-specific constants (e.g. a rail/LRT "quality" bonus over bus) default to **0**.

@@ -61,20 +61,40 @@ commute:
 generalised_cost:
   w_walk:
     value: 2.0
-    unit: IVT-min per walk-min
-    tag: PLACEHOLDER
-    note: spec default; confirm against TAG M3.2
+    unit: IVT-min per walk-min (access, egress, transfer walking)
+    tag: MODELLED
+    reasoning: >-
+      Top of TAG M3.2 (May 2024) Table 1 indicative range 1.5–2.0 for access/egress/
+      transfer time; TAG expects these weights to be adjusted in calibration (§9).
+      https://assets.publishing.service.gov.uk/media/666af32effd07973a043d110/tag-unit-m3.2-public-transport-assignment-modelling.pdf
   w_wait:
     value: 2.0
-    unit: IVT-min per wait-min
-    tag: PLACEHOLDER
-    note: spec default; confirm against TAG M3.2
+    unit: IVT-min per wait-min (first wait from the wait curve, and transfer waits)
+    tag: MODELLED
+    reasoning: >-
+      Mid TAG M3.2 (May 2024) Table 1 indicative range 1.5–2.5 for waiting time (initial
+      or at interchange); subject to calibration (§9).
   p_interchange:
     value: 7.5
-    range: [5, 10]
+    range: [2, 10]
     unit: min per transfer
-    tag: PLACEHOLDER
-    note: spec gives 5–10 min; source from TAG / literature
+    tag: MODELLED
+    reasoning: >-
+      Within TAG M3.2 (May 2024) Table 1 indicative range 2–10 min for a boarding or
+      transfer penalty (larger for long-distance rail); subject to calibration (§9).
+  first_wait_curve:
+    value: [[0, 0], [10, 5.0], [20, 9.5], [30, 11.5], [40, 13.0], [60, 15.5], [90, 19.5]]
+    unit: "[effective headway min, perceived first wait min]; linear between points, slope 0.13 beyond 90"
+    tag: MODELLED
+    reasoning: >-
+      TAG M3.2 (May 2024) §3.2.3–3.2.8 and Figure 2 "illustrative wait curve": waiting
+      rises at a lower rate than headway for infrequent services because passengers time
+      their arrival; applied to the first boarding only (§3.2.5), transfer waits being
+      exact in a timetable model (§3.2.9). Points digitised by eye from Figure 2
+      (±0.5 min); TAG presents it as illustrative (PDFH B4 curves need membership). The
+      uncapped form is used, not the capped one, so services with different headways do
+      not get the same utility (§3.2.8). Effective headway = 2 × (mean total over the
+      departure window − best-departure total).
   mode_constant_mass_transit:
     value: 0.0
     unit: min

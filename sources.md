@@ -650,6 +650,23 @@ Working plan and progress log: `plans/P2.md`.
 | Bristol ANPR journey times (Journey Counts / Links) | https://maps2.bristol.gov.uk/server2/rest/services/ext/Traffic/MapServer/3 (and `/2`) | 2026-09-28 | OGL v3 | **hourly** rows (not 5-minute): `SPEED` in mph, `JOURNEY_TIME` in s, `TOTAL_MATCHES`; 2019 1.06M rows → 2023 583,769 → 2024 119,246 (to 12 Dec); 240 links. The service takes native SQL date literals (`DATE_TIME >= 'YYYY-MM-DD'`); ArcGIS `TIMESTAMP`/`date` literals fail. 2023–24 fetched for absolute validation |
 | Legislation: RTRA 1984 s.81(1); SI 2022/800 (W. 178) | https://www.legislation.gov.uk/ukpga/1984/27/section/81 ; https://www.legislation.gov.uk/wsi/2022/800/made | 2026-09-27 | OGL v3 | 30 mph restricted roads; 20 mph in Wales from 17 Sep 2023 (free-flow defaults) |
 
+### PT waiting in generalised cost (TAG M3.2, 2026-09-28)
+
+| document | URL | accessed | licence | version / notes |
+|---|---|---|---|---|
+| TAG unit M3.2 Public Transport Assignment Modelling | https://assets.publishing.service.gov.uk/media/666af32effd07973a043d110/tag-unit-m3.2-public-transport-assignment-modelling.pdf (from https://www.gov.uk/government/publications/webtag-tag-unit-m3-2-public-transport-assignment-modelling) | 2026-09-28 | OGL v3 | May 2024 (page last updated 30 May 2024); SHA-256 `d080d610…` |
+
+Used: Table 1 indicative weights (walk/access/egress/transfer 1.5–2.0; waiting 1.5–2.5;
+IVT rail 1, bus 1–1.4; boarding/transfer penalty 2–10 min); §3.2.3–3.2.9 waiting (half
+the headway for short headways; wait curves for the first boarding of infrequent
+services; transfer waits exact in timetable models; capped curves only with care).
+Figure 2's illustrative wait curve, digitised by eye (±0.5 min): headway 10 → 5.0, 20 →
+9.5, 30 → 11.5, 40 → 13.0, 60 → 15.5, 90 → 19.5 min. PDFH B4 curves (membership) not used.
+
+Effect on the P2 PT skims: median GC −2.7 min (AM) / −2.9 min (IP), p90 −10 min, from
+the first wait on infrequent services; median wait in the skims is 13.4 min (16% of
+journey time), rail-led 15.6 min.
+
 ### Road class and the car network (P2b, 2026-09-28)
 
 - **OSM `trunk` ≠ SRN.** OSM marks many locally managed A roads as `trunk` (A38, A37,

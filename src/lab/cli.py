@@ -1064,7 +1064,9 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
                   lambda m: click.echo(f"  {m}", err=True))
         s = sk.combine(work / "chunks")
         w = {k: ps[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
-        s["gc_min"] = sk.gc_from_components(s, w).where(~s["unreachable"])
+        curve = ps["generalised_cost.first_wait_curve"]
+        s["gc_min"] = sk.gc_tag(s, w, curve).where(~s["unreachable"])
+        s["gc_min_random_arrival"] = sk.gc_from_components(s, w).where(~s["unreachable"])
         s["provisional"] = provisional
         out = cfg.root / "data" / "interim" / "skims" / f"pt_{period}_oa_lsoa.parquet"
         s.to_parquet(out, compression="zstd")
@@ -1075,6 +1077,37 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
                      "median_p50": float(s["p50"].median()), "provisional": provisional,
                      "out": str(out)}
     click.echo(f"  {rec['result']}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@skims.command("pt-gc")
+@click.option("--period", "periods", multiple=True, default=["AM", "IP"], show_default=True)
+def skims_pt_gc(periods: tuple[str, ...]) -> None:
+    """Recompute PT GC on stored skims from params (no re-routing): gc_min uses the TAG
+    M3.2 first-wait curve; gc_min_random_arrival keeps half-headway waiting."""
+    import pandas as pd
+    from . import skims as sk
+    cfg = LabConfig.load()
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    w = {k: ps[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
+    curve = ps["generalised_cost.first_wait_curve"]
+    rec = runrecord.build(cfg, command="skims-pt-gc")
+    runrecord.write(cfg, rec)
+    res = {}
+    for per in periods:
+        f = cfg.root / "data" / "interim" / "skims" / f"pt_{per}_oa_lsoa.parquet"
+        s = pd.read_parquet(f)
+        s["gc_min"] = sk.gc_tag(s, w, curve).where(~s["unreachable"])
+        s["gc_min_random_arrival"] = sk.gc_from_components(s, w).where(~s["unreachable"])
+        s.to_parquet(f, compression="zstd")
+        ok = s[~s["unreachable"]]
+        d = ok["gc_min_random_arrival"] - ok["gc_min"]
+        res[per] = {"median_gc_tag": float(ok["gc_min"].median()),
+                    "median_gc_random": float(ok["gc_min_random_arrival"].median()),
+                    "median_reduction_min": float(d.median()),
+                    "p90_reduction_min": float(d.quantile(0.9))}
+        click.echo(f"  {per}: {res[per]}")
+    rec["result"] = res
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
@@ -1305,20 +1338,24 @@ def spotchecks_cmd() -> None:
     runrecord.write(cfg, rec)
     net = TransportNetwork(str(cfg.root / raw["osm"]["clip"]),
                            [str(cfg.root / raw["bus"]["out"]), str(cfg.root / raw["rail"]["out"])])
-    p50, p25, p75 = [], [], []
+    best, p50, p25, p75 = [], [], [], []
     for _, r in sc.iterrows():
         o = gpd.GeoDataFrame({"id": [0]}, geometry=[Point(r.o_lon, r.o_lat)], crs="EPSG:4326")
         d = gpd.GeoDataFrame({"id": [1]}, geometry=[Point(r.d_lon, r.d_lat)], crs="EPSG:4326")
         t = TravelTimeMatrix(net, origins=o, destinations=d,
                              departure=dt.datetime.combine(day, dt.time.fromisoformat(r.depart_local)),
                              departure_time_window=dt.timedelta(minutes=ps["skims.departure_window_min"]),
-                             percentiles=[25, 50, 75],
+                             percentiles=[1, 25, 50, 75],
                              transport_modes=[TransportMode.TRANSIT, TransportMode.WALK],
                              max_time=dt.timedelta(minutes=ps["routing.max_trip_min"]),
                              speed_walking=ps["routing.walk_speed_kmh"],
                              max_public_transport_rides=ps["routing.max_rides"])
+        best.append(t["travel_time_p1"].iloc[0])
         p25.append(t["travel_time_p25"].iloc[0]); p50.append(t["travel_time_p50"].iloc[0])
         p75.append(t["travel_time_p75"].iloc[0])
+    # A journey planner answers for a chosen departure, so it is compared with the best
+    # departure in the window (timetable-aware); the random-arrival p50 is kept alongside.
+    sc["model_best_min"] = best
     sc["model_p25_min"], sc["model_p50_min"], sc["model_p75_min"] = p25, p50, p75
     sc["modelled_date"] = str(day)
     for c in ("observed_min", "observed_date", "planner", "observed_route", "comment"):
@@ -1327,8 +1364,10 @@ def spotchecks_cmd() -> None:
     sc.to_csv(out, index=False)
     rec["result"] = {"csv": str(out), "journeys": len(sc),
                      "note": "fill observed_min from a public journey planner for Wed 23 Sep "
-                             "2026 or the same weekday pattern; ±15% on ≥ 16 of 20 (C4)"}
-    click.echo(sc[["id", "type", "origin", "destination", "model_p50_min"]].to_string(index=False))
+                             "2026 or the same weekday pattern; compare with model_best_min "
+                             "(planner = chosen departure); ±15% on ≥ 16 of 20 (C4)"}
+    click.echo(sc[["id", "type", "origin", "destination", "model_best_min", "model_p50_min"]]
+               .to_string(index=False))
     click.echo(f"wrote {out}")
     runrecord.finish(cfg, rec, "ok")
 

@@ -82,3 +82,21 @@ def test_r5r_matches_r5py_on_the_one_percent_sample(monkeypatch):
     assert abs(len(r5r_ok) - len(r5py_ok)) <= 0.001 * max(len(r5py_ok), 1)
     j = r5r_ok.merge(t, on=["from_id", "to_id"])
     assert (np.abs(j["p50"] - j["travel_time"]) <= 1).mean() >= 0.99
+
+
+def test_first_wait_curve_follows_tag_shape():
+    curve = PS["generalised_cost.first_wait_curve"]
+    h = np.array([5, 10, 20, 30, 60, 90, 120])
+    fw = skims.first_wait(h, curve)
+    assert np.allclose(fw[:3], h[:3] / 2, atol=0.6)          # ~half headway when frequent
+    assert (np.diff(fw) > 0).all()                          # never flat (TAG §3.2.8)
+    assert fw[4] < 30 / 2 + 1 and fw[5] < 45                # well below H/2 when infrequent
+    assert fw[-1] > fw[-2]                                  # continues beyond the last point
+
+
+def test_gc_tag_equals_random_arrival_gc_for_frequent_service():
+    row = pd.DataFrame({"access_min": [5.0], "wait_min": [3.0], "ride_min": [20.0],
+                        "transfer_min": [0.0], "egress_min": [4.0], "n_transfers": [0.0],
+                        "best_min": [29.0]})     # initial wait 3 min -> headway 6 min
+    curve = PS["generalised_cost.first_wait_curve"]
+    assert abs(skims.gc_tag(row, W, curve).iloc[0] - skims.gc_from_components(row, W).iloc[0]) < 0.1
