@@ -977,6 +977,159 @@ def skims_active() -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@cli.command("access")
+@click.option("--thresholds", default="30,45", show_default=True)
+def access_cmd(thresholds: str) -> None:
+    """C2: cumulative BRES jobs reachable per OA (PT AM p50; walk for context)."""
+    import duckdb
+    from .supply import avl as a
+    cfg = LabConfig.load()
+    sk = cfg.root / "data" / "interim" / "skims"
+    th = [int(x) for x in thresholds.split(",")]
+    x0, y0, x1, y1 = cfg.extent
+    rec = runrecord.build(cfg, command="access", inputs=[
+        {"name": str(sk / f), "sha256": params.file_hash(sk / f)}
+        for f in ("pt_AM_oa_lsoa.parquet", "walk_oa_lsoa.parquet")])
+    runrecord.write(cfg, rec)
+    try:
+        with duckdb.connect(str(cfg.lab_db)) as con:
+            cols = ", ".join(
+                f"sum(j.jobs) FILTER (WHERE s.t <= {t}) AS jobs_{t}" for t in th)
+            con.execute(f"""CREATE OR REPLACE TEMP VIEW pt AS
+                SELECT from_id, to_id, CASE WHEN NOT unreachable THEN p50 END t
+                FROM read_parquet('{sk / 'pt_AM_oa_lsoa.parquet'}')""")
+            con.execute(f"""CREATE OR REPLACE TEMP VIEW wk AS
+                SELECT from_id, to_id, travel_time t FROM read_parquet('{sk / 'walk_oa_lsoa.parquet'}')""")
+            for mode in ("pt", "wk"):
+                con.execute(f"""CREATE OR REPLACE TEMP TABLE acc_{mode} AS
+                    SELECT o.OA21CD, {cols}
+                    FROM int_oa_pwc o
+                    LEFT JOIN {mode} s ON s.from_id = o.OA21CD
+                    LEFT JOIN (SELECT d.LSOA21CD, coalesce(b.jobs, 0) jobs FROM skim_dest d
+                               LEFT JOIN nat_bres b USING (LSOA21CD)) j ON j.LSOA21CD = s.to_id
+                    GROUP BY 1""")
+            # edge OAs: PWC within the clip buffer width of the extent edge
+            km = 5.0
+            con.execute(f"""CREATE OR REPLACE TABLE access_oa AS
+                SELECT o.OA21CD, o.lon, o.lat, i.LSOA21CD,
+                       {", ".join(f"coalesce(p.jobs_{t}, 0) pt_jobs_{t}" for t in th)},
+                       {", ".join(f"coalesce(w.jobs_{t}, 0) walk_jobs_{t}" for t in th)},
+                       least((o.lon - ({x0})) * 69.4, (({x1}) - o.lon) * 69.4,
+                             (o.lat - ({y0})) * 111.3, (({y1}) - o.lat) * 111.3) < {km} AS edge
+                FROM int_oa_pwc o JOIN int_oa i USING (OA21CD)
+                LEFT JOIN acc_pt p USING (OA21CD) LEFT JOIN acc_wk w USING (OA21CD)""")
+            res = con.execute(f"""SELECT edge, count(*) n,
+                {", ".join(f"round(median(pt_jobs_{t})) pt_median_{t}" for t in th)},
+                {", ".join(f"round(median(walk_jobs_{t})) walk_median_{t}" for t in th)}
+                FROM access_oa GROUP BY 1 ORDER BY 1""").df()
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"by_edge": res.to_dict("records"), "table": "lab.duckdb access_oa",
+                     "note": "decay-weighted measure pending: beta is a PLACEHOLDER"}
+    click.echo(res.to_string(index=False))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@cli.command("compare-dft")
+@click.option("--minutes", default=45, show_default=True)
+def compare_dft(minutes: int) -> None:
+    """C3: Spearman rho between our PT job accessibility and the DfT Connectivity Metric."""
+    import duckdb
+    from scipy.stats import spearmanr
+    cfg = LabConfig.load()
+    cdir = cfg.root / "data" / "interim" / "connectivity"
+    rec = runrecord.build(cfg, command="compare-dft", inputs=[
+        {"name": "dft_connectivity_2025", "sha256": __import__("lab.supply.feeds", fromlist=["x"])
+         .get(cfg, "dft_connectivity_2025")["sha256"]}])
+    runrecord.write(cfg, rec)
+    try:
+        with duckdb.connect(str(cfg.lab_db)) as con:
+            def dft(sheet, key):
+                return con.execute(f"""SELECT * FROM read_csv('{cdir / sheet}', skip=2,
+                    header=true, all_varchar=true)""").df().rename(columns={key: "code"})
+            oa = dft("OA.csv", "OA21CD")
+            lsoa = dft("LSOA.csv", "LSOA21CD")
+            ours = con.execute(f"SELECT OA21CD code, LSOA21CD, pt_jobs_{minutes} v, edge FROM access_oa").df()
+        out = {}
+        for label, col in (("employment_pt", "Business (public transport)"),
+                           ("overall_pt", "Overall (public transport)")):
+            m = ours.merge(oa[["code", col]], on="code")
+            m[col] = m[col].astype(float)
+            r_oa = spearmanr(m["v"], m[col]).statistic
+            r_oa_core = spearmanr(m[~m["edge"]]["v"], m[~m["edge"]][col]).statistic
+            l = ours.groupby("LSOA21CD")["v"].mean().rename("v").reset_index() \
+                .merge(lsoa[["code", col]], left_on="LSOA21CD", right_on="code")
+            r_lsoa = spearmanr(l["v"], l[col].astype(float)).statistic
+            m["rank_diff"] = m["v"].rank(pct=True) - m[col].rank(pct=True)
+            worst = m.reindex(m["rank_diff"].abs().sort_values(ascending=False).index).head(15)
+            out[label] = {"dft_column": col, "rho_oa": round(float(r_oa), 3),
+                          "rho_oa_excluding_edge": round(float(r_oa_core), 3),
+                          "rho_lsoa": round(float(r_lsoa), 3), "n_oa": len(m), "n_lsoa": len(l),
+                          "target_met_0.8": bool(min(r_oa, r_lsoa) >= 0.8),
+                          "largest_rank_differences": worst[["code", "v", col, "rank_diff", "edge"]]
+                          .round(3).to_dict("records")}
+            m[["code", "v", col, "rank_diff", "edge"]].to_parquet(
+                cfg.runs_dir / rec["run_id"] / f"rank_diff_{label}.parquet")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"minutes": minutes, **out,
+                     "note": "DfT's PT employment column is labelled 'Business (public "
+                             "transport)' (employment position); its metadata licence says TBA"}
+    for k, v in out.items():
+        click.echo(f"  {k}: rho OA {v['rho_oa']} (excl. edge {v['rho_oa_excluding_edge']}), "
+                   f"LSOA {v['rho_lsoa']}; target >= 0.8 met: {v['target_met_0.8']}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@cli.command("spotchecks")
+def spotchecks_cmd() -> None:
+    """C4: model PT p50 for the spot-check journeys; CSV with blank observed columns."""
+    import datetime as dt
+    import geopandas as gpd
+    import pandas as pd
+    import yaml
+    from shapely.geometry import Point
+    from r5py import TransportMode, TransportNetwork, TravelTimeMatrix
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    sc = pd.read_csv(cfg.root / "config" / "spotchecks_pt.csv")
+    rec = runrecord.build(cfg, command="spotchecks")
+    runrecord.write(cfg, rec)
+    net = TransportNetwork(str(cfg.root / raw["osm"]["clip"]),
+                           [str(cfg.root / raw["bus"]["out"]), str(cfg.root / raw["rail"]["out"])])
+    p50, p25, p75 = [], [], []
+    for _, r in sc.iterrows():
+        o = gpd.GeoDataFrame({"id": [0]}, geometry=[Point(r.o_lon, r.o_lat)], crs="EPSG:4326")
+        d = gpd.GeoDataFrame({"id": [1]}, geometry=[Point(r.d_lon, r.d_lat)], crs="EPSG:4326")
+        t = TravelTimeMatrix(net, origins=o, destinations=d,
+                             departure=dt.datetime.combine(day, dt.time.fromisoformat(r.depart_local)),
+                             departure_time_window=dt.timedelta(minutes=ps["skims.departure_window_min"]),
+                             percentiles=[25, 50, 75],
+                             transport_modes=[TransportMode.TRANSIT, TransportMode.WALK],
+                             max_time=dt.timedelta(minutes=ps["routing.max_trip_min"]),
+                             speed_walking=ps["routing.walk_speed_kmh"],
+                             max_public_transport_rides=ps["routing.max_rides"])
+        p25.append(t["travel_time_p25"].iloc[0]); p50.append(t["travel_time_p50"].iloc[0])
+        p75.append(t["travel_time_p75"].iloc[0])
+    sc["model_p25_min"], sc["model_p50_min"], sc["model_p75_min"] = p25, p50, p75
+    sc["modelled_date"] = str(day)
+    for c in ("observed_min", "observed_date", "planner", "observed_route", "comment"):
+        sc[c] = ""
+    out = cfg.runs_dir / rec["run_id"] / "pt_spotchecks.csv"
+    sc.to_csv(out, index=False)
+    rec["result"] = {"csv": str(out), "journeys": len(sc),
+                     "note": "fill observed_min from a public journey planner for Wed 23 Sep "
+                             "2026 or the same weekday pattern; ±15% on ≥ 16 of 20 (C4)"}
+    click.echo(sc[["id", "type", "origin", "destination", "model_p50_min"]].to_string(index=False))
+    click.echo(f"wrote {out}")
+    runrecord.finish(cfg, rec, "ok")
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")

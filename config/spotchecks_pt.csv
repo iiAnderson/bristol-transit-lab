@@ -1,0 +1,21 @@
+id,type,origin,o_lat,o_lon,destination,d_lat,d_lon,depart_local,note
+1,radial bus,Filwood Broadway (Knowle West),51.4205,-2.5937,Broadmead (Union Street),51.4570,-2.5905,08:15,
+2,radial bus,Fishponds (Straits Parade),51.4816,-2.5268,The Centre (Colston Avenue),51.4545,-2.5970,08:15,
+3,radial bus,Southmead Hospital,51.4958,-2.5918,Bristol Temple Meads,51.4491,-2.5813,08:15,
+4,radial bus,Hartcliffe (Symes Avenue),51.4104,-2.6041,Broadmead (Union Street),51.4570,-2.5905,08:15,
+5,orbital bus,Southmead Hospital,51.4958,-2.5918,UWE Frenchay campus,51.5006,-2.5486,08:15,
+6,orbital bus,Kingswood (Regent Street),51.4583,-2.5053,Cribbs Causeway (The Mall),51.5250,-2.5953,08:15,
+7,Metrobus,Long Ashton Park and Ride,51.4402,-2.6474,The Centre (Colston Avenue),51.4545,-2.5970,08:15,m2
+8,Metrobus,Hengrove Park,51.4130,-2.5840,Cabot Circus,51.4580,-2.5850,08:15,m1
+9,Metrobus,Emersons Green,51.4880,-2.4910,The Centre (Colston Avenue),51.4545,-2.5970,08:15,m3
+10,rail,Bristol Temple Meads,51.4491,-2.5813,Bath Spa,51.3777,-2.3572,08:15,station to station
+11,rail,Weston-super-Mare station,51.3441,-2.9714,Bristol Temple Meads,51.4491,-2.5813,08:15,station to station
+12,rail,Severn Beach station,51.5600,-2.6645,Clifton Down station,51.4644,-2.6115,08:15,Severn Beach line
+13,rail + bus,Yate Shopping Centre,51.5400,-2.4110,Broadmead (Union Street),51.4570,-2.5905,08:15,
+14,rail + bus,Keynsham High Street,51.4138,-2.4970,Southmead Hospital,51.4958,-2.5918,08:15,
+15,Bath,University of Bath (Claverton Down),51.3782,-2.3263,Bath Spa station,51.3777,-2.3572,08:15,
+16,Bath,Bath Abbey,51.3813,-2.3590,Broadmead (Union Street),51.4570,-2.5905,08:15,inter-urban
+17,Weston,Weston-super-Mare town centre,51.3462,-2.9786,Clevedon town centre,51.4389,-2.8526,08:15,
+18,Newport,Malpas (Malpas Road),51.6060,-3.0050,Newport city centre (Friars Walk),51.5870,-2.9960,08:15,Newport Bus
+19,Newport,Caldicot town centre,51.5925,-2.7520,Newport city centre (Friars Walk),51.5870,-2.9960,08:15,Newport Bus 74/X74
+20,Newport,Newport station,51.5886,-3.0003,Bristol Temple Meads,51.4491,-2.5813,08:15,rail cross-border
