@@ -85,8 +85,13 @@ generalised_cost:
   first_wait_curve:
     value: [[0, 0], [10, 5.0], [20, 9.5], [30, 11.5], [40, 13.0], [60, 15.5], [90, 19.5]]
     unit: "[effective headway min, perceived first wait min]; linear between points, slope 0.13 beyond 90"
-    tag: MODELLED
-    reasoning: >-
+    tag: SOURCED
+    source: >-
+      TAG unit M3.2 Public Transport Assignment Modelling (May 2024), Figure 2 "Examples
+      of Wait Curves", illustrative wait curve (a figure, not a table), digitised by eye
+      (±0.5 min); §3.2.3–3.2.9.
+      https://assets.publishing.service.gov.uk/media/666af32effd07973a043d110/tag-unit-m3.2-public-transport-assignment-modelling.pdf
+    note: >-
       TAG M3.2 (May 2024) §3.2.3–3.2.8 and Figure 2 "illustrative wait curve": waiting
       rises at a lower rate than headway for infrequent services because passengers time
       their arrival; applied to the first boarding only (§3.2.5), transfer waits being
@@ -115,6 +120,14 @@ generalised_cost:
       note: Subway Builder published weights, per spec; sensitivity runs only; verify
 
 skims:
+  am_peak_hour:
+    value: "08:00-09:00"
+    unit: local time
+    tag: MODELLED
+    reasoning: >-
+      Robbie, 2026-09-28: the AM skim for car and PT is the 08:00–09:00 peak hour (the
+      demand AM period stays 07:00–10:00, SPEC §6.3); the 07:00–10:00 car average is kept
+      as a sensitivity skim.
   window_start:
     AM:
       value: "08:00"
@@ -298,14 +311,20 @@ area_type:
       suburban clusters (runs/_review/d4_centre_candidates.png).
 
 car:
+  # Provisional values (Robbie, 2026-09-28: unblock the gap map); a zero sensitivity is
+  # always built alongside. Reasoning: central Bristol and Bath have priced, mostly
+  # off-street parking with circulating search and a walk from a multi-storey; urban
+  # destinations (suburban centres, employment sites) mostly have on-site or kerbside
+  # parking; rural destinations park at the door. To be sourced (e.g. TAG / local
+  # parking surveys) before any published output.
   parking_search_min:
-    centre: {value: null, unit: min, tag: PLACEHOLDER, note: by destination area type}
-    urban: {value: null, unit: min, tag: PLACEHOLDER, note: by destination area type}
-    rural: {value: null, unit: min, tag: PLACEHOLDER, note: by destination area type}
+    centre: {value: 8.0, unit: min, tag: PLACEHOLDER, note: "search and queue for a space in a central car park or kerbside; by destination area type"}
+    urban: {value: 3.0, unit: min, tag: PLACEHOLDER, note: "short search, mostly on-site or kerbside"}
+    rural: {value: 1.0, unit: min, tag: PLACEHOLDER, note: "park at the door"}
   access_walk_min:
-    centre: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
-    urban: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
-    rural: {value: null, unit: min, tag: PLACEHOLDER, note: car park to destination}
+    centre: {value: 6.0, unit: min, tag: PLACEHOLDER, note: "car park to destination (~400 m at walk speed)"}
+    urban: {value: 2.0, unit: min, tag: PLACEHOLDER, note: "car park to destination"}
+    rural: {value: 1.0, unit: min, tag: PLACEHOLDER, note: "car park to destination"}
 
 # Routing settings shared by r5r (PT) and r5py (walk, cycle), passed identically to
 # both (plans/P2.md D7). The departure window is skims.departure_window_min.

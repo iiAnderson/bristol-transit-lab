@@ -410,6 +410,12 @@ home-based purposes is an acceptable v1 simplification — say so in reports.
 
 ---
 
+*Amended at P2 (2026-09-28):* **skims represent the AM peak hour, 08:00–09:00,** for
+both car and PT (PT departure window 08:00–09:00; car speeds for that hour). The demand
+AM period stays 07:00–10:00; the 07:00–10:00 average car speeds are kept as a
+sensitivity skim. IP skims: PT departs 12:00–13:00; car speeds are the 10:00–16:00
+average.
+
 ## 7. Evaluation engine
 
 ### 7.1 Skims
@@ -455,6 +461,7 @@ GC = IVT + w_walk·walk + w_wait·wait + n_transfers·P_interchange + fare / VoT
   curve (Figure 2; rises at a lower rate than headway for infrequent services, uncapped
   per §3.2.8) applied to the pair's effective headway (2 × the mean over the departure
   window minus the best departure); **transfer** waits are the timetable model's own.
+  The curve is `[SOURCED]` from TAG M3.2 Figure 2 (illustrative wait curve, digitised).
   Walk 2.0, wait 2.0 and interchange 7.5 min sit within TAG Table 1's indicative ranges
   (1.5–2.0, 1.5–2.5, 2–10) and are calibrated later. Random-arrival GC (half-headway
   first wait) is stored alongside. Accessibility stays on plain travel time.
