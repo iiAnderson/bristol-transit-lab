@@ -382,6 +382,42 @@ def supply_smoke(itin_pairs: int) -> None:
     click.echo(f"wrote {path}")
 
 
+@supply.command("bus-variants")
+@click.option("--day", default=None, help="Archive day to check (default: the modelled date).")
+def supply_bus_variants(day: str | None) -> None:
+    """Resolve same-start timetable variants against vehicle destinations on the day."""
+    import datetime as dt
+    import json
+    import yaml
+    from .supply import bus_variants as bv
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    day = day or str(raw["modelled_date"])
+    f = cfg.root / raw["paths"]["avl"] / "archive" / f"sirivm_{day}.parquet"
+    if not f.is_file():
+        raise click.ClickException(f"{f.name} not closed yet")
+    runs = sorted(cfg.runs_dir.glob("*-supply-bus-*"))
+    bus_rec = json.loads((runs[-1] / "run.json").read_text())
+    groups = bus_rec["result"]["same_start_groups"]
+    lines = sorted({g[1] for g in groups})
+    ops = sorted({g[0] for g in groups})
+    obs = __import__("pandas").concat([bv.observed_destinations(f, op, lines) for op in ops])
+    res = bv.resolve(groups, obs)
+    rec = runrecord.build(cfg, command="supply-bus-variants", inputs=[
+        {"name": str(f), "sha256": params.file_hash(f)},
+        {"name": "bus build run", "version": runs[-1].name}])
+    runrecord.write(cfg, rec)
+    out = cfg.runs_dir / rec["run_id"]
+    res.to_csv(out / "variants.csv", index=False)
+    obs.to_csv(out / "observed_destinations.csv", index=False)
+    summ = res.groupby(["noc", "line", "terminal", "decision"]).size().rename("trips") \
+        .reset_index().to_dict("records")
+    rec["result"] = {"day": day, "bus_build_run": runs[-1].name, "summary": summ}
+    click.echo(obs.to_string(index=False))
+    click.echo(__import__("pandas").DataFrame(summ).to_string(index=False))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @supply.command("osm")
 def supply_osm() -> None:
     """Download, verify, merge and clip the OSM extracts; register them as feeds."""
