@@ -17,3 +17,4 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["slow: builds networks or runs routing (deselect with -m \"not slow\")"]
