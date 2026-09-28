@@ -925,6 +925,52 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@skims.command("active")
+def skims_active() -> None:
+    """Walk and cycle skims OA -> clip-box LSOAs (r5py, shared routing settings)."""
+    import datetime as dt
+    import duckdb
+    import geopandas as gpd
+    import yaml
+    from shapely.geometry import Point
+    from r5py import TransportMode, TransportNetwork, TravelTimeMatrix
+    from .supply import feeds
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+        o = con.execute("SELECT OA21CD id, lon, lat FROM int_oa_pwc ORDER BY 1").df()
+        d = con.execute("SELECT LSOA21CD id, lon, lat FROM skim_dest ORDER BY 1").df()
+    g = lambda df: gpd.GeoDataFrame({"id": df["id"]}, crs="EPSG:4326",  # noqa: E731
+                                    geometry=[Point(x, y) for x, y in zip(df.lon, df.lat)])
+    rec = runrecord.build(cfg, command="skims-active", inputs=[
+        {"name": "osm_clip", "sha256": feeds.get(cfg, "osm_clip")["sha256"]}])
+    runrecord.write(cfg, rec)
+    res = {}
+    try:
+        net = TransportNetwork(str(cfg.root / raw["osm"]["clip"]), [])
+        dep = dt.datetime.combine(day, dt.time.fromisoformat(ps["skims.window_start.AM"]))
+        mx = dt.timedelta(minutes=ps["routing.max_trip_min"])
+        for mode, tm in (("walk", TransportMode.WALK), ("cycle", TransportMode.BICYCLE)):
+            t = TravelTimeMatrix(net, origins=g(o), destinations=g(d), departure=dep,
+                                 transport_modes=[tm], max_time=mx,
+                                 speed_walking=ps["routing.walk_speed_kmh"],
+                                 speed_cycling=ps["routing.cycle_speed_kmh"],
+                                 max_bicycle_traffic_stress=ps["routing.max_bicycle_lts"])
+            out = cfg.root / "data" / "interim" / "skims" / f"{mode}_oa_lsoa.parquet"
+            t.to_parquet(out)
+            res[mode] = {"pairs": len(t), "reachable": int(t["travel_time"].notna().sum()),
+                         "median_min": float(t["travel_time"].median())}
+            click.echo(f"  {mode}: {res[mode]}")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.command("export-viz")
 @click.argument("run_id")
 @click.option("--compare", "compare_id", default=None, help="Run to compare against.")
