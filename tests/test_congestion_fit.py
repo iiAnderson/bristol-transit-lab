@@ -107,3 +107,12 @@ def test_leave_one_road_out_is_exact_without_road_effects():
                                                   R, RHO), P)
     lo = fit.leave_one_road_out(seg, t, R, RHO, P, AREAS)
     assert lo["rel_error"].abs().max() < 1e-4
+
+
+def test_allday_speed_includes_fixed_delays():
+    seg = pd.DataFrame({"road": ["x"], "length_m": [1000.0], "w": [1.0], "ff_kmh": [60.0]})
+    ones = {p: np.ones(1) for p in fit.PERIODS}
+    P1 = {p: 0.2 for p in fit.PERIODS}
+    no = fit.allday_speed(seg, ones, P1)["x"]
+    d = fit.allday_speed(seg, ones, P1, delay_s={p: np.array([60.0]) for p in fit.PERIODS})["x"]
+    assert abs(no - 60) < 1e-9 and abs(d - 1 / (1 / 60 + 60 / 3600)) < 1e-9     # 1 km: 1 + 1 min

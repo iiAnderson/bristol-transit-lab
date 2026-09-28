@@ -44,11 +44,16 @@ def period_weights(profile: pd.DataFrame, periods: dict[str, tuple[str, str]]) -
 
 
 def allday_speed(seg: pd.DataFrame, factors: dict[str, np.ndarray], P: dict[str, float],
-                 key: str = "road") -> pd.Series:
-    """seg: length_m, w, ff_kmh, road key; factors: period -> per-segment factor array."""
-    inv = sum(P[p] / (seg["ff_kmh"].to_numpy() * factors[p]) for p in PERIODS)
-    lw = seg["length_m"].to_numpy() * seg["w"].to_numpy()
-    df = pd.DataFrame({key: seg[key].to_numpy(), "lw": lw, "lwinv": lw * inv})
+                 key: str = "road", delay_s: dict[str, np.ndarray] | None = None) -> pd.Series:
+    """seg: length_m, w, ff_kmh, road key; factors: period -> per-segment factor array;
+    delay_s: optional period -> per-segment fixed delay (s), e.g. at a signalised
+    approach. Time on a segment = L / v + delay."""
+    L = seg["length_m"].to_numpy()
+    w = seg["w"].to_numpy()
+    # Σ_p P_p · time_p per unit weight, in hours; time_p = L/1000 / v_p + d_p/3600
+    t = sum(P[p] * (L / 1000 / (seg["ff_kmh"].to_numpy() * factors[p])
+                    + (0 if delay_s is None else delay_s[p] / 3600)) for p in PERIODS)
+    df = pd.DataFrame({key: seg[key].to_numpy(), "lw": L / 1000 * w, "lwinv": w * t})
     g = df.groupby(key).sum()
     return g["lw"] / g["lwinv"]
 
@@ -70,7 +75,7 @@ def segment_factors(seg: pd.DataFrame, g: dict[str, float], A: dict[str, float],
 
 def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict,
               areas: list[str], lam: float = 1.0, road_lam: float | None = None,
-              authority: bool = True) -> dict:
+              authority: bool = True, delay_s: dict | None = None) -> dict:
     """Fit g[area] (the base level), optionally A[authority] (ridge ``lam``) and, if
     ``road_lam`` is given, a multiplier per target road (ridge ``road_lam``) so modelled
     all-day road speeds match ``targets`` (indexed by road key).
@@ -78,7 +83,10 @@ def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict
     Returns parameters, residuals, parameter count and effective degrees of freedom
     (trace of the hat matrix J (JᵀJ + Λ)⁻¹ Jᵀ at the solution; unpenalised parameters
     count 1 each, ridged ones less)."""
-    seg = seg[seg["road"].isin(targets.index)].copy()
+    keep = seg["road"].isin(targets.index).to_numpy()
+    seg = seg[keep].copy()
+    if delay_s is not None:
+        delay_s = {p: np.asarray(v)[keep] for p, v in delay_s.items()}
     auths = sorted(seg["authority"].unique()) if authority else []
     roads = list(targets.index) if road_lam is not None else []
     na, nA, nr = len(areas), len(auths), len(roads)
@@ -92,7 +100,7 @@ def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict
 
     def data_resid(x):
         g, A, m = unpack(x)
-        s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P)
+        s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P, delay_s=delay_s)
         return np.log(s.reindex(targets.index).to_numpy()) - np.log(targets.to_numpy())
 
     def resid(x):
@@ -106,7 +114,8 @@ def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict
     x0 = np.zeros(na + nA + nr)
     sol = least_squares(resid, x0)
     g, A, m = unpack(sol.x)
-    s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P).reindex(targets.index)
+    s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P,
+                     delay_s=delay_s).reindex(targets.index)
     err = s / targets - 1
     # effective degrees of freedom
     J = sol.jac[:len(targets)]
@@ -118,14 +127,16 @@ def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict
 
 
 def leave_one_road_out(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict,
-                       P: dict, areas: list[str]) -> pd.DataFrame:
+                       P: dict, areas: list[str], delay_s: dict | None = None) -> pd.DataFrame:
     """Fit the base (area levels only) without road k, predict k; one row per road."""
     rows = []
     for k in targets.index:
-        f = fit_level(seg, targets.drop(k), r, rho, P, areas, authority=False)
-        one = seg[seg["road"] == k]
+        f = fit_level(seg, targets.drop(k), r, rho, P, areas, authority=False, delay_s=delay_s)
+        sel = (seg["road"] == k).to_numpy()
+        one = seg[sel]
+        d1 = None if delay_s is None else {p: np.asarray(v)[sel] for p, v in delay_s.items()}
         pred = allday_speed(one, segment_factors(one, f["g"], {a: 1.0 for a in one["authority"]},
-                                                 r, rho), P)[k]
+                                                 r, rho), P, delay_s=d1)[k]
         rows.append({"road": k, "dft_kmh": float(targets[k]), "predicted_kmh": float(pred),
                      "rel_error": float(pred / targets[k] - 1)})
     return pd.DataFrame(rows)

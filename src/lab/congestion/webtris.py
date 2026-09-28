@@ -82,7 +82,8 @@ def _bearing(lon1, lat1, lon2, lat2) -> float:
 
 def process(con: duckdb.DuckDBPyConnection, webtris_dir: Path, sites: list[dict],
             days: dict[dt.date, str], periods: dict[str, tuple[str, str]],
-            segments: Path, max_match_m: float) -> dict:
+            segments: Path, max_match_m: float,
+            am_peak_hour: tuple[str, str] | None = None) -> dict:
     con.execute("CREATE OR REPLACE TEMP TABLE wsite AS SELECT * FROM (VALUES " +
                 ",".join(f"('{s['site_id']}','{s['name']}','{s['road']}','{s['kind']}',"
                          f"'{s['direction']}',{s['lon']}::DOUBLE,{s['lat']}::DOUBLE)" for s in sites) +
@@ -106,6 +107,21 @@ def process(con: duckdb.DuckDBPyConnection, webtris_dir: Path, sites: list[dict]
                sum(volume) / sum(volume / kmh) kmh_hmean
         FROM wrow WHERE (period = 'WE') OR (day_type = 'neutral')
         GROUP BY ALL""")
+    # AM peak hour (08:00–09:00, the skim hour; SPEC §6.3) as an extra aggregate beside
+    # the 07:00–10:00 AM period, which the all-day weights still use.
+    if am_peak_hour:
+        a, b = am_peak_hour
+        con.execute(f"""INSERT INTO wspeed
+            SELECT site_id, 'AMPH', count(DISTINCT date), sum(volume),
+                   sum(volume) / sum(volume / kmh)
+            FROM (SELECT r.site_id, r.date, r.avg_mph * 1.609344 kmh, r.volume
+                  FROM (SELECT *, (CAST(time_end AS TIME) - INTERVAL 14 MINUTE)::TIME t
+                        FROM read_parquet('{webtris_dir}/site=*.parquet')) r
+                  JOIN dtype d USING (date)
+                  WHERE d.day_type = 'neutral' AND r.t >= TIME '{a}' AND r.t < TIME '{b}'
+                    AND r.site_id IN (SELECT site_id FROM wsite)
+                    AND r.avg_mph > 0 AND r.volume > 0)
+            GROUP BY 1""")
     # match sites to SRN segments: same ref, bearing within 60°, nearest within max_match_m
     segs = con.execute(f"""SELECT way_id, seq, forward, u, v, ref, lon_u, lat_u, lon_v, lat_v
         FROM read_parquet('{segments}')

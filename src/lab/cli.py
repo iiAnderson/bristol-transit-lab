@@ -639,7 +639,8 @@ def congestion_srn(max_match_m: float) -> None:
         days = w.day_types(raw["calendar_2025_26"], wc["start"], wc["end"])
         with duckdb.connect() as con:
             res = w.process(con, cfg.root / wc["dir"], sites, days, periods,
-                            d / "segments_annotated.parquet", max_match_m)
+                            d / "segments_annotated.parquet", max_match_m,
+                            am_peak_hour=tuple(ps["skims.am_peak_hour"].split("-")))
             con.execute(f"COPY wspeed TO '{d / 'webtris_speed.parquet'}' (FORMAT parquet)")
             con.execute(f"""COPY (SELECT s.*, m.way_id, m.seq, m.forward, m.u, m.v, m.match_m
                 FROM wsite s LEFT JOIN wmatch m USING (site_id))
