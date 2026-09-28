@@ -1380,9 +1380,35 @@ def compare_dft(minutes: int) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+PT_SPOT_README = """PT spot checks (plans/P2.md C4, amended 2026-09-28)
+
+One row per journey × departure slot: AM 08:15, IP 13:20, EVE 20:40 (EVE is a
+diagnostic and is not in the pass count). Model columns come from r5py over a 60-minute
+window starting at depart_local on the modelled date (Wed 23 Sep 2026):
+  model_best_min      fastest departure in the window (excludes the initial wait)
+  model_p25/p50/p75   percentiles over departure minutes (random arrival)
+
+Fill in, from a public journey planner (no scraping; the modelled date, or the same
+weekday pattern if the planner no longer shows it):
+  planner_duration_min  the planner's displayed journey duration for its suggested
+                        departure (excludes the initial wait)
+  observed_elapsed_min  minutes from depart_local to arrival for the first itinerary you
+                        could take leaving at depart_local (includes the wait)
+
+Two pairings; a row passes if EITHER passes:
+  A  planner_duration_min vs model_best_min, within ±15%
+  B  observed_elapsed_min within [model_p25, model_p75], or within ±15% of model_p50
+     (interpretation of "p25–p75 and p50 ± 15%": either sub-check; Robbie to confirm)
+Acceptance: at least 16 of the 20 AM rows and 16 of the 20 IP rows pass, each failure
+explained.
+"""
+
+
 @cli.command("spotchecks")
-def spotchecks_cmd() -> None:
-    """C4: model PT p50 for the spot-check journeys; CSV with blank observed columns."""
+@click.option("--slots", default="AM=08:15,IP=13:20,EVE=20:40", show_default=True)
+def spotchecks_cmd(slots: str) -> None:
+    """C4: model PT times for the spot-check journeys at three departure slots; CSV with
+    blank observed columns for both pairings, and a README."""
     import datetime as dt
     import geopandas as gpd
     import pandas as pd
@@ -1394,153 +1420,90 @@ def spotchecks_cmd() -> None:
     ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
     day = raw["modelled_date"]
     day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
-    sc = pd.read_csv(cfg.root / "config" / "spotchecks_pt.csv")
+    sc = pd.read_csv(cfg.root / "config" / "spotchecks_pt.csv").drop(columns=["depart_local"])
+    slot = dict(x.split("=") for x in slots.split(","))
     rec = runrecord.build(cfg, command="spotchecks")
     runrecord.write(cfg, rec)
     net = TransportNetwork(str(cfg.root / raw["osm"]["clip"]),
                            [str(cfg.root / raw["bus"]["out"]), str(cfg.root / raw["rail"]["out"])])
-    best, p50, p25, p75 = [], [], [], []
-    for _, r in sc.iterrows():
-        o = gpd.GeoDataFrame({"id": [0]}, geometry=[Point(r.o_lon, r.o_lat)], crs="EPSG:4326")
-        d = gpd.GeoDataFrame({"id": [1]}, geometry=[Point(r.d_lon, r.d_lat)], crs="EPSG:4326")
-        t = TravelTimeMatrix(net, origins=o, destinations=d,
-                             departure=dt.datetime.combine(day, dt.time.fromisoformat(r.depart_local)),
-                             departure_time_window=dt.timedelta(minutes=ps["skims.departure_window_min"]),
-                             percentiles=[1, 25, 50, 75],
-                             transport_modes=[TransportMode.TRANSIT, TransportMode.WALK],
-                             max_time=dt.timedelta(minutes=ps["routing.max_trip_min"]),
-                             speed_walking=ps["routing.walk_speed_kmh"],
-                             max_public_transport_rides=ps["routing.max_rides"])
-        best.append(t["travel_time_p1"].iloc[0])
-        p25.append(t["travel_time_p25"].iloc[0]); p50.append(t["travel_time_p50"].iloc[0])
-        p75.append(t["travel_time_p75"].iloc[0])
-    # A journey planner answers for a chosen departure, so it is compared with the best
-    # departure in the window (timetable-aware); the random-arrival p50 is kept alongside.
-    sc["model_best_min"] = best
-    sc["model_p25_min"], sc["model_p50_min"], sc["model_p75_min"] = p25, p50, p75
-    sc["modelled_date"] = str(day)
-    for c in ("observed_min", "observed_date", "planner", "observed_route", "comment"):
-        sc[c] = ""
+    rows = []
+    for name, hhmm in slot.items():
+        for _, r in sc.iterrows():
+            o = gpd.GeoDataFrame({"id": [0]}, geometry=[Point(r.o_lon, r.o_lat)], crs="EPSG:4326")
+            d = gpd.GeoDataFrame({"id": [1]}, geometry=[Point(r.d_lon, r.d_lat)], crs="EPSG:4326")
+            t = TravelTimeMatrix(net, origins=o, destinations=d,
+                                 departure=dt.datetime.combine(day, dt.time.fromisoformat(hhmm)),
+                                 departure_time_window=dt.timedelta(minutes=ps["skims.departure_window_min"]),
+                                 percentiles=[1, 25, 50, 75],
+                                 transport_modes=[TransportMode.TRANSIT, TransportMode.WALK],
+                                 max_time=dt.timedelta(minutes=ps["routing.max_trip_min"]),
+                                 speed_walking=ps["routing.walk_speed_kmh"],
+                                 max_public_transport_rides=ps["routing.max_rides"])
+            rows.append({**r.to_dict(), "slot": name, "depart_local": hhmm,
+                         "diagnostic_only": name == "EVE",
+                         "model_best_min": t["travel_time_p1"].iloc[0],
+                         "model_p25_min": t["travel_time_p25"].iloc[0],
+                         "model_p50_min": t["travel_time_p50"].iloc[0],
+                         "model_p75_min": t["travel_time_p75"].iloc[0]})
+    out_df = pd.DataFrame(rows)
+    out_df["modelled_date"] = str(day)
+    for c in ("planner_duration_min", "observed_elapsed_min", "observed_date", "planner",
+              "observed_route", "comment"):
+        out_df[c] = ""
     out = cfg.runs_dir / rec["run_id"] / "pt_spotchecks.csv"
-    sc.to_csv(out, index=False)
-    rec["result"] = {"csv": str(out), "journeys": len(sc),
-                     "note": "fill observed_min from a public journey planner for Wed 23 Sep "
-                             "2026 or the same weekday pattern; compare with model_best_min "
-                             "(planner = chosen departure); ±15% on ≥ 16 of 20 (C4)"}
-    click.echo(sc[["id", "type", "origin", "destination", "model_best_min", "model_p50_min"]]
+    out_df.to_csv(out, index=False)
+    (out.parent / "README.md").write_text(PT_SPOT_README)
+    rec["result"] = {"csv": str(out), "rows": len(out_df), "slots": slot}
+    click.echo(out_df[["id", "slot", "origin", "destination", "model_best_min", "model_p50_min"]]
                .to_string(index=False))
     click.echo(f"wrote {out}")
     runrecord.finish(cfg, rec, "ok")
 
 
 @cli.command("spotchecks-car")
-@click.option("--variant", type=click.Choice(["hybrid", "base"]), default="hybrid",
-              show_default=True)
-def spotchecks_car(variant: str) -> None:
-    """Car spot checks: modelled AM and IP times (OSRM, calibrated); blank observed columns."""
+@click.option("--n", "n_links", default=20, show_default=True)
+def spotchecks_car(n_links: int) -> None:
+    """Car spot checks from held-out ANPR routes (validation half): the n links whose
+    routed length best matches the ANPR path; modelled vs observed, IP and AM peak hour
+    (both hour conventions). Pass: within ±15% on at least 16 of 20."""
     import pandas as pd
-    import requests
-    from .supply import osrm
+    from .congestion import signals as sg
     cfg = LabConfig.load()
-    sc = pd.read_csv(cfg.root / "config" / "spotchecks_car.csv")
+    d = cfg.root / "data" / "interim" / "congestion"
+    anpr = _anpr_inputs(cfg)
+    if anpr is None:
+        raise click.ClickException("run `lab congestion anpr-prep` first")
+    ls = pd.read_parquet(d / "link_speed.parquet")
+    seg = pd.read_parquet(d / "segments_annotated.parquet", columns=["u", "v", "length_m", "area_type"])
+    lens = seg[["u", "v", "length_m"]].drop_duplicates(["u", "v"])
+    area = seg[["u", "v", "area_type"]].drop_duplicates(["u", "v"]).rename(columns={"area_type": "area"})
+    val = anpr["paths"][anpr["paths"]["half"] == "validation"]
+    fit_q = (val.groupby("link_id")["route_m"].first() / val.groupby("link_id")["link_m"].first() - 1).abs()
+    pick = fit_q.sort_values().head(n_links).index
+    rows = []
+    for per, obs_per in (("IP", "IP"), ("AMPH", "AMPH_if_start"), ("AMPH", "AMPH_if_end")):
+        spd = ls[ls["period"] == per][["u", "v", "speed_kmh"]].merge(lens, on=["u", "v"])
+        t = sg.link_times(val[val["link_id"].isin(pick)], spd, area, set(), {})
+        o = anpr["obs"][anpr["obs"]["period"] == obs_per].set_index("link_id")["obs_s"]
+        j = pd.concat([t.rename("model_s"), o.rename("obs_s")], axis=1, join="inner")
+        j["comparison"] = obs_per
+        rows.append(j.reset_index())
+    res = pd.concat(rows)
+    res["rel_error"] = res["model_s"] / res["obs_s"] - 1
+    res["within_15pct"] = res["rel_error"].abs() <= 0.15
     rec = runrecord.build(cfg, command="spotchecks-car")
     runrecord.write(cfg, rec)
-    for per in ("AM", "IP"):
-        ds = cfg.root / "data" / "interim" / "osrm" / f"{variant}_{per}" / "b2026"
-        if not ds.with_suffix(".osrm.partition").exists():
-            raise click.ClickException(f"run `lab skims car` first ({ds.parent.name} missing)")
-        mins, kms = [], []
-        with osrm.Server(ds) as srv:
-            for _, r in sc.iterrows():
-                j = requests.get(f"http://127.0.0.1:{srv.port}/route/v1/driving/"
-                                 f"{r.o_lon},{r.o_lat};{r.d_lon},{r.d_lat}",
-                                 params={"overview": "false"}, timeout=60).json()
-                rt = j["routes"][0] if j.get("code") == "Ok" else None
-                mins.append(round(rt["duration"] / 60, 1) if rt else None)
-                kms.append(round(rt["distance"] / 1000, 2) if rt else None)
-        sc[f"model_{per}_min"], sc[f"model_{per}_km"] = mins, kms
-    for c in ("observed_AM_min", "observed_IP_min", "observed_date", "source", "comment"):
-        sc[c] = ""
-    out = cfg.runs_dir / rec["run_id"] / "car_spotchecks.csv"
-    sc.to_csv(out, index=False)
-    rec["result"] = {"csv": str(out), "variant": variant,
-                     "note": "fill observed times (in-car time, no parking); ±15% on ≥ 16 of 20 (P2b)"}
-    click.echo(sc[["id", "type", "origin", "destination", "model_AM_min", "model_IP_min"]]
-               .to_string(index=False))
+    out = cfg.runs_dir / rec["run_id"] / "car_spotchecks_anpr.csv"
+    res.merge(fit_q.rename("route_len_mismatch"), left_on="link_id", right_index=True) \
+        .to_csv(out, index=False)
+    summ = res.groupby("comparison").agg(n=("within_15pct", "size"), passing=("within_15pct", "sum"),
+                                         median_abs_err=("rel_error", lambda e: e.abs().median()))
+    rec["result"] = {"csv": str(out), "links": int(len(pick)),
+                     "summary": summ.round(3).reset_index().to_dict("records"),
+                     "pass_rule": ">= 16 of 20 within ±15%"}
+    click.echo(summ.round(3).to_string())
     click.echo(f"wrote {out}")
     runrecord.finish(cfg, rec, "ok")
-
-
-@cli.command("gapmap")
-@click.option("--pt-period", default="AM", show_default=True)
-@click.option("--car-period", default="AMPH", show_default=True)
-def gapmap_cmd(pt_period: str, car_period: str) -> None:
-    """C5: provisional gap map — PT GC ÷ car GC over internal HBW flows (AM peak hour),
-    with placeholder car parking/access and a zero sensitivity."""
-    import json
-    import duckdb
-    import geopandas as gpd
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import pandas as pd
-    from shapely.geometry import LineString
-    from . import gapmap as gm
-    cfg = LabConfig.load()
-    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
-    park = {k: ps[f"car.parking_search_min.{k}"] for k in ("centre", "urban", "rural")}
-    walk = {k: ps[f"car.access_walk_min.{k}"] for k in ("centre", "urban", "rural")}
-    sk = cfg.root / "data" / "interim" / "skims"
-    pt, car = sk / f"pt_{pt_period}_oa_lsoa.parquet", sk / f"car_{car_period}_oa_lsoa.parquet"
-    ts001 = cfg.upstream_raw / "ts001" / "census2021-ts001-oa.csv"
-    rec = runrecord.build(cfg, command="gapmap", demand_version="p1-central", inputs=[
-        {"name": str(f), "sha256": params.file_hash(f)} for f in (pt, car, ts001)])
-    runrecord.write(cfg, rec)
-    out = cfg.runs_dir / rec["run_id"]
-    try:
-        with duckdb.connect(str(cfg.lab_db)) as con:
-            con.execute(f"""CREATE OR REPLACE TEMP TABLE oa_pop AS
-                SELECT "geography code" OA21CD, "Residence type: Total; measures: Value" pop
-                FROM read_csv('{ts001}')""")
-            con.execute("INSTALL spatial; LOAD spatial")
-            con.execute(f"""CREATE OR REPLACE TEMP TABLE lsoa_area_type AS
-                SELECT d.LSOA21CD,
-                       CASE WHEN d.LSOA21CD IN (SELECT unnest(?)) THEN 'centre'
-                            WHEN r.Urban_rural_flag = 'Urban' THEN 'urban' ELSE 'rural' END area_type
-                FROM skim_dest d LEFT JOIN read_csv('{cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv"}') r
-                USING (LSOA21CD)""", [json.loads(sorted(cfg.runs_dir.glob("*-congestion-network-*"))[-1]
-                                      .joinpath("run.json").read_text())["result"]["centre_lsoas"]])
-            m = gm.build(con, str(pt), str(car), park, walk)
-            pts = con.execute("SELECT LSOA21CD, lon, lat FROM int_lsoa").df().set_index("LSOA21CD")
-        summ = gm.summaries(m)
-        org = gm.origin_summary(m)
-        top = gm.top_pairs(m)
-        geo = gpd.GeoDataFrame(m, crs="EPSG:4326", geometry=[
-            LineString([pts.loc[o, ["lon", "lat"]], pts.loc[d, ["lon", "lat"]]])
-            for o, d in zip(m["o_zone"], m["d_zone"])])
-        geo["label"] = gm.LABEL
-        geo.to_parquet(out / "gapmap_od.parquet")
-        org.to_parquet(out / "gapmap_origin.parquet")
-        top.to_csv(out / "gapmap_top50.csv", index=False)
-        poly = gpd.read_file(cfg.root / "data/raw/ons_geo/lsoa21_bgc_internal.geojson") \
-            .merge(org, left_on="LSOA21CD", right_on="o_zone", how="left")
-        fig, axs = plt.subplots(1, 2, figsize=(16, 7))
-        for ax, col, title in ((axs[0], "ratio", "with placeholder parking/access"),
-                               (axs[1], "ratio_zero_parking", "sensitivity: parking/access = 0")):
-            poly.plot(ax=ax, column=col, cmap="magma_r", vmin=1, vmax=4, legend=True,
-                      missing_kwds={"color": "#dddddd"},
-                      legend_kwds={"label": "PT GC ÷ car GC (flow-weighted, by origin LSOA)"})
-            ax.set_title(f"Draft gap map, AM peak hour — {title}", fontsize=10)
-            ax.set_axis_off()
-        fig.text(0.5, 0.02, gm.LABEL, ha="center", fontsize=9)
-        plt.savefig(out / "gapmap.png", dpi=110, bbox_inches="tight")
-    except Exception:
-        runrecord.finish(cfg, rec, "failed")
-        raise
-    rec["result"] = {**summ, "label": gm.LABEL, "pt_period": pt_period, "car_period": car_period,
-                     "parking_search_min": park, "access_walk_min": walk}
-    click.echo(json.dumps(rec["result"], indent=1))
-    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
 @cli.command("export-viz")
