@@ -69,35 +69,63 @@ def segment_factors(seg: pd.DataFrame, g: dict[str, float], A: dict[str, float],
 
 
 def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict,
-              areas: list[str], lam: float = 1.0, road_lam: float | None = None) -> dict:
-    """Fit g[area] and A[authority] (and, if ``road_lam`` is given, a multiplier per
-    target road with its own ridge) so modelled all-day road speeds match ``targets``
-    (indexed by road key). Returns parameters, residuals and diagnostics."""
+              areas: list[str], lam: float = 1.0, road_lam: float | None = None,
+              authority: bool = True) -> dict:
+    """Fit g[area] (the base level), optionally A[authority] (ridge ``lam``) and, if
+    ``road_lam`` is given, a multiplier per target road (ridge ``road_lam``) so modelled
+    all-day road speeds match ``targets`` (indexed by road key).
+
+    Returns parameters, residuals, parameter count and effective degrees of freedom
+    (trace of the hat matrix J (JᵀJ + Λ)⁻¹ Jᵀ at the solution; unpenalised parameters
+    count 1 each, ridged ones less)."""
     seg = seg[seg["road"].isin(targets.index)].copy()
-    auths = sorted(seg["authority"].unique())
+    auths = sorted(seg["authority"].unique()) if authority else []
     roads = list(targets.index) if road_lam is not None else []
-    na, nA = len(areas), len(auths)
+    na, nA, nr = len(areas), len(auths), len(roads)
 
     def unpack(x):
         g = dict(zip(areas, np.exp(x[:na])))
-        A = dict(zip(auths, np.exp(x[na:na + nA])))
+        A = dict(zip(auths, np.exp(x[na:na + nA]))) if auths else \
+            {a: 1.0 for a in seg["authority"].unique()}
         m = dict(zip(roads, np.exp(x[na + nA:])))
         return g, A, m
 
-    def resid(x):
+    def data_resid(x):
         g, A, m = unpack(x)
         s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P)
-        res = np.log(s.reindex(targets.index).to_numpy()) - np.log(targets.to_numpy())
-        pen = [np.sqrt(lam) * x[na:na + nA]]
-        if roads:
-            pen.append(np.sqrt(road_lam) * x[na + nA:])
-        return np.concatenate([res, *pen])
+        return np.log(s.reindex(targets.index).to_numpy()) - np.log(targets.to_numpy())
 
-    x0 = np.zeros(na + nA + len(roads))
+    def resid(x):
+        pen = []
+        if nA:
+            pen.append(np.sqrt(lam) * x[na:na + nA])
+        if nr:
+            pen.append(np.sqrt(road_lam) * x[na + nA:])
+        return np.concatenate([data_resid(x), *pen])
+
+    x0 = np.zeros(na + nA + nr)
     sol = least_squares(resid, x0)
     g, A, m = unpack(sol.x)
     s = allday_speed(seg, segment_factors(seg, g, A, r, rho, m), P).reindex(targets.index)
     err = s / targets - 1
-    return {"g": g, "A": A, "m": m, "modelled": s, "rel_error": err,
-            "n_params": na + nA + len(roads), "n_targets": len(targets),
+    # effective degrees of freedom
+    J = sol.jac[:len(targets)]
+    Lam = np.diag(np.r_[np.zeros(na), np.full(nA, lam), np.full(nr, road_lam or 0.0)])
+    H = J @ np.linalg.pinv(J.T @ J + Lam) @ J.T
+    return {"g": g, "A": A if auths else {}, "m": m, "modelled": s, "rel_error": err,
+            "n_params": na + nA + nr, "edf": float(np.trace(H)), "n_targets": len(targets),
             "max_abs_rel_error": float(err.abs().max()), "success": bool(sol.success)}
+
+
+def leave_one_road_out(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict,
+                       P: dict, areas: list[str]) -> pd.DataFrame:
+    """Fit the base (area levels only) without road k, predict k; one row per road."""
+    rows = []
+    for k in targets.index:
+        f = fit_level(seg, targets.drop(k), r, rho, P, areas, authority=False)
+        one = seg[seg["road"] == k]
+        pred = allday_speed(one, segment_factors(one, f["g"], {a: 1.0 for a in one["authority"]},
+                                                 r, rho), P)[k]
+        rows.append({"road": k, "dft_kmh": float(targets[k]), "predicted_kmh": float(pred),
+                     "rel_error": float(pred / targets[k] - 1)})
+    return pd.DataFrame(rows)

@@ -734,15 +734,19 @@ def congestion_calibrate(days: str | None) -> None:
         raise
     rec["result"] = {k: v for k, v in rep.items() if k not in ("shape",)}
     rec["result"]["level"] = {k: v for k, v in rep["level"].items() if k != "targets"}
+    rec["result"]["leave_one_road_out"] = {k: v for k, v in rep["leave_one_road_out"].items()
+                                           if k != "roads"}
     click.echo(f"  period weights {({k: round(v, 3) for k, v in P.items()})}")
     click.echo(f"  srn {rep['srn']}")
     click.echo(f"  rho {rep['shape']['rho']}  national {national}")
-    click.echo(f"  level g {rep['level']['g']}  A {rep['level']['A']}")
-    for k in ("parsimonious", "level"):
-        v = rep[k]
-        click.echo(f"  {k}: params {v['n_params']}, median |err| "
-                   f"{v['median_abs_rel_error']:.3f}, p90 {v['p90_abs_rel_error']:.3f}, "
-                   f"within 5% {v['share_within_5pct']:.2f}")
+    click.echo(f"  base g {rep['base']['g']}")
+    b, h, lo = rep["base"], rep["level"], rep["leave_one_road_out"]
+    click.echo(f"  base: fitted params {b['n_params_fitted_to_dft']} (edf {b['edf']:.1f}), "
+               f"median |err| {b['median_abs_rel_error']:.3f}, p90 {b['p90_abs_rel_error']:.3f}")
+    click.echo(f"  hybrid: params {h['n_params']} (edf {h['edf']:.1f}), median |err| "
+               f"{h['median_abs_rel_error']:.3f}, within 5% {h['share_within_5pct']:.2f}")
+    click.echo(f"  leave-one-road-out: median |err| {lo['median_abs_rel_error']:.3f}, p90 "
+               f"{lo['p90_abs_rel_error']:.3f}, pass (<=15%): {lo['passes_15pct_median']}")
     click.echo(f"  median factor by period {rep['median_factor']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 

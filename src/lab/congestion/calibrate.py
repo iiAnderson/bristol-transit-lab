@@ -187,14 +187,23 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
     r_main = {(k[0], k[1], k[2]): v for k, v in r.items() if k[3] == "main"}
     tgt = use.set_index("road")["kmh"]
     tgt = tgt[tgt.index.isin(la["road"])]
-    lf0 = fit.fit_level(la, tgt, r_main, rho, P, AREAS, lam=lam)
-    lf = fit.fit_level(la, tgt, r_main, rho, P, AREAS, lam=lam, road_lam=road_lam)
-    e0, e1 = lf0["rel_error"].abs(), lf["rel_error"].abs()
-    rep["parsimonious"] = {"g": lf0["g"], "A": lf0["A"], "n_params": lf0["n_params"],
-                           "median_abs_rel_error": float(e0.median()),
-                           "p90_abs_rel_error": float(e0.quantile(0.9)),
-                           "share_within_5pct": float((e0 <= 0.05).mean())}
-    rep["level"] = {"g": lf["g"], "A": lf["A"], "m": lf["m"], "n_params": lf["n_params"],
+    base = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False)
+    lf = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False, road_lam=road_lam)
+    loro = fit.leave_one_road_out(la, tgt, r_main, rho, P, AREAS)
+    e0, e1, el = base["rel_error"].abs(), lf["rel_error"].abs(), loro["rel_error"].abs()
+    n_shape_cells = len(r) + 2 * len(AREAS) + 2          # AM/PM cells, class levels, OP/WE
+    rep["base"] = {"g": base["g"], "n_params_fitted_to_dft": base["n_params"],
+                   "edf": base["edf"], "n_shape_cells_from_data": n_shape_cells,
+                   "median_abs_rel_error": float(e0.median()),
+                   "p90_abs_rel_error": float(e0.quantile(0.9)),
+                   "share_within_5pct": float((e0 <= 0.05).mean())}
+    rep["leave_one_road_out"] = {"median_abs_rel_error": float(el.median()),
+                                 "p90_abs_rel_error": float(el.quantile(0.9)),
+                                 "share_within_15pct": float((el <= 0.15).mean()),
+                                 "passes_15pct_median": bool(el.median() <= 0.15),
+                                 "roads": loro.round(4).to_dict("records")}
+    rep["level"] = {"g": lf["g"], "m": lf["m"], "n_params": lf["n_params"],
+                    "edf": lf["edf"],
                     "median_abs_rel_error": float(e1.median()),
                     "p90_abs_rel_error": float(e1.quantile(0.9)),
                     "share_within_5pct": float((e1 <= 0.05).mean()),
@@ -207,7 +216,7 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
 
     # 6–7. assemble per-segment factors
     area = seg["area_type"].replace({"buffer": "rural"}).to_numpy()
-    A = seg["lad"].map(lf["A"]).fillna(1.0).to_numpy()
+    A = np.ones(len(seg))                               # no authority terms (hybrid)
     road_key = seg["lad"].fillna("") + ":" + seg["ref"].fillna("")
     M = np.where(seg["road_class"] == "local_a", road_key.map(lf["m"]).fillna(1.0), 1.0)
     A = A * M

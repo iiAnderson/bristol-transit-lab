@@ -84,3 +84,26 @@ def test_road_multipliers_close_road_specific_gaps():
     base = fit.fit_level(seg, t, R, RHO, P, AREAS, lam=1.0)
     roads = fit.fit_level(seg, t, R, RHO, P, AREAS, lam=1.0, road_lam=1e-4)
     assert roads["max_abs_rel_error"] < 0.01 < base["max_abs_rel_error"]
+
+
+def test_effective_dof_between_base_and_full():
+    seg = synthetic(seed=5)
+    rng = np.random.default_rng(6)
+    g_true = {"centre": 0.45, "urban": 0.62, "rural": 0.78}
+    m_true = {rd: float(rng.lognormal(0, 0.1)) for rd in seg["road"].unique()}
+    t = fit.allday_speed(seg, fit.segment_factors(seg, g_true, {k: 1.0 for k in seg["authority"]},
+                                                  R, RHO, m_true), P)
+    base = fit.fit_level(seg, t, R, RHO, P, AREAS, authority=False)
+    hyb = fit.fit_level(seg, t, R, RHO, P, AREAS, authority=False, road_lam=0.1)
+    assert abs(base["edf"] - 3) < 1e-6
+    assert 3 < hyb["edf"] < base["n_params"] + len(t)
+    assert hyb["max_abs_rel_error"] < base["max_abs_rel_error"]
+
+
+def test_leave_one_road_out_is_exact_without_road_effects():
+    seg = synthetic(seed=7, n_roads=12)
+    g_true = {"centre": 0.45, "urban": 0.62, "rural": 0.78}
+    t = fit.allday_speed(seg, fit.segment_factors(seg, g_true, {k: 1.0 for k in seg["authority"]},
+                                                  R, RHO), P)
+    lo = fit.leave_one_road_out(seg, t, R, RHO, P, AREAS)
+    assert lo["rel_error"].abs().max() < 1e-4
