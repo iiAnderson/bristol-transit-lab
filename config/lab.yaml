@@ -152,6 +152,74 @@ bus:
   source_url: https://data.datalibrary.uk/transport/BODS-ARCHIVE/timetables/2026/09/23/
   compare_date: 2026-10-07          # A4 check 2: a later Wednesday in the same feed
   out: data/interim/gtfs/bus_bods.zip
+  # Superseded same-start variants dropped (resolved against vehicle destinations on the
+  # modelled day; run 20260928T084225-supply-bus-variants-d51dab): on 23 Sep First
+  # Bristol 5 and 77 ran to Transport Hub (010000012; service 6606 from 22 Sep); no
+  # vehicle was bound for Black Boy Hill (0100BRP90986). Other variant groups (1–2
+  # observed journeys) are left in and listed as unresolved.
+  exclude_trips:
+    resolved_by: 20260928T084225-supply-bus-variants-d51dab
+    trip_ids:
+      - "south_west:VJ0757e6d80d3867768c2d3fb2cc3ec45e40831146"
+      - "south_west:VJ09842ba47674d0c1ed02f78ca240eafcc0f2d2f4"
+      - "south_west:VJ09f362898c4ab98607a1a69e44d2593d050bb721"
+      - "south_west:VJ0a25f16028e3a019db651f11ae8c3037bd115147"
+      - "south_west:VJ0b7907f44e1f06fd5bf51476bdd7cf11e936a0c5"
+      - "south_west:VJ0c1c7c9caceb6091626395901c2ce535459bd466"
+      - "south_west:VJ0dddf3d4efddc925ece82c915fdbc9527d060b93"
+      - "south_west:VJ123c632180e3169c70da33563bc96bc792896229"
+      - "south_west:VJ12c7f0355a31ab9c912c6c6a0704613ba473ba57"
+      - "south_west:VJ14b458d3f749aae6961ae24f3bd093637193c82b"
+      - "south_west:VJ14ff7754df18a0135de56bbbb3f2115881e1c057"
+      - "south_west:VJ15af9b9c4872289970b47b9eba56e1a63d40606c"
+      - "south_west:VJ197ba85925b3036a241cad273752c7ecb464cb18"
+      - "south_west:VJ1c1fba1bffa535bacd788e5418e4e5157be0346f"
+      - "south_west:VJ23f6a014816ab6bc0ffdbd85eff5302a59c7c0fc"
+      - "south_west:VJ262aa36bd55efe6626eb3f8a9cf2ec8f72905c10"
+      - "south_west:VJ2673a0cefc3f460b5df533d8918ede75276ef776"
+      - "south_west:VJ2b50d1c143a0b360d73e42cdfa18715292c052bc"
+      - "south_west:VJ2cbcbb0f0cac032c73ec1be498d8da6ef978c6d9"
+      - "south_west:VJ359403de5574d98ccd264997efa5bba954ef045d"
+      - "south_west:VJ38a69af21f7cd107ede5a3db547e2246b0ade84b"
+      - "south_west:VJ3942dc0d0535044240c38b73feaf2c350bdf581f"
+      - "south_west:VJ3aa10a30ad31f14e10fac148ce7d47cf446e9ebb"
+      - "south_west:VJ3c90e2c77f17ea678e822e60aa106868127b9930"
+      - "south_west:VJ415c70a2d68f49ee7ac415be731820682e61218a"
+      - "south_west:VJ43190c59edce6695d146ec0afbf168b8a95a535e"
+      - "south_west:VJ4383eb0d672dd564aacf78fc91e123b898bfc8a5"
+      - "south_west:VJ468195c9e1cdc1049b8e5309650781d74f621827"
+      - "south_west:VJ47b0f0f0232e2811cc7688dadb7cffe733d45388"
+      - "south_west:VJ4ab8b248e3706d369e2f696b67398b1bf0cac751"
+      - "south_west:VJ4b8938e9a814036e6cf4ef782c1a12e4ce757deb"
+      - "south_west:VJ5018fd43695c69ec792d9a6135dcf460ebda5a69"
+      - "south_west:VJ51a8e815915cae0308a247ccff5ada6544c1298f"
+      - "south_west:VJ540603de623c2ec78c083734ac30b9b7dad2bda2"
+      - "south_west:VJ5aacd54dc275c7a5c02dc5494f8c6855313c514d"
+      - "south_west:VJ5e6f2c7a01a660eb13a7ef225ab9f5a165b6c598"
+      - "south_west:VJ5ec99e598e57b08a99bfabda7cca8d72f2fe169e"
+      - "south_west:VJ5f793367381c043313f79922333b141f10ce42e2"
+      - "south_west:VJ643e2c0fffd61721649528555c25ba403943297f"
+      - "south_west:VJ6594fed2e060ed39696a381bf2fb842f4cefbe93"
+      - "south_west:VJ7292420f4d2d1fb7f41151a318c40e7d6a181a3d"
+      - "south_west:VJ7a24039a272dfcf6e47ee413029833ac75d13a67"
+      - "south_west:VJ8041fd39eed1ec7611c5a03590c5f7a1b980a197"
+      - "south_west:VJ8623559ab4e7b4710ad8b827094bcdacbc0cc6fc"
+      - "south_west:VJ87e6af839bb32cc2e5ed4fc85a3d83f1e06f25b0"
+      - "south_west:VJ895d4c7e2d3449c710471f2956ec53ae0de460a5"
+      - "south_west:VJ89bec1d86be513b559c3d1dfc5d46f2f516d4b52"
+      - "south_west:VJ91c7d4cc685c9b9857c604c1ed0c230d27367bb7"
+      - "south_west:VJ98323aaffc92312500d993c8b1a7a054c4480507"
+      - "south_west:VJa4ab9ac973f339ea29009e21da052543f16fc278"
+      - "south_west:VJaba341c0bb1159a4977faa6fbb2485f23f694a79"
+      - "south_west:VJad71d217ae35164090d70a4b901ff6ff1d6f3812"
+      - "south_west:VJb1d4a40e2d5566252961c0fcb09b489086f32744"
+      - "south_west:VJb76b32a62931c0de72114809182aa6c992e5f79f"
+      - "south_west:VJbaf5974c642e94c87f0425bf9e7a58f148d7e52a"
+      - "south_west:VJbb23847d7d6bd369ca954709fc3b95846d8e907c"
+      - "south_west:VJc4a5e19408ff52009fac513b2ae3e13a66f66553"
+      - "south_west:VJca7bc60d8077634a73888f12bee4c2d3e2004ad2"
+      - "south_west:VJccedf181e2fdce835a8850ba1ea5f667d95de45e"
+      - "south_west:VJeeffc2c3bd4910251bd9778b6e66dfbfbc537a1c"
 
 # P2a spikes (plans/P2.md A9). D2: a small car-network test area [min_lon, min_lat,
 # max_lon, max_lat] with plenty of two-way primary/secondary roads.

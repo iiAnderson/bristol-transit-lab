@@ -122,3 +122,12 @@ def test_trips_calling_in_a_zone_beyond_the_extent_are_kept(tmp_path):
     assert r0["trips_calling_in_extent"] == 0
     _, r1 = run(tmp_path, {"a": dict(trips=[("t1", "R1", "WK", zone_only)])}, zones)
     assert r1["trips_calling_in_extent"] == 1
+
+
+def test_excluding_a_trip_drops_its_exact_duplicates_too(tmp_path):
+    con = duckdb.connect()
+    feeds = {"a": dict(trips=[("t1", "R1", "WK", CALLS), ("t1dup", "R1", "WK", CALLS),
+                              ("t2", "R1", "WK", [(s, t.replace("08:", "09:")) for s, t in CALLS])])}
+    g.load(con, {n: gtfs(tmp_path, n, **kw) for n, kw in feeds.items()})
+    r = g.build(con, ["a"], DAY, EXTENT, BOX, None, exclude_trips=["a:t1"])
+    assert r["excluded_superseded_variants"] == 2 and r["trips_out"] == 1

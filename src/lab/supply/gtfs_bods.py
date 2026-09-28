@@ -77,14 +77,7 @@ def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
             FROM {f}_trips t JOIN {f}_active USING (service_id)
             JOIN {f}_routes r USING (route_id) JOIN {f}_agency a USING (agency_id)""")
     con.execute("CREATE OR REPLACE TEMP TABLE trips_on_date AS " + " UNION ALL ".join(parts))
-    # Trips resolved as superseded variants (against vehicle destinations on the day);
-    # listed in config with the run that resolved them.
-    n_excluded = 0
-    if exclude_trips:
-        n_excluded = con.execute("SELECT count(*) FROM trips_on_date WHERE trip_id IN "
-                                 "(SELECT unnest(?))", [exclude_trips]).fetchone()[0]
-        con.execute("DELETE FROM trips_on_date WHERE trip_id IN (SELECT unnest(?))",
-                    [exclude_trips])
+
     n_on_date = con.execute("SELECT count(*) FROM trips_on_date").fetchone()[0]
     if n_on_date == 0:
         raise BusGtfsError(f"no bus trips are active on {day}: the feeds do not cover it")
@@ -122,6 +115,16 @@ def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
                               ORDER BY s.seq)) k
         FROM trips_extent t JOIN st_on_date2 s USING (trip_id)
         GROUP BY t.trip_id, t.feed, t.noc, t.route_short_name""")
+    # Trips resolved as superseded variants (against vehicle destinations on the day;
+    # listed in config with the run that resolved them) are dropped by *pattern*, so an
+    # exact-duplicate copy under another trip id goes too.
+    n_excluded = 0
+    if exclude_trips:
+        con.execute("""CREATE OR REPLACE TEMP TABLE excl_k AS SELECT DISTINCT k FROM trip_key
+                       WHERE trip_id IN (SELECT unnest(?))""", [exclude_trips])
+        n_excluded = con.execute("SELECT count(*) FROM trip_key WHERE k IN "
+                                 "(SELECT k FROM excl_k)").fetchone()[0]
+        con.execute("DELETE FROM trip_key WHERE k IN (SELECT k FROM excl_k)")
     # Keep the first by feed order, then trip id: deterministic.
     order = " ".join(f"WHEN '{f}' THEN {i}" for i, f in enumerate(feeds))
     con.execute(f"""CREATE OR REPLACE TEMP TABLE trip_keep AS
