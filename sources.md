@@ -843,6 +843,12 @@ calendar can rule them out; a scattered INSET day is not a network-wide effect.
 - **Signal delays do not remove the central IP bias.** The fitted centre delay is 0 s, and urban delays (24 s per approach) are offset by the DfT level fit. ANPR validation half IP: 0.86.
 - **Bus noise floor.** Random half-splits differ by a median 6.1% (≈ 3% sampling error for a full cell). Held-out errors (cell 27%, corridor 19%) are far above it, so they are model structure, not sampling noise.
 
+### Live AVL: spacing bias and PM shape (2026-10-08)
+
+- **BODS SIRI-VM vehicles report about every 30 s**, whatever the polling rate: live (10 s polls) median gap between fixes 30 s, archive (30 s snapshots) 31 s.
+- **30 s spacing bias is small:** thinned ÷ full bus speed median 0.993; worst road class × area cell 0.982; 0.973 where 4+ stops lie within 100 m. Below the 5% threshold, so archive speeds are not corrected.
+- **PM/IP bus ratios** (live Tue 29 Sep – Thu 1 Oct 2026, 16:00–19:00 vs 10:00–16:00) are 0.92–1.00 by direction × area × road group, replacing the national 0.939 [CALIBRATED from live data; national fallback unused]. Stagecoach West's partial outage on 30 Sep reduces its share of these days.
+
 ### Findings
 
 - **SIRI-VM records are often stale.** In the 07:00 BST snapshot of 23 Sep, 102 of the

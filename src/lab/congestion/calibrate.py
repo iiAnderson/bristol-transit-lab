@@ -95,32 +95,41 @@ def srn_factors(seg: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.DataFrame,
                  .groupby("source")["km"].sum().round(1).to_dict()}
 
 
-def bus_shape(seg: pd.DataFrame, trav: pd.DataFrame, min_obs: int, min_cells: int,
-              national: dict[str, float]) -> tuple[dict, dict, dict]:
-    """r[(p, dir, area, group)] = median bus speed ratio p/IP; class level ratios.
-    AMPH (the 08:00–09:00 skim hour) comes from traversals whose leg started in hour 8."""
-    if "hour" in trav.columns:
-        trav = pd.concat([trav, trav[trav["hour"] == 8].assign(period="AMPH")],
-                         ignore_index=True)
+def _cell_speeds(trav: pd.DataFrame) -> pd.DataFrame:
     agg = trav.groupby(["u", "v", "period"]).agg(n=("leg", "nunique"),
                                                   hm=("kmh", lambda x: len(x) / (1 / x).sum()))
     agg = agg.reset_index().pivot_table(index=["u", "v"], columns="period", values=["n", "hm"])
     agg.columns = [f"{a}_{b}" for a, b in agg.columns]
-    loc = seg[seg["road_class"].isin(["local_a", "b_road", "minor"]) & ~seg["bus_flag"]].copy()
-    loc["area"] = loc["area_type"].replace({"buffer": "rural"})
-    loc["group"] = np.where(loc["road_class"] == "minor", "minor", "main")
-    loc = loc.merge(agg, left_on=["u", "v"], right_index=True, how="inner")
+    return agg
+
+
+def bus_shape(seg: pd.DataFrame, trav: pd.DataFrame, min_obs: int, min_cells: int,
+              national: dict[str, float],
+              trav_pm: pd.DataFrame | None = None) -> tuple[dict, dict, dict]:
+    """r[(p, dir, area, group)] = median bus speed ratio p/IP; class level ratios.
+    AMPH (the 08:00–09:00 skim hour) comes from traversals whose leg started in hour 8.
+    ``trav_pm`` (the live 07:00–19:00 days) gives the PM/IP ratio, both periods from the
+    same days and feed; the archive (07:00–16:00) has no PM data."""
+    if "hour" in trav.columns:
+        trav = pd.concat([trav, trav[trav["hour"] == 8].assign(period="AMPH")],
+                         ignore_index=True)
+    base = seg[seg["road_class"].isin(["local_a", "b_road", "minor"]) & ~seg["bus_flag"]].copy()
+    base["area"] = base["area_type"].replace({"buffer": "rural"})
+    base["group"] = np.where(base["road_class"] == "minor", "minor", "main")
+    loc = base.merge(_cell_speeds(trav), left_on=["u", "v"], right_index=True, how="inner")
+    loc_pm = None if trav_pm is None or trav_pm.empty else \
+        base.merge(_cell_speeds(trav_pm), left_on=["u", "v"], right_index=True, how="inner")
     r, diag = {}, {}
     for p in ("AM", "PM", "AMPH"):
-        # The archive window is 07:00–16:00, so there is no PM bus data by design; a
-        # period without bus data falls back to the national ratio in every cell.
-        if f"hm_{p}" in loc.columns and "hm_IP" in loc.columns:
-            ok = (loc[f"n_{p}"].fillna(0) >= min_obs) & (loc["n_IP"].fillna(0) >= min_obs)
-            d = loc[ok].assign(ratio=lambda x: x[f"hm_{p}"] / x["hm_IP"])
+        # A period without bus data falls back to the national ratio in every cell.
+        src, tag = (loc_pm, "bus_live") if p == "PM" and loc_pm is not None else (loc, "bus")
+        if f"hm_{p}" in src.columns and "hm_IP" in src.columns:
+            ok = (src[f"n_{p}"].fillna(0) >= min_obs) & (src["n_IP"].fillna(0) >= min_obs)
+            d = src[ok].assign(ratio=lambda x: x[f"hm_{p}"] / x["hm_IP"])
             for (direction, area, group), g in d.groupby(["direction", "area", "group"]):
                 if len(g) >= min_cells:
                     r[(p, direction, area, group)] = float(g["ratio"].median())
-                    diag[(p, direction, area, group)] = ("bus", len(g))
+                    diag[(p, direction, area, group)] = (tag, len(g))
         for direction in ("inbound", "outbound"):
             for area in AREAS:
                 for group in ("main", "minor"):
@@ -153,7 +162,8 @@ def dft_national_ratios(cgn0503: str, months: list[str]) -> dict[str, float]:
 def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.DataFrame,
         targets: pd.DataFrame, cov: pd.DataFrame, P: dict, p: dict, ff_p: dict,
         national: dict, min_coverage: float, lam: float,
-        road_lam: float, anpr: dict | None = None) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
+        road_lam: float, anpr: dict | None = None,
+        trav_pm: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Returns (hybrid link_speed, base link_speed, report). ``anpr`` (paths, obs,
     signals) turns on signal delays calibrated to the ANPR calibration half."""
     periods = fit.PERIODS
@@ -171,7 +181,8 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
                                   [q for q in out_periods if q in set(wspeed["period"])])
 
     # 3–4. local shape and ties
-    r, rdiag, level = bus_shape(seg, trav, p["min_obs_per_link"], p["min_cells"], national)
+    r, rdiag, level = bus_shape(seg, trav, p["min_obs_per_link"], p["min_cells"], national,
+                                trav_pm)
     w = wspeed.pivot_table(index="site_id", columns="period", values="kmh_hmean")
     rho = {"OP": national["OP"], "WE": float((w["WE"] / w["IP"]).median())}
     rep["shape"] = {"r": {"|".join(k): round(v, 4) for k, v in r.items()},

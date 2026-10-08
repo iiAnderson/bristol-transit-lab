@@ -85,12 +85,20 @@ def _period(t_local: dt.time, periods: dict[str, tuple[str, str]]) -> str:
 
 def process_day(day_file: Path, osrm_port: int, stops_parquet: Path, busways: Path,
                 metrobus: dict, p: dict, periods: dict[str, tuple[str, str]], tz: str,
-                out: Path, chunk: int = 100, workers: int = 7, progress=None) -> dict:
+                out: Path, chunk: int = 100, workers: int = 7, progress=None,
+                snapshot_s: int | None = None) -> dict:
+    """``snapshot_s`` emulates a coarser feed for the spacing-bias test: per vehicle, only
+    the latest position seen in each ``snapshot_s`` window of poll time is kept (what a
+    snapshot taken every ``snapshot_s`` seconds would have held)."""
     con = duckdb.connect()
+    thin = "" if snapshot_s is None else f"""QUALIFY row_number() OVER (
+        PARTITION BY operator_ref, vehicle_ref,
+                     floor(epoch(strptime(right(snapshot, 15), '%Y%m%dT%H%M%S')) / {int(snapshot_s)})
+        ORDER BY recorded_at DESC) = 1"""
     con.execute(f"""CREATE TEMP TABLE pos AS
         SELECT row_number() OVER () rid, operator_ref, vehicle_ref, published_line_name,
                epoch(recorded_at) t, lon, lat
-        FROM read_parquet('{day_file}') WHERE NOT stale""")
+        FROM (SELECT * FROM read_parquet('{day_file}') WHERE NOT stale {thin})""")
     n_all = con.execute("SELECT count(*) FROM pos").fetchone()[0]
     lines = ",".join(f"'{x}'" for x in metrobus["lines"])
     n_mb = con.execute(f"""SELECT count(*) FROM pos WHERE operator_ref = '{metrobus['operator']}'

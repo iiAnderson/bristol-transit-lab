@@ -658,7 +658,10 @@ def congestion_srn(max_match_m: float) -> None:
 @click.option("--day", "days", multiple=True, required=True, help="YYYY-MM-DD; repeatable.")
 @click.option("--source", type=click.Choice(["archive", "live"]), default="archive",
               show_default=True)
-def congestion_avl(days: tuple[str, ...], source: str) -> None:
+@click.option("--snapshot-s", type=int, default=None,
+              help="Spacing-bias test: thin to the latest position per vehicle per N s of "
+                   "poll time; writes traversals_<source><N>_<day>.parquet.")
+def congestion_avl(days: tuple[str, ...], source: str, snapshot_s: int | None) -> None:
     """B2: map-match one or more closed AVL days; write per-day segment traversals."""
     import io
     import zipfile
@@ -698,8 +701,9 @@ def congestion_avl(days: tuple[str, ...], source: str) -> None:
                 res[x] = av.process_day(avl_dir / f"{stem}_{x}.parquet", srv.port, stops,
                                         busways, raw["metrobus"], p, periods,
                                         raw["avl"]["timezone"],
-                                        d / "avl" / f"traversals_{source}_{x}.parquet",
-                                        progress=lambda m: click.echo(f"    {x}: {m}", err=True))
+                                        d / "avl" / f"traversals_{source}{snapshot_s or ''}_{x}.parquet",
+                                        progress=lambda m: click.echo(f"    {x}: {m}", err=True),
+                                        snapshot_s=snapshot_s)
                 click.echo(f"  {x}: {res[x]}")
     except Exception:
         rec["result"] = res
@@ -747,14 +751,21 @@ def _calibration_inputs(cfg, raw, trav_files) -> dict:
     months = [f"{m} 2025" for m in ("April", "May", "June", "July", "August", "September",
                                     "October", "November", "December")] + \
              [f"{m} 2026" for m in ("January", "February", "March")]
-    trav = pd.concat([pd.read_parquet(f) for f in trav_files], ignore_index=True)
+    # leg ids restart each day: offset them so legs stay distinct across days
+    cat = lambda fs: pd.concat([pd.read_parquet(f).assign(leg=lambda x, i=i: x["leg"] + i * 10**7)  # noqa: E731
+                                for i, f in enumerate(fs)], ignore_index=True)
+    trav = cat(trav_files)
     # Zero-distance legs (both fixes snapped to one point) have no speed: they zero the
     # harmonic means. Dropped here for traversal files written before avl_speeds did.
     zero = trav["kmh"] <= 0
     click.echo(f"  dropped {int(zero.sum())} zero-distance traversal rows "
                f"({trav.loc[zero, 'leg'].nunique()} legs)", err=True)
+    live = sorted((d / "avl").glob("traversals_live_*.parquet"))
+    trav_pm = cat(live) if live else None
     return {"seg": pd.read_parquet(d / "segments_annotated.parquet"),
             "trav": trav[~zero].reset_index(drop=True),
+            "trav_pm": None if trav_pm is None else trav_pm[trav_pm["kmh"] > 0],
+            "live_files": [f.name for f in live],
             "wspeed": pd.read_parquet(d / "webtris_speed.parquet"),
             "wsites": pd.read_parquet(d / "webtris_sites.parquet"),
             "targets": targets, "cov": cov, "P": fit.period_weights(prof, periods),
@@ -800,7 +811,8 @@ def congestion_calibrate(days: str | None) -> None:
         anpr = _anpr_inputs(cfg)
         ls, ls_base, rep = cal.run(seg, trav, wspeed, wsites, targets, cov, P, p, ffp, national,
                           p["target_min_coverage"], p["fit_ridge_lambda"],
-                          p["fit_road_ridge_lambda"], anpr)
+                          p["fit_road_ridge_lambda"], anpr, inp["trav_pm"])
+        rep["pm_shape_live_files"] = inp["live_files"]
         ls.to_parquet(d / "link_speed.parquet", compression="zstd")
         ls_base.to_parquet(d / "link_speed_base.parquet", compression="zstd")
         files = cal.write_speed_files(ls, d / "osrm_speeds")
@@ -905,7 +917,7 @@ def congestion_validate(days: str | None) -> None:
                                     inp["targets"], inp["cov"], inp["P"], p, ffp,
                                     inp["national"], p["target_min_coverage"],
                                     p["fit_ridge_lambda"], p["fit_road_ridge_lambda"],
-                                    _anpr_inputs(cfg))
+                                    _anpr_inputs(cfg), inp["trav_pm"])
             return ls, ls_b, rep
         ls_h, ls_b, rep = run_cal(inp["trav"])
         seg = inp["seg"].copy()
@@ -960,6 +972,47 @@ def congestion_validate(days: str | None) -> None:
                      "noise_floor_by_class_area": nf_by.round(4).to_dict("records"),
                      "anpr_validation_half": anpr_sum, "signals": rep.get("signals")}
     click.echo(json.dumps(rec["result"], indent=1, default=str))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@congestion.command("spacing-bias")
+def congestion_spacing_bias() -> None:
+    """Bias test: bus speeds from the live days at full resolution vs thinned to 30 s
+    snapshots (`lab congestion avl --source live [--snapshot-s 30]` first)."""
+    import pandas as pd
+    from .congestion import spacing as sp
+    cfg = LabConfig.load()
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    full = sorted((d / "avl").glob("traversals_live_*.parquet"))
+    thin = sorted((d / "avl").glob("traversals_live30_*.parquet"))
+    if not full or len(full) != len(thin):
+        raise click.ClickException("map-match the live days at full resolution and with "
+                                   "--snapshot-s 30 first")
+    rec = runrecord.build(cfg, command="congestion-spacing-bias", inputs=[
+        {"name": str(f), "sha256": params.file_hash(f)} for f in full + thin])
+    runrecord.write(cfg, rec)
+    try:
+        # leg ids restart each day: offset them so legs stay distinct across days
+        cat = lambda fs: pd.concat([pd.read_parquet(f).assign(leg=lambda x, i=i: x["leg"] + i * 10**7)  # noqa: E731
+                                    for i, f in enumerate(fs)], ignore_index=True)
+        cellsdf, res = sp.compare(cat(full), cat(thin),
+                                  pd.read_parquet(d / "segments_annotated.parquet"),
+                                  pd.read_parquet(d / "bus_stops.parquet"),
+                                  ps["congestion.min_obs_per_link"])
+        cellsdf.to_parquet(cfg.runs_dir / rec["run_id"] / "spacing_cells.parquet")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    thr = ps["congestion.spacing_bias_threshold"]
+    over = [r for r in res["by_class_area"] if abs(r["median_ratio"] - 1) > thr]
+    res.update({"threshold": thr, "cells_over_threshold": over,
+                "correction_needed": bool(over), "days": [f.stem[-10:] for f in full]})
+    rec["result"] = res
+    for k in ("overall", "by_period", "by_stop_band", "by_class_area"):
+        click.echo(f"  {k}: {pd.DataFrame(res[k] if isinstance(res[k], list) else [res[k]]).round(3).to_string(index=False)}")
+    click.echo(f"  legs full {res['legs_full']}, thinned {res['legs_thin']}; "
+               f"class × area cells beyond ±{thr:.0%}: {len(over)}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
