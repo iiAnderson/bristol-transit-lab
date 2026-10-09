@@ -170,3 +170,48 @@ def apply_propagation(con, annotated: Path, out: Path) -> dict:
             "class_boundaries": bounds,
             "by_class_km_after": (seg.groupby("road_class")["length_m"].sum() / 1000)
             .round(0).to_dict()}
+
+
+def builtup_scope(con, lsoa_geojson: Path, ruc_csv: Path, lad_geojson: Path,
+                  bua_geojson: Path, pwc_table: str, centre: list[str], seed_bua: str,
+                  core_lad: str, fringe_lads: list[str]) -> "pd.DataFrame":
+    """LSOAs of one built-up area. The area = the ONS 2022 built-up areas that touch
+    ``seed_bua`` directly or through one another. In scope: every centre/urban LSOA of
+    ``core_lad``, plus the centre/urban LSOAs of ``fringe_lads`` whose population-weighted
+    centroid lies in that area. (Contiguity of RUC-urban LSOAs alone is too loose: it
+    chains Bristol to Weston-super-Mare, Clevedon, Portishead, Yate and Thornbury.)
+    Returns LSOA21CD, lad, area_type, in_scope, plus the member BUA names."""
+    lads = [core_lad, *fringe_lads]
+    con.execute(f"""CREATE OR REPLACE TEMP TABLE _bua AS
+        SELECT BUA22CD, BUA22NM, geom FROM ST_Read('{bua_geojson}')""")
+    edges = con.execute("""SELECT a.BUA22CD, b.BUA22CD FROM _bua a JOIN _bua b
+        ON a.BUA22CD < b.BUA22CD AND ST_Intersects(a.geom, b.geom)""").fetchall()
+    codes = [r[0] for r in con.execute("SELECT BUA22CD FROM _bua").fetchall()]
+    if seed_bua not in codes:
+        raise ValueError(f"scope seed built-up area {seed_bua} not in {bua_geojson}")
+    par = {c: c for c in codes}
+
+    def f(x):
+        while par[x] != x:
+            par[x] = par[par[x]]
+            x = par[x]
+        return x
+    for a, b in edges:
+        par[f(a)] = f(b)
+    members = [c for c in codes if f(c) == f(seed_bua)]
+    z = con.execute(f"""
+        WITH area AS (SELECT ST_Union_Agg(geom) geom FROM _bua WHERE BUA22CD IN (SELECT unnest(?)))
+        SELECT g.LSOA21CD, l.LAD24CD lad,
+               CASE WHEN g.LSOA21CD IN (SELECT unnest(?)) THEN 'centre'
+                    WHEN r.Urban_rural_flag = 'Urban' THEN 'urban' ELSE 'rural' END area_type,
+               coalesce(ST_Contains((SELECT geom FROM area), ST_Point(p.lon, p.lat)), false) in_bua
+        FROM ST_Read('{lsoa_geojson}') g
+        LEFT JOIN read_csv('{ruc_csv}') r USING (LSOA21CD)
+        LEFT JOIN {pwc_table} p USING (LSOA21CD)
+        JOIN ST_Read('{lad_geojson}') l ON ST_Contains(l.geom, ST_PointOnSurface(g.geom))
+        WHERE l.LAD24CD IN (SELECT unnest(?))""", [members, centre, lads]).df()
+    z["in_scope"] = (z["area_type"] != "rural") & ((z["lad"] == core_lad) | z["in_bua"])
+    names = [r[0] for r in con.execute(
+        "SELECT BUA22NM FROM _bua WHERE BUA22CD IN (SELECT unnest(?)) ORDER BY 1", [members]).fetchall()]
+    z.attrs["bua_members"] = names
+    return z

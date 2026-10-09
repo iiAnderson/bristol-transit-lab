@@ -131,3 +131,34 @@ def test_excluding_a_trip_drops_its_exact_duplicates_too(tmp_path):
     g.load(con, {n: gtfs(tmp_path, n, **kw) for n, kw in feeds.items()})
     r = g.build(con, ["a"], DAY, EXTENT, BOX, None, exclude_trips=["a:t1"])
     assert r["excluded_superseded_variants"] == 2 and r["trips_out"] == 1
+
+
+def _legal(stops, copies):
+    pick = {q: p for q, p, _ in stops}
+    drop = {q: d for q, _, d in stops}
+    journeys = {(c[i], c[j]) for c in copies for i in range(len(c)) for j in range(i + 1, len(c))}
+    return journeys, all(pick[a] and drop[b] for a, b in journeys)
+
+
+def test_split_restricted_leaves_no_illegal_journey():
+    # 1–3 pick-up only (leaving town), 4–5 free, 6–7 set-down only, 8 last
+    stops = [(1, True, False), (2, True, False), (3, True, False), (4, True, True),
+             (5, True, True), (6, False, True), (7, False, True), (8, False, True)]
+    copies, skipped = g.split_restricted(stops)
+    journeys, ok = _legal(stops, copies)
+    assert ok and skipped == 0
+    legal = {(a, b) for a, pa, _ in stops for b, _, db in stops if a < b and pa and db}
+    assert journeys == legal                       # every legal journey survives
+    assert (2, 3) not in journeys and (6, 7) not in journeys
+
+
+def test_split_restricted_keeps_plain_trips_whole_and_caps_pairs():
+    plain = [(i, True, True) for i in range(1, 6)]
+    assert g.split_restricted(plain) == ([[1, 2, 3, 4, 5]], 0)
+    # default flags on the ends (no alighting at the first call, no boarding at the last)
+    ends = [(1, True, False), (2, True, True), (3, False, True)]
+    assert g.split_restricted(ends) == ([[1, 2, 3]], 0)
+    many = [(0, True, True)] + [(i, True, False) for i in range(1, 11)] \
+        + [(i, False, True) for i in range(11, 21)] + [(21, True, True)]
+    copies, skipped = g.split_restricted(many)
+    assert skipped == 100 and _legal(many, copies)[1]

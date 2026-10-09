@@ -303,7 +303,9 @@ def supply_bus() -> None:
                      "check2_compare_date": str(cmp_day), "check2_changed_routes": changed}
     path = runrecord.finish(cfg, rec, "ok")
     for k, v in res.items():
-        if not isinstance(v, list):
+        if isinstance(v, dict):
+            click.echo(f"  {k:<36} {v}")
+        elif not isinstance(v, list):
             click.echo(f"  {k:<36} {v:>9,}")
     click.echo(f"  routes {len(res['per_route'])}; >10% trips removed as duplicates: "
                f"{len(res['flagged_routes'])}; same-start groups kept: "
@@ -662,7 +664,12 @@ def congestion_srn(max_match_m: float) -> None:
 @click.option("--snapshot-s", type=int, default=None,
               help="Spacing-bias test: thin to the latest position per vehicle per N s of "
                    "poll time; writes traversals_<source><N>_<day>.parquet.")
-def congestion_avl(days: tuple[str, ...], source: str, snapshot_s: int | None) -> None:
+@click.option("--set", "overrides", multiple=True, metavar="KEY=VALUE",
+              help="Sensitivity: override a congestion.* parameter for this run (needs --tag).")
+@click.option("--tag", default=None, help="Sensitivity: suffix for the traversal files "
+              "(traversals_<source>-<tag>_<day>.parquet), so the base files are untouched.")
+def congestion_avl(days: tuple[str, ...], source: str, snapshot_s: int | None,
+                   overrides: tuple[str, ...], tag: str | None) -> None:
     """B2: map-match one or more closed AVL days; write per-day segment traversals."""
     import io
     import zipfile
@@ -674,6 +681,13 @@ def congestion_avl(days: tuple[str, ...], source: str, snapshot_s: int | None) -
     raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
     ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
     p = {k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("congestion.")}
+    if overrides and not tag:
+        raise click.ClickException("--set needs --tag, so base traversals are not overwritten")
+    for o in overrides:
+        k, v = o.split("=", 1)
+        if k not in p:
+            raise click.ClickException(f"unknown congestion parameter {k}")
+        p[k] = float(v) if not float(v).is_integer() else type(p[k])(float(v))
     periods = {k: tuple(ps[f"periods.{k}"].split("-")) for k in ("AM", "IP", "PM")}
     d = cfg.root / "data" / "interim" / "congestion"
     busways = d / "busway_points.parquet"
@@ -702,7 +716,7 @@ def congestion_avl(days: tuple[str, ...], source: str, snapshot_s: int | None) -
                 res[x] = av.process_day(avl_dir / f"{stem}_{x}.parquet", srv.port, stops,
                                         busways, raw["metrobus"], p, periods,
                                         raw["avl"]["timezone"],
-                                        d / "avl" / f"traversals_{source}{snapshot_s or ''}_{x}.parquet",
+                                        d / "avl" / f"traversals_{source}{snapshot_s or ''}{'-' + tag if tag else ''}_{x}.parquet",
                                         progress=lambda m: click.echo(f"    {x}: {m}", err=True),
                                         snapshot_s=snapshot_s)
                 click.echo(f"  {x}: {res[x]}")
@@ -710,7 +724,7 @@ def congestion_avl(days: tuple[str, ...], source: str, snapshot_s: int | None) -
         rec["result"] = res
         runrecord.finish(cfg, rec, "failed")
         raise
-    rec["result"] = res
+    rec["result"] = {**res, "overrides": list(overrides), "tag": tag}
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
@@ -728,6 +742,8 @@ def _anpr_inputs(cfg) -> dict | None:
     return {"paths": paths[~paths["link_id"].isin(bad.index)],
             "obs": pd.read_parquet(d / "anpr_obs.parquet"),
             "signals": set(pd.read_parquet(d / "signal_nodes.parquet")["node"]),
+            "scope": (set(pd.read_parquet(d / "anpr_scope.parquet").query("in_scope")["LSOA21CD"])
+                      if (d / "anpr_scope.parquet").is_file() else None),
             "excluded": [{"link_id": k, "route_over_link": round(float(v), 3)}
                          for k, v in bad.items()]}
 
@@ -848,8 +864,12 @@ def congestion_calibrate(days: str | None) -> None:
                 click.echo(f"  ANPR {k}: n {v['n']}, modelled/observed {v['median_ratio']:.3f}, "
                            f"median |err| {v['median_abs_rel_error']:.3f}")
         da = rep["dft_after_layer"]
-        click.echo(f"  DfT all-day after the layer: median error {da['median_rel_error']:+.3f}, "
-                   f"median |err| {da['median_abs_rel_error']:.3f}; {da['by_authority']}")
+        click.echo(f"  DfT all-day after the layer, by scope: {da['by_scope']}")
+        click.echo(f"  DfT all-day after the layer, by authority: {da['by_authority']}")
+        l2 = rep["leave_one_road_out_after_layer"]
+        click.echo(f"  leave-one-road-out after the layer: median |err| "
+                   f"{l2['median_abs_rel_error']:.3f}, p90 {l2['p90_abs_rel_error']:.3f}; "
+                   f"by scope after {l2['by_scope']} before {l2['before_by_scope']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
@@ -858,6 +878,7 @@ def congestion_calibrate(days: str | None) -> None:
 def congestion_anpr_prep(block_km: float) -> None:
     """ANPR inputs: free-flow link paths, a spatial calibration/validation split balanced
     within each area type, observed times per period (hour stamp per config)."""
+    import numpy as np
     import yaml
     from .congestion import signals as sg
     from .supply import osrm
@@ -887,6 +908,38 @@ def congestion_anpr_prep(block_km: float) -> None:
     obs["half"] = obs["link_id"].map(split)
     obs["area"] = obs["link_id"].map(area)
     sig = sg.signal_nodes(cfg.root / raw["osm"]["clip"])
+    # where the layer applies: the built-up area in config (plotted for review)
+    import duckdb
+    import geopandas as gpd
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from .congestion import annotate as an_
+    geo = cfg.root / "data" / "raw" / "ons_geo"
+    ruc = cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv"
+    sc = raw["anpr"]["layer_scope"]
+    with duckdb.connect() as con:
+        con.execute("INSTALL spatial; LOAD spatial")
+        con.execute(f"ATTACH '{cfg.lab_db}' AS lab (READ_ONLY)")
+        cl = an_.centre_lsoas(con, geo / "lsoa21_bgc_internal.geojson", ruc,
+                              ps["area_type.centre_job_density"], raw["centre_min_cluster_lsoas"])
+        scope = an_.builtup_scope(con, geo / "lsoa21_bgc_internal.geojson", ruc,
+                                  geo / "lad24_bgc_extent.geojson", cfg.root / sc["bua"],
+                                  "lab.lsoa_pwc", cl, sc["seed_bua"],
+                                  sc["core_lad"], sc["fringe_lads"])
+    scope.to_parquet(d / "anpr_scope.parquet")
+    zg = gpd.read_file(geo / "lsoa21_bgc_internal.geojson")[["LSOA21CD", "geometry"]] \
+        .merge(scope, on="LSOA21CD")
+    zg["cls"] = np.where(zg["in_scope"], "in scope: " + zg["area_type"],
+                         "outside: " + zg["area_type"])
+    fig, ax = plt.subplots(figsize=(11, 10))
+    zg.plot(column="cls", ax=ax, legend=True, linewidth=0.1, edgecolor="white", cmap="tab20",
+            legend_kwds={"loc": "lower left", "fontsize": 8})
+    lk = gpd.read_file(an / "journey_links.geojson")
+    lk.plot(ax=ax, color="black", linewidth=0.8)
+    ax.set_title("ANPR layer scope: Bristol built-up area (black: ANPR links)")
+    ax.set_axis_off()
+    fig.savefig(cfg.runs_dir / rec["run_id"] / "anpr_layer_scope.png", dpi=150, bbox_inches="tight")
     paths.to_parquet(d / "anpr_paths.parquet")
     obs.to_parquet(d / "anpr_obs.parquet")
     pd.DataFrame({"node": sorted(sig)}).to_parquet(d / "signal_nodes.parquet")
@@ -895,7 +948,11 @@ def congestion_anpr_prep(block_km: float) -> None:
            "links_with_obs_by_area_half": obs[obs["period"] == "IP"]
            .groupby(["area", "half"]).size().to_dict(),
            "obs_by_period": obs.groupby(["period", "half"]).size().to_dict(),
-           "signal_nodes": len(sig), "block_km": block_km}
+           "signal_nodes": len(sig), "block_km": block_km,
+           "scope_lsoas": scope[scope["in_scope"]].groupby(["lad", "area_type"]).size().to_dict(),
+           "outside_scope_urban_lsoas": scope[~scope["in_scope"] & (scope["area_type"] != "rural")]
+           .groupby("lad").size().to_dict(),
+           "scope_built_up_areas": scope.attrs["bua_members"]}
     rec["result"] = {k: {str(kk): vv for kk, vv in v.items()} if isinstance(v, dict) else v
                      for k, v in res.items()}
     click.echo(rec["result"])
@@ -904,7 +961,11 @@ def congestion_anpr_prep(block_km: float) -> None:
 
 @congestion.command("validate")
 @click.option("--days", default=None, help="Comma-separated AVL days (default: all closed).")
-def congestion_validate(days: str | None) -> None:
+@click.option("--trav-tag", default=None, help="Sensitivity: use traversals written by "
+              "`lab congestion avl --tag`.")
+@click.option("--set", "overrides", multiple=True, metavar="KEY=VALUE",
+              help="Sensitivity: override a congestion.* parameter for this run.")
+def congestion_validate(days: str | None, trav_tag: str | None, overrides: tuple[str, ...]) -> None:
     """P2b held-out validation (spatially blocked bus speeds; ANPR 2023–24), hybrid vs base,
     against the pre-registered rule."""
     import json
@@ -922,7 +983,13 @@ def congestion_validate(days: str | None) -> None:
     avl_dir = cfg.root / raw["paths"]["avl"] / "archive"
     closed = [json.loads(x)["day"] for x in (avl_dir / "days.jsonl").read_text().splitlines()]
     use_days = days.split(",") if days else closed
-    trav_files = [d / "avl" / f"traversals_archive_{x}.parquet" for x in use_days]
+    for o in overrides:
+        k_, v_ = o.split("=", 1)
+        if k_ not in p:
+            raise click.ClickException(f"unknown congestion parameter {k_}")
+        p[k_] = float(v_) if not float(v_).is_integer() else type(p[k_])(float(v_))
+    trav_files = [d / "avl" / f"traversals_archive{'-' + trav_tag if trav_tag else ''}_{x}.parquet"
+                  for x in use_days]
     rec = runrecord.build(cfg, command="congestion-validate", inputs=[
         {"name": str(f), "sha256": params.file_hash(f)} for f in trav_files])
     runrecord.write(cfg, rec)
@@ -982,12 +1049,18 @@ def congestion_validate(days: str | None) -> None:
              "noise_floor_overall": float(nf["rel_diff"].median()),
              "anpr_validation_half": anpr_sum, "anpr_all": an,
              "anpr_layer": rep.get("anpr_layer"), "dft_after_layer": rep.get("dft_after_layer"),
+             "leave_one_road_out_after_layer": rep.get("leave_one_road_out_after_layer"),
              "anpr_excluded_links": excluded},
             indent=1, default=str))
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
-    rec["result"] = {"days": use_days, "rule": rule, "bus_cell": bus_sum,
+    rec["result"] = {"days": use_days, "trav_tag": trav_tag, "overrides": list(overrides),
+                     "leave_one_road_out": {k_: rep["leave_one_road_out"][k_] for k_ in
+                                            ("median_abs_rel_error", "p90_abs_rel_error")},
+                     "level_g": {k_: float(v_) for k_, v_ in rep["level"]["g"].items()},
+                     "median_factor": rep["median_factor"],
+                     "rule": rule, "bus_cell": bus_sum,
                      "bus_corridor": cor_sum, "noise_floor_overall": float(nf["rel_diff"].median()),
                      "noise_floor_by_class_area": nf_by.round(4).to_dict("records"),
                      "anpr_validation_half": anpr_sum, "anpr_layer": rep.get("anpr_layer")}
@@ -1200,12 +1273,17 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
     try:
         sk.run_pt(cfg.root / "src" / "lab" / "r" / "pt_skims.R", rcfg, work / "config.json",
                   lambda m: click.echo(f"  {m}", err=True),
-                  [feeds.get(cfg, f)["sha256"] for f in ("osm_clip", "bus_gtfs", "rail_gtfs")])
+                  [feeds.get(cfg, f)["sha256"] for f in ("osm_clip", "bus_gtfs", "rail_gtfs")]
+                  + [params.file_hash(cfg.root / "src" / "lab" / "r" / "pt_skims.R")])
         s = sk.combine(work / "chunks")
         w = {k: ps[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
         curve = ps["generalised_cost.first_wait_curve"]
         s["gc_min"] = sk.gc_tag(s, w, curve).where(~s["unreachable"])
         s["gc_min_random_arrival"] = sk.gc_from_components(s, w).where(~s["unreachable"])
+        # the PT alternative proper: at least one ride, in at least the same share of
+        # window minutes as the reachability rule
+        s["gc_ride_min"] = sk.gc_tag(sk.ride_only(s), w, curve).where(
+            s["ride_share"] >= ps["routing.pt_reachable_share_min"])
         s["provisional"] = provisional
         out = cfg.root / "data" / "interim" / "skims" / f"pt_{period}_oa_lsoa.parquet"
         s.to_parquet(out, compression="zstd")
@@ -1238,6 +1316,8 @@ def skims_pt_gc(periods: tuple[str, ...]) -> None:
         s = pd.read_parquet(f)
         s["gc_min"] = sk.gc_tag(s, w, curve).where(~s["unreachable"])
         s["gc_min_random_arrival"] = sk.gc_from_components(s, w).where(~s["unreachable"])
+        s["gc_ride_min"] = sk.gc_tag(sk.ride_only(s), w, curve).where(
+            s["ride_share"] >= ps["routing.pt_reachable_share_min"])
         s.to_parquet(f, compression="zstd")
         ok = s[~s["unreachable"]]
         d = ok["gc_min_random_arrival"] - ok["gc_min"]
@@ -1290,9 +1370,9 @@ def skims_car(periods: tuple[str, ...], variant: str) -> None:
             t = pd.DataFrame({"from_id": np.repeat(o["id"].to_numpy(), len(dst)),
                               "to_id": np.tile(dst["id"].to_numpy(), len(o)),
                               "ivt_min": m.ravel()})
-            t["parking_search_min"] = np.nan    # PLACEHOLDER by destination area type
-            t["access_walk_min"] = np.nan       # PLACEHOLDER by destination area type
-            t["gc_min"] = np.nan                # needs the two above; flagged
+            t["parking_search_min"] = np.nan    # modelled range, applied in `lab gapmap`
+            t["access_walk_min"] = np.nan       # (by destination area type)
+            t["gc_min"] = np.nan
             t["variant"], t["period"] = variant, per
             out = cfg.root / "data" / "interim" / "skims" / f"car_{per}_oa_lsoa.parquet"
             t.to_parquet(out, compression="zstd")
@@ -1303,8 +1383,8 @@ def skims_car(periods: tuple[str, ...], variant: str) -> None:
         runrecord.finish(cfg, rec, "failed")
         raise
     rec["result"] = {"variant": variant, **res,
-                     "note": "car GC pending: car.parking_search_min and car.access_walk_min "
-                             "are PLACEHOLDER (null)"}
+                     "note": "in-vehicle time only; car GC adds the modelled parking/access "
+                             "range in `lab gapmap`"}
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
@@ -1489,13 +1569,16 @@ explained.
 @click.option("--pt-period", default="AM", show_default=True,
               help="PT AM skim is the 08:00–09:00 window (skims.window_start).")
 def gapmap_cmd(car_period: str, pt_period: str) -> None:
-    """C5: provisional gap map — PT GC ÷ car GC per internal HBW LSOA pair, with the
-    zero parking/access sensitivity."""
+    """C5: gap map — PT GC (≥ 1 ride) vs car GC per internal HBW LSOA pair beyond
+    gapmap.min_distance_km; ratio of sums, flow-weighted median, GC difference; both ends
+    of the car parking/access range; by distance band; robustness of the rankings."""
+    import json
     import duckdb
     import geopandas as gpd
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import pandas as pd
     import yaml
     from . import gapmap as gm
     from .congestion import annotate as an
@@ -1508,8 +1591,15 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
     pt, car = sk / f"pt_{pt_period}_oa_lsoa.parquet", sk / f"car_{car_period}_oa_lsoa.parquet"
     park = {k: ps[f"car.parking_search_min.{k}"] for k in ("centre", "urban", "rural")}
     walk = {k: ps[f"car.access_walk_min.{k}"] for k in ("centre", "urban", "rural")}
+    min_km = ps["gapmap.min_distance_km"]
+    # the caveat on the label comes from the latest calibration's held-out ANPR figure
+    cals = sorted(cfg.runs_dir.glob("*-congestion-calibrate-*/calibration.json"))
+    anpr_val = json.loads(cals[-1].read_text())["anpr"][f"hybrid|{car_period}|validation"]["median_ratio"]
+    label = gm.LABEL.format(min_km=min_km, anpr=anpr_val,
+                            **{k: park[k] + walk[k] for k in park})
     rec = runrecord.build(cfg, command="gapmap", inputs=[
-        {"name": str(f), "sha256": params.file_hash(f)} for f in (pt, car, ruc)])
+        {"name": str(f), "sha256": params.file_hash(f)} for f in (pt, car, ruc)]
+        + [{"name": "calibration", "run": cals[-1].parent.name}])
     runrecord.write(cfg, rec)
     out = cfg.runs_dir / rec["run_id"]
     try:
@@ -1518,8 +1608,8 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
             con.execute(f"ATTACH '{cfg.lab_db}' AS lab (READ_ONLY)")
             cl = an.centre_lsoas(con, geo / "lsoa21_bgc_internal.geojson", ruc,
                                  ps["area_type.centre_job_density"], raw["centre_min_cluster_lsoas"])
-            con.execute("CREATE TEMP TABLE int_oa AS SELECT * FROM lab.int_oa")
-            con.execute("CREATE TEMP TABLE demand AS SELECT * FROM lab.demand")
+            for t in ("int_oa", "demand", "lsoa_pwc"):
+                con.execute(f"CREATE TEMP TABLE {t} AS SELECT * FROM lab.{t}")
             con.execute("""CREATE TEMP TABLE oa_w AS
                 SELECT o_oa OA21CD, sum(n)::DOUBLE w FROM lab.nat_oa_flows GROUP BY 1""")
             con.execute(f"""CREATE TEMP TABLE lsoa_area_type AS
@@ -1528,41 +1618,63 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
                                       ELSE 'rural' END area_type
                 FROM read_csv('{ruc}')""", [cl])
             m = gm.build(con, str(pt), str(car), park, walk)
-        summ = gm.summaries(m)
-        orig = gm.origin_summary(m)
-        top = gm.top_pairs(m)
+        m["mapped"] = gm.in_map(m, min_km)
+        g = m[m["mapped"]]
+        old = gm.by_band_old_metric(m)
+        new = gm.by_band_new_metric(m)
+        head = gm.headline(g)
+        orig = gm.origin_summary(g)
+        rob = gm.robustness(g, orig)
+        by_area = pd.DataFrame([{"area_type": a, **gm.headline(x)}
+                                for a, x in g.groupby("area_type")])
         m.to_parquet(out / "gapmap_od.parquet", compression="zstd")
-        top.to_csv(out / "gapmap_top50.csv", index=False)
+        old.to_csv(out / "by_band_old_metric.csv", index=False)
+        new.to_csv(out / "by_band_new_metric.csv", index=False)
+        for v in ("high", "low"):
+            for by in ("ratio", "diff"):
+                gm.top_pairs(g, v, by).to_csv(out / f"gapmap_top50_{by}_{v}.csv", index=False)
         z = gpd.read_file(geo / "lsoa21_bgc_internal.geojson")[["LSOA21CD", "geometry"]]
-        g = z.merge(orig, left_on="LSOA21CD", right_on="o_zone", how="left")
-        g.drop(columns="o_zone").to_file(out / "gapmap_origin.geojson", driver="GeoJSON")
-        fig, ax = plt.subplots(1, 2, figsize=(16, 8))
-        for a, col, t in ((ax[0], "ratio", "placeholder parking/access"),
-                          (ax[1], "ratio_zero_parking", "sensitivity: parking/access = 0")):
-            g.plot(column=col, ax=a, cmap="RdYlGn_r", vmin=1, vmax=8, legend=True,
-                   missing_kwds={"color": "lightgrey"}, linewidth=0,
-                   legend_kwds={"label": "PT GC ÷ car GC (flow-weighted, HBW)"})
+        gz = z.merge(orig, left_on="LSOA21CD", right_on="o_zone", how="left").drop(columns="o_zone")
+        gz.to_file(out / "gapmap_origin.geojson", driver="GeoJSON")
+        fig, ax = plt.subplots(2, 2, figsize=(16, 10.5))
+        for a, col, t, vmin, vmax, lab in (
+                (ax[0, 0], "ratio_high", "PT ÷ car GC — car parking/access: high", 1, 5, "Σ PT GC ÷ Σ car GC"),
+                (ax[0, 1], "ratio_low", "PT ÷ car GC — car parking/access: low (none)", 1, 5, "Σ PT GC ÷ Σ car GC"),
+                (ax[1, 0], "diff_high", "PT − car GC (min) — high", 0, 120, "flow-weighted mean, minutes"),
+                (ax[1, 1], "diff_low", "PT − car GC (min) — low (none)", 0, 120, "flow-weighted mean, minutes")):
+            gz.plot(column=col, ax=a, cmap="RdYlGn_r", vmin=vmin, vmax=vmax, legend=True,
+                    missing_kwds={"color": "lightgrey"}, linewidth=0,
+                    legend_kwds={"label": lab, "shrink": 0.6})
             a.set_title(t)
             a.set_axis_off()
-        fig.suptitle(gm.LABEL, fontsize=9)
+        fig.suptitle("\n".join(__import__("textwrap").wrap(label, 150)), fontsize=9)
         fig.savefig(out / "gapmap.png", dpi=150, bbox_inches="tight")
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
-    q = orig["ratio"].quantile([0.1, 0.5, 0.9]).round(3).tolist()
-    qz = orig["ratio_zero_parking"].quantile([0.1, 0.5, 0.9]).round(3).tolist()
-    by_area = m.dropna(subset=["ratio"]).groupby("area_type").apply(
-        lambda d: {"trips": round(float(d["trips"].sum())),
-                   "ratio": round(float((d["ratio"] * d["trips"]).sum() / d["trips"].sum()), 3),
-                   "ratio_zero_parking": round(float((d["ratio_zero_parking"] * d["trips"]).sum()
-                                                     / d["trips"].sum()), 3)}).to_dict()
-    rec["result"] = {**summ, "origin_ratio_p10_p50_p90": q,
-                     "origin_ratio_zero_parking_p10_p50_p90": qz,
-                     "by_destination_area_type": by_area, "centre_lsoas": len(cl),
-                     "car_period": car_period, "pt_period": pt_period,
-                     "weights": "OA resident commuters (nat_oa_flows)", "label": gm.LABEL}
-    for k, v in rec["result"].items():
-        click.echo(f"  {k}: {v}")
+    short = m[~m["mapped"]]
+    rec["result"] = {
+        "headline_mapped": head, "min_distance_km": min_km,
+        "excluded_short": {"pairs": int(len(short)), "trips": float(short["trips"].sum()),
+                           "trip_share": float(short["trips"].sum() / m["trips"].sum()),
+                           "headline": gm.headline(short)},
+        "by_band_old_metric": old.round(3).to_dict("records"),
+        "by_band_new_metric": new.round(3).to_dict("records"),
+        "by_destination_area_type": by_area.round(3).to_dict("records"),
+        "robustness_low_vs_high": {k: round(v, 3) if isinstance(v, float) else v
+                                   for k, v in rob.items()},
+        "origin_ratio_p10_p50_p90": {v: orig[f"ratio_{v}"].quantile([0.1, 0.5, 0.9]).round(2).tolist()
+                                     for v in ("high", "low")},
+        "centre_lsoas": len(cl), "car_period": car_period, "pt_period": pt_period,
+        "weights": "OA resident commuters (nat_oa_flows)", "label": label}
+    pd.set_option("display.width", 250)
+    click.echo("old metric (mean of ratios, PT incl. walk-only) by distance band:")
+    click.echo(old.round(3).to_string(index=False))
+    click.echo("revised metric by distance band:")
+    click.echo(new.round(3).to_string(index=False))
+    click.echo(f"headline (mapped pairs): {json.dumps({k: round(v, 3) for k, v in head.items()})}")
+    click.echo(f"by destination area type:\n{by_area.round(3).to_string(index=False)}")
+    click.echo(f"robustness: {rec['result']['robustness_low_vs_high']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 

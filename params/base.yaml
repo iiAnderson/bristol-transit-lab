@@ -190,18 +190,21 @@ congestion:
   stop_buffer_m:
     value: 30
     unit: m from a GTFS stop
-    tag: PLACEHOLDER
-    note: a leg with either end this close to a stop is dropped (dwell); starting value, tuned in P2b
+    tag: MODELLED
+    reasoning: >-
+      A slow leg (below min_moving_kmh) with either end this close to a GTFS stop is dwell and dropped; slow legs elsewhere are queueing and kept. 30 m is about two bus lengths around the stop marker, enough for GPS error and a bus stopping short. Cannot be sourced; sensitivity at ±50% in plans/P2.md §9 (2026-10-09).
   min_moving_kmh:
     value: 5
     unit: km/h
-    tag: PLACEHOLDER
-    note: legs slower than this are treated as dwelling, not moving; starting value
+    tag: MODELLED
+    reasoning: >-
+      Below walking pace a bus is stationary or creeping; 5 km/h separates dwell from movement near stops. Cannot be sourced; sensitivity at ±50% in plans/P2.md §9 (2026-10-09).
   min_obs_per_link:
     value: 10
     unit: traversals per segment × direction × period
-    tag: PLACEHOLDER
-    note: a segment's bus speed is used only with at least this many neutral-day traversals; starting value
+    tag: MODELLED
+    reasoning: >-
+      Ten legs keep one unusual pass from setting a segment's speed while leaving most bus-served segments usable (random half-splits of such cells differ by a median 6%). Cannot be sourced; sensitivity at ±50% in plans/P2.md §9 (2026-10-09).
   match_radius_m:
     value: 25
     unit: m (OSRM match radius per position)
@@ -311,20 +314,31 @@ area_type:
       suburban clusters (runs/_review/d4_centre_candidates.png).
 
 car:
-  # Provisional values (Robbie, 2026-09-28: unblock the gap map); a zero sensitivity is
-  # always built alongside. Reasoning: central Bristol and Bath have priced, mostly
-  # off-street parking with circulating search and a walk from a multi-storey; urban
-  # destinations (suburban centres, employment sites) mostly have on-site or kerbside
-  # parking; rural destinations park at the door. To be sourced (e.g. TAG / local
-  # parking surveys) before any published output.
+  # Car terminal times by destination area type: the HIGH end of a modelled range whose
+  # LOW end is zero. Not sourceable (searched 2026-10-09): TAG M2.1 and M5.1 define walk
+  # to/from the car, search and egress time as generalised-cost terms but give no default
+  # minutes; the Greater Bristol model (G-BATS3 Demand Model Report, §2.22) carries "total
+  # walk time to/from the car" with weight 0, i.e. none. The gap map reports both ends
+  # (Robbie, 2026-10-09).
   parking_search_min:
-    centre: {value: 8.0, unit: min, tag: PLACEHOLDER, note: "search and queue for a space in a central car park or kerbside; by destination area type"}
-    urban: {value: 3.0, unit: min, tag: PLACEHOLDER, note: "short search, mostly on-site or kerbside"}
-    rural: {value: 1.0, unit: min, tag: PLACEHOLDER, note: "park at the door"}
+    centre: {value: 8.0, unit: min, tag: MODELLED, reasoning: "High end (low = 0). Central Bristol and Bath: priced, mostly off-street parking; circulating to and inside a multi-storey and queueing at the barrier in the AM peak."}
+    urban: {value: 3.0, unit: min, tag: MODELLED, reasoning: "High end (low = 0). Suburban centres and employment sites: short search, mostly on-site or kerbside."}
+    rural: {value: 1.0, unit: min, tag: MODELLED, reasoning: "High end (low = 0). Park at the door."}
   access_walk_min:
-    centre: {value: 6.0, unit: min, tag: PLACEHOLDER, note: "car park to destination (~400 m at walk speed)"}
-    urban: {value: 2.0, unit: min, tag: PLACEHOLDER, note: "car park to destination"}
-    rural: {value: 1.0, unit: min, tag: PLACEHOLDER, note: "car park to destination"}
+    centre: {value: 6.0, unit: min, tag: MODELLED, reasoning: "High end (low = 0). Car park to destination, about 480 m at 4.8 km/h."}
+    urban: {value: 2.0, unit: min, tag: MODELLED, reasoning: "High end (low = 0). Car park to destination, about 160 m."}
+    rural: {value: 1.0, unit: min, tag: MODELLED, reasoning: "High end (low = 0). Car park to destination."}
+
+# Gap map (plans/P2.md C5, revised 2026-10-09).
+gapmap:
+  min_distance_km:
+    value: 2.0
+    unit: km, straight line between population-weighted centroids
+    tag: MODELLED
+    reasoning: >-
+      Robbie, 2026-10-09. Below about 2 km most "PT" is a walk and car in-vehicle time is
+      2–5 minutes, so a minute of parking time swings the PT ÷ car ratio; those pairs and
+      intrazonal pairs are reported separately, not mapped.
 
 # Routing settings shared by r5r (PT) and r5py (walk, cycle), passed identically to
 # both (plans/P2.md D7). The departure window is skims.departure_window_min.
@@ -351,10 +365,18 @@ routing:
       than journey planners in the PT spot checks (a 1.5 km walk: planner 19 min, model 25
       at 3.6 km/h, 19 at 4.8 km/h).
   cycle_speed_kmh:
-    value: 12.0
+    value: 16.0
     unit: km/h
-    tag: PLACEHOLDER
-    note: R5 default in both engines; to be sourced before published output
+    tag: SOURCED
+    source: >-
+      DfT Journey Time Statistics: Notes and Definitions, "Cycling speeds" table: 16.0 km/h
+      on A, B, minor roads and local streets (4.8 km/h on pedestrian streets and alleys).
+      https://assets.publishing.service.gov.uk/media/5dfa46f2ed915d54ab87c859/notes-and-definitions.pdf
+      (checked 2026-10-09).
+    note: >-
+      Robbie, 2026-10-09; replaces R5's default 12 km/h. A flat speed: no elevation model
+      is loaded (the network is built from the OSM clip and GTFS only), so cycling times
+      ignore gradients — material in Bristol and Bath; flagged for P5.
   max_bicycle_lts:
     value: 3
     unit: level of traffic stress (1–4)

@@ -67,6 +67,16 @@ paths:
 # not confirmed by Bristol City Council).
 anpr:
   hour_stamp: end                      # "start" | "end"
+  # Where the ANPR layer applies (Robbie, 2026-10-09): centre and urban segments of the
+  # Bristol built-up area — Bristol's centre/urban LSOAs, plus the centre/urban LSOAs of
+  # the fringe authorities whose population-weighted centroid lies in the ONS 2022
+  # built-up areas that touch Bristol's (directly or through one another). Elsewhere
+  # speeds stay on the DfT fit.
+  layer_scope:
+    bua: data/raw/ons_geo/bua22_bbox.geojson
+    seed_bua: E63005057                # ONS BUA 2022 "Bristol"
+    core_lad: E06000023                # Bristol, City of
+    fringe_lads: [E06000025, E06000024]   # South Gloucestershire, North Somerset
 
 # Bus vehicle locations, BODS SIRI-VM (plans/P2.md A6, decided 2026-09-27).
 avl:

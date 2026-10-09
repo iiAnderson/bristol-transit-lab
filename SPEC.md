@@ -446,6 +446,39 @@ average.
   (§3). Car routing: native OSRM with per-direction segment speeds (plans/P2.md D2).
 - Check GTFS `calendar.txt` covers the chosen modelled date; fail otherwise.
 
+**As built at the end of P2 (2026-10-09)** — where this differs from the bullets above,
+this is what the code does (detail and run ids in plans/P2.md §9):
+
+- *PT.* Walking 4.8 km/h and cycling 16 km/h, both [SOURCED] from DfT Journey Time
+  Statistics; cycling uses no elevation model. Each pair also stores the same component
+  means over ride minutes only (`r_` columns, `ride_share`) and `gc_ride_min`: the PT
+  alternative proper has at least one ride (§7.3), and that is what the gap map uses.
+  OA → LSOA weights are OA resident commuters (Census 2021 OA flows), not population.
+- *Bus timetable.* R5 ignores GTFS `pickup_type` / `drop_off_type`, so `lab supply bus`
+  writes each restricted trip as copies in which every journey is legal
+  (`gtfs_bods.split_restricted`).
+- *Caches.* PT skim chunks and the r5r network are keyed to the routing settings, the
+  skim script and the input file hashes, and are rebuilt when any of them change.
+- *Car, in order:* (1) free-flow speed per segment; (2) SRN factors from WebTRIS sites;
+  (3) local period shape from bus moving speeds — AM, the 08:00–09:00 skim hour (AMPH)
+  and IP from the nine archive days, PM from the three live days, national ratio as the
+  fallback; slow legs are dwell only near stops, and zero-distance legs are dropped;
+  (4) level fitted to DfT all-day speeds per road, with regularised per-road multipliers
+  on the measured roads (kept by the pre-registered rule); (5) **the ANPR layer**: on
+  centre and urban non-SRN segments of the Bristol built-up area only (config
+  `anpr.layer_scope`: Bristol's LSOAs plus the fringe LSOAs inside the ONS 2022
+  built-up areas touching Bristol's), speed × k[area type, period] and a delay per
+  signalised approach d[area type], fitted on a spatial half of Bristol's ANPR links
+  (hourly stamp = end of hour) and validated on the other half. Inside that scope the
+  ANPR level takes priority over DfT's (Robbie, 2026-10-09) and the ±5% DfT acceptance
+  is given up; outside it speeds stay on the DfT fit.
+- *Car GC.* In-vehicle time plus parking search and access walk by destination area
+  type. Those terminal times cannot be sourced: they are a [MODELLED] range (low = none,
+  high = the values in params) and outputs report both ends.
+- *Car spot checks* use held-out ANPR links (Google is excluded and car times cannot be
+  observed by hand); *PT spot checks* compare a journey planner with the model's best
+  and percentile times.
+
 ### 7.2 Generalised cost (in minutes)
 
 ```

@@ -14,6 +14,10 @@
 #   all window minutes (unreachable = Inf, so a percentile beyond the reachable share is
 #   NA), best-minute total, reachable share, walk-only share (of reachable minutes),
 #   top-3 routes by minutes used, unreachable flag (reachable share < threshold).
+#   The same means over ride minutes only (n_rides >= 1; prefix r_), their best total
+#   and ride_share (ride minutes / window): the PT alternative proper, where walk-only
+#   minutes are not PT (SPEC §7.3). R5 returns the fastest option per minute, so a
+#   minute in which walking wins has no ride itinerary.
 suppressMessages({library(jsonlite)})
 cfg <- fromJSON(commandArgs(trailingOnly = TRUE)[1])
 options(java.parameters = paste0("-Xmx", cfg$java_mem))
@@ -67,6 +71,14 @@ for (k in seq_along(chunks)) {
              reach_share = .N / W, walk_only_share = mean(n_rides == 0),
              top_routes = top_routes(routes, n_rides)),
          by = .(from_id, to_id)]
+  r <- x[n_rides >= 1, .(r_access_min = mean(access_time), r_wait_min = mean(wait_time),
+                          r_ride_min = mean(ride_time), r_transfer_min = mean(transfer_time),
+                          r_egress_min = mean(egress_time),
+                          r_n_transfers = mean(pmax(n_rides - 1, 0)),
+                          r_best_min = min(total_time), ride_share = .N / W),
+         by = .(from_id, to_id)]
+  s <- merge(s, r, by = c("from_id", "to_id"), all.x = TRUE, sort = FALSE)
+  s[is.na(ride_share), ride_share := 0]
   s[, unreachable := reach_share < cfg$reach_share_min]
   write_parquet(s, f_out)
   cat(sprintf("chunk %d/%d: %d origins, %d pairs, %.0f s elapsed\n", k, length(chunks),

@@ -51,7 +51,24 @@ def reset_stale_chunks(out_dir: Path, key: str, log) -> bool:
     return stale
 
 
+def reset_stale_network(net_dir: Path, feed_hashes: list[str], log) -> bool:
+    """r5r reuses ``network.dat`` in the network folder whatever the OSM and GTFS files
+    beside it now contain. Delete the built network when the input hashes differ from
+    those it was built with. Returns True if deleted."""
+    kf = net_dir / "_inputs.txt"
+    key = "\n".join(feed_hashes)
+    built = (net_dir / "network.dat").is_file()
+    stale = built and (not kf.is_file() or kf.read_text() != key)
+    if stale:
+        log("network inputs changed: rebuilding the r5r network")
+        for f in [net_dir / "network.dat", *net_dir.glob("*.mapdb*")]:
+            f.unlink(missing_ok=True)
+    kf.write_text(key)
+    return stale
+
+
 def run_pt(script: Path, cfg: dict, cfg_path: Path, log, inputs: list[str]) -> None:
+    reset_stale_network(Path(cfg["net_dir"]), inputs[:3], log)
     reset_stale_chunks(Path(cfg["out_dir"]), chunk_key(cfg, inputs), log)
     cfg_path.write_text(json.dumps(cfg))
     p = subprocess.Popen([str(R_ENV / "bin" / "Rscript"), str(script), str(cfg_path)],
@@ -62,6 +79,15 @@ def run_pt(script: Path, cfg: dict, cfg_path: Path, log, inputs: list[str]) -> N
             log(line.rstrip())
     if p.wait() != 0:
         raise RuntimeError(f"pt_skims.R failed ({p.returncode})")
+
+
+def ride_only(df: pd.DataFrame) -> pd.DataFrame:
+    """The ride-minute means (r_ columns) under the component names the GC functions
+    read, for the PT alternative with at least one ride."""
+    return pd.DataFrame({"access_min": df["r_access_min"], "wait_min": df["r_wait_min"],
+                         "ride_min": df["r_ride_min"], "transfer_min": df["r_transfer_min"],
+                         "egress_min": df["r_egress_min"], "n_transfers": df["r_n_transfers"],
+                         "best_min": df["r_best_min"]}, index=df.index)
 
 
 def gc_from_components(df: pd.DataFrame, w: dict) -> pd.Series:

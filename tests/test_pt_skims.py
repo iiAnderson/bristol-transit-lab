@@ -117,3 +117,14 @@ def test_chunks_from_other_settings_are_not_resumed(tmp_path):
     assert k2 != k1 and sk.chunk_key(cfg, ["b"]) != k1
     assert sk.reset_stale_chunks(d, k2, lambda m: None)
     assert not list(d.glob("chunk_*.parquet"))
+
+
+def test_network_is_rebuilt_when_inputs_change(tmp_path):
+    sk = skims
+    (tmp_path / "network.dat").write_bytes(b"x")
+    (tmp_path / "a.pbf.mapdb").write_bytes(b"x")
+    assert sk.reset_stale_network(tmp_path, ["o1", "b1", "r1"], lambda m: None)   # unknown build
+    (tmp_path / "network.dat").write_bytes(b"x")
+    assert not sk.reset_stale_network(tmp_path, ["o1", "b1", "r1"], lambda m: None)
+    assert sk.reset_stale_network(tmp_path, ["o1", "b2", "r1"], lambda m: None)
+    assert not (tmp_path / "network.dat").exists() and not (tmp_path / "a.pbf.mapdb").exists()

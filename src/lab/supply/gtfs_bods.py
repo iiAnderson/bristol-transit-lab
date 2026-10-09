@@ -22,6 +22,7 @@ import zipfile
 from pathlib import Path
 
 import duckdb
+import pandas as pd
 
 TABLES = ["agency", "stops", "routes", "calendar", "calendar_dates", "trips", "stop_times"]
 
@@ -56,7 +57,8 @@ def load(con: duckdb.DuckDBPyConnection, feeds: dict[str, Path]) -> None:
 
 def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
           extent: tuple, box: tuple, zones_geojson: Path | None = None,
-          exclude_trips: list[str] | None = None) -> dict:
+          exclude_trips: list[str] | None = None,
+          enforce_restrictions: bool = True) -> dict:
     d = f"{day:%Y%m%d}"
     wd = day.strftime("%A").lower()
     parts = []
@@ -132,9 +134,12 @@ def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
             ORDER BY CASE feed {order} END, trip_id) rn FROM trip_key) WHERE rn = 1""")
     con.execute("""CREATE OR REPLACE TEMP TABLE st_out AS
         SELECT * FROM st_on_date2 WHERE in_box AND trip_id IN (SELECT trip_id FROM trip_keep)""")
+    con.execute("ALTER TABLE st_out ADD COLUMN src_trip VARCHAR")
+    con.execute("UPDATE st_out SET src_trip = trip_id")
     con.execute("""CREATE OR REPLACE TEMP TABLE short_trips AS
         SELECT trip_id FROM st_out GROUP BY 1 HAVING count(*) < 2""")
     con.execute("DELETE FROM st_out WHERE trip_id IN (SELECT trip_id FROM short_trips)")
+    pd_stats = enforce_pick_drop(con) if enforce_restrictions else {}
     per_route = con.execute("""
         SELECT k.noc, k.route_short_name, count(*) n_before,
                count(*) FILTER (WHERE k.trip_id IN (SELECT trip_id FROM trip_keep)) n_after
@@ -160,6 +165,8 @@ def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
         "duplicates_removed": n("SELECT count(*) FROM trip_key") - n("SELECT count(*) FROM trip_keep"),
         "dropped_fewer_than_2_calls_in_box": n("SELECT count(*) FROM short_trips"),
         "trips_out": n("SELECT count(DISTINCT trip_id) FROM st_out"),
+        "source_trips_out": n("SELECT count(DISTINCT src_trip) FROM st_out"),
+        "pick_drop": pd_stats,
         "stop_times_out": n("SELECT count(*) FROM st_out"),
         "stops_out": n("SELECT count(DISTINCT stop_id) FROM st_out"),
         "calls_cut_outside_box": n("SELECT count(*) FROM st_on_date2 WHERE NOT in_box AND "
@@ -168,6 +175,76 @@ def build(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date,
         "flagged_routes": flagged,
         "same_start_groups": near,
     }
+
+
+MAX_PAIR_COPIES = 30
+
+
+def split_restricted(stops: list[tuple[int, bool, bool]]) -> tuple[list[list[int]], int]:
+    """One trip's calls as (seq, pickup_allowed, drop_off_allowed), in order. Returns the
+    calls of each copy to write so that no copy lets a rider board where pick-up is not
+    allowed or alight where set-down is not allowed — for routers that ignore
+    pickup_type / drop_off_type (R5 7.5.1 does) — and the number of pick-up-only →
+    set-down-only stop pairs left out.
+
+    A call is N (board and alight), B (board only), A (alight only) or dropped (neither);
+    the first call counts as N if boarding is allowed and the last if alighting is.
+    Copies: all N calls; for each B call, it plus the N calls after it; for each A call,
+    the N calls before it plus it; and, when the trip has at most MAX_PAIR_COPIES B → A
+    pairs, each pair with the N calls between. Any journey inside one copy is legal."""
+    n = len(stops)
+    kind = {}
+    for i, (seq, pick, drop) in enumerate(stops):
+        pick, drop = pick or False, drop or False
+        if i == 0:
+            kind[seq] = "N" if pick else None
+        elif i == n - 1:
+            kind[seq] = "N" if drop else None
+        else:
+            kind[seq] = "N" if pick and drop else "B" if pick else "A" if drop else None
+    N = [q for q, k in kind.items() if k == "N"]
+    B = [q for q, k in kind.items() if k == "B"]
+    A = [q for q, k in kind.items() if k == "A"]
+    if not B and not A and len(N) == n:
+        return [[q for q, _, _ in stops]], 0
+    copies = [N]
+    copies += [[b] + [q for q in N if q > b] for b in B]
+    copies += [[q for q in N if q < a] + [a] for a in A]
+    pairs = [(b, a) for b in B for a in A if b < a]
+    skipped = 0
+    if len(pairs) <= MAX_PAIR_COPIES:
+        copies += [[b] + [q for q in N if b < q < a] + [a] for b, a in pairs]
+    else:
+        skipped = len(pairs)
+    return [c for c in copies if len(c) >= 2], skipped
+
+
+def enforce_pick_drop(con: duckdb.DuckDBPyConnection) -> dict:
+    """Rewrite ``st_out`` so pick-up-only and set-down-only calls cannot be misused (see
+    ``split_restricted``). Copies get ids ``<trip>#<n>``; ``src_trip`` keeps the source."""
+    st = con.execute("SELECT * FROM st_out ORDER BY trip_id, seq").df()
+    flagged = set(st.loc[(st["pickup_type"] == "1") | (st["drop_off_type"] == "1"), "trip_id"])
+    keep = [st[~st["trip_id"].isin(flagged)]]
+    stats = {"trips_with_flags": len(flagged), "trips_split": 0, "copies_written": 0,
+             "trips_dropped_no_legal_journey": 0, "pairs_skipped": 0, "trips_with_pairs_skipped": 0}
+    for tid, g in st[st["trip_id"].isin(flagged)].groupby("trip_id", sort=False):
+        calls = list(zip(g["seq"], g["pickup_type"] != "1", g["drop_off_type"] != "1"))
+        copies, skipped = split_restricted(calls)
+        stats["pairs_skipped"] += skipped
+        stats["trips_with_pairs_skipped"] += bool(skipped)
+        if not copies:
+            stats["trips_dropped_no_legal_journey"] += 1
+            continue
+        if len(copies) == 1 and len(copies[0]) == len(g):
+            keep.append(g)
+            continue
+        stats["trips_split"] += 1
+        stats["copies_written"] += len(copies)
+        for i, c in enumerate(copies):
+            keep.append(g[g["seq"].isin(c)].assign(trip_id=f"{tid}#{i}"))
+    out = pd.concat(keep, ignore_index=True)  # noqa: F841 (read by duckdb)
+    con.execute("CREATE OR REPLACE TEMP TABLE st_out AS SELECT * FROM out")
+    return stats
 
 
 def write(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date, out: Path,
@@ -188,13 +265,15 @@ def write(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date, out: P
         "stop_times": """SELECT trip_id, arrival_time, departure_time, stop_id,
             row_number() OVER (PARTITION BY trip_id ORDER BY seq) stop_sequence,
             pickup_type, drop_off_type FROM st_out ORDER BY trip_id, seq""",
-        "trips": f"""SELECT route_id, 'D{d}' service_id, trip_id, trip_headsign, direction_id
-            FROM ({trips}) WHERE trip_id IN (SELECT DISTINCT trip_id FROM st_out)""",
+        "trips": f"""SELECT t.route_id, 'D{d}' service_id, c.trip_id, t.trip_headsign,
+                            t.direction_id
+            FROM ({trips}) t JOIN (SELECT DISTINCT trip_id, src_trip FROM st_out) c
+              ON c.src_trip = t.trip_id""",
         "routes": f"""SELECT * FROM ({routes}) WHERE route_id IN
-            (SELECT route_id FROM trips_on_date WHERE trip_id IN (SELECT trip_id FROM st_out))""",
+            (SELECT route_id FROM trips_on_date WHERE trip_id IN (SELECT src_trip FROM st_out))""",
         "agency": f"""SELECT * FROM ({agencies}) WHERE agency_id IN (SELECT agency_id FROM
             ({routes}) WHERE route_id IN (SELECT route_id FROM trips_on_date
-            WHERE trip_id IN (SELECT trip_id FROM st_out)))""",
+            WHERE trip_id IN (SELECT src_trip FROM st_out)))""",
         "stops": """SELECT stop_id, any_value(stop_name) stop_name, any_value(lat) stop_lat,
             any_value(lon) stop_lon FROM st_out GROUP BY stop_id""",
         "calendar_dates": f"SELECT 'D{d}' service_id, '{d}' date, 1 exception_type",

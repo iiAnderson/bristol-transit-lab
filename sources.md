@@ -650,6 +650,47 @@ Working plan and progress log: `plans/P2.md`.
 | Bristol ANPR journey times (Journey Counts / Links) | https://maps2.bristol.gov.uk/server2/rest/services/ext/Traffic/MapServer/3 (and `/2`) | 2026-09-28 | OGL v3 | **hourly** rows (not 5-minute): `SPEED` in mph, `JOURNEY_TIME` in s, `TOTAL_MATCHES`; 2019 1.06M rows → 2023 583,769 → 2024 119,246 (to 12 Dec); 240 links. The service takes native SQL date literals (`DATE_TIME >= 'YYYY-MM-DD'`); ArcGIS `TIMESTAMP`/`date` literals fail. 2023–24 fetched for absolute validation |
 | Legislation: RTRA 1984 s.81(1); SI 2022/800 (W. 178) | https://www.legislation.gov.uk/ukpga/1984/27/section/81 ; https://www.legislation.gov.uk/wsi/2022/800/made | 2026-09-27 | OGL v3 | 30 mph restricted roads; 20 mph in Wales from 17 Sep 2023 (free-flow defaults) |
 
+### P2 close-out datasets and sources (2026-10-09)
+
+| Dataset | URL | Accessed | Licence | Version / notes |
+|---|---|---|---|---|
+| ONS Built Up Areas (December 2022) Boundaries GB BGG | https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/BUA_2022_GB/FeatureServer/0 (ArcGIS item `ad30b234308f4b02b4bb9b0f4766f7bb`) | 2026-10-09 | OGL v3 (ONS geography licence) | 206 built-up areas intersecting the box −3.1, 51.25, −2.2, 51.7, saved as `data/raw/ons_geo/bua22_bbox.geojson` (sha256 `28b7f104c7610db7…`). Defines the scope of the ANPR layer: the 13 areas that touch "Bristol" (E63005057) directly or through one another |
+| DfT Journey Time Statistics: Notes and Definitions | https://assets.publishing.service.gov.uk/media/5dfa46f2ed915d54ab87c859/notes-and-definitions.pdf | 2026-10-09 | OGL v3 | "Walking speed on road/path network of 4.8km/h"; cycling 16.0 km/h on A, B, minor roads and local streets. Source of `routing.walk_speed_kmh` and `routing.cycle_speed_kmh` |
+| TfL, Assessing transport connectivity in London | https://content.tfl.gov.uk/connectivity-assessment-guide.pdf | 2026-10-09 | © TfL (cited, not redistributed) | "A walking speed of 4.8 kph is assumed" (PTAL and access times); corroborates the DfT figure |
+| G-BATS3 Demand Model Report (South Bristol Link) | https://travelwest.info/app/uploads/2020/05/23.-GBATS-3-Demand-Model-Report.pdf | 2026-10-09 | © West of England authorities (cited) | §2.22: car GC = Vwk·A + T + …, "Vwk is the weight applied to walking time (assumed 0 currently)". No parking search or terminal-time minutes |
+| TAG unit M2.1 (Nov 2025) and M5.1 (Jan 2014) | https://assets.publishing.service.gov.uk/media/693bf693adb5707d9f33d6a0/tag-unit-m21-variable-demand-modelling.pdf ; https://assets.publishing.service.gov.uk/media/5fbfd49ee90e077edf112801/tag-m5-1-modelling-parking-and-park-and-ride.pdf | 2026-10-09 | OGL v3 | Define walk to/from the car, parking search and egress time as GC terms; give no default minutes |
+
+**Car terminal times cannot be sourced.** Neither TAG nor the local model report gives
+parking-search or car-access minutes, so `car.parking_search_min` and
+`car.access_walk_min` are [MODELLED]: the values in params are the high end of a range
+whose low end is zero (G-BATS3's treatment), and the gap map reports both ends.
+
+**Bristol ANPR journey times: what the statistic is.** The ArcGIS item description
+(`b9d7bc32f7b24bc19d54fecb653ae169`, read 2026-10-09): "derived from 5 minute ANPR data
+using an average of the 5 minute speed weighted by the number of matches of number
+plates for that period". In the data `JOURNEY_TIME × SPEED` is constant per link
+(inter-quartile range 0.05% of the median), so the hourly journey time is the link
+length divided by that match-weighted mean of 5-minute speeds — not a mean or median of
+individual journey times. An arithmetic mean of speeds is at or above the space-mean
+speed, so if anything it understates journey time. How each 5-minute speed is formed
+from plate matches (median or mean; outlier filtering) is not published; the links table
+carries `MINIMUM_PLATE_MATCHES` = 1 and `CANDIDATE_COUNT` = 9 on every link, which points
+to some candidate filtering but does not define it. So the layer is not fitted to
+unfiltered means of journey times; whether stopped or diverted vehicles are removed
+within the 5 minutes is unknown and is flagged as a possible source of overcorrection.
+
+**R5 ignores GTFS pick-up and set-down restrictions (finding, 2026-10-09).** R5 7.5.1
+(through r5r and r5py) boards at calls with `pickup_type = 1` and alights at calls with
+`drop_off_type = 1`: The Big Lemon 100's inbound 07:20 from Bath is set-down only from
+Imperial Park to Cabot Circus, yet the model boarded it at Imperial Park (08:40) and
+rode to Temple Gate (08:50), which made Hengrove → Cabot Circus and Hartcliffe →
+Broadmead 12–17 min faster than a journey planner. 3,930 calls in the bus GTFS forbid
+pick-up and 3,645 forbid set-down (A1 Airport Flyer, 100, First 21 and 41, Stagecoach
+South Wales 9, …). `lab supply bus` now enforces them structurally
+(`gtfs_bods.split_restricted`): a restricted trip is written as copies in which every
+journey is legal. School services were the first hypothesis and are not the cause; they
+stay in (a journey planner offered school route 20 from the University of Bath).
+
 ### PT waiting in generalised cost (TAG M3.2, 2026-09-28)
 
 | document | URL | accessed | licence | version / notes |

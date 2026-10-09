@@ -127,16 +127,24 @@ def fit_level(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict, P: dict
 
 
 def leave_one_road_out(seg: pd.DataFrame, targets: pd.Series, r: dict, rho: dict,
-                       P: dict, areas: list[str], delay_s: dict | None = None) -> pd.DataFrame:
-    """Fit the base (area levels only) without road k, predict k; one row per road."""
+                       P: dict, areas: list[str], delay_s: dict | None = None,
+                       post_mult: dict | None = None,
+                       post_delay: dict | None = None) -> pd.DataFrame:
+    """Fit the base (area levels only) without road k, predict k; one row per road.
+    ``post_mult`` / ``post_delay`` (period -> per-segment arrays) are a layer applied to
+    the prediction only, after the fit (the ANPR layer)."""
     rows = []
     for k in targets.index:
         f = fit_level(seg, targets.drop(k), r, rho, P, areas, authority=False, delay_s=delay_s)
         sel = (seg["road"] == k).to_numpy()
         one = seg[sel]
         d1 = None if delay_s is None else {p: np.asarray(v)[sel] for p, v in delay_s.items()}
-        pred = allday_speed(one, segment_factors(one, f["g"], {a: 1.0 for a in one["authority"]},
-                                                 r, rho), P, delay_s=d1)[k]
+        fac = segment_factors(one, f["g"], {a: 1.0 for a in one["authority"]}, r, rho)
+        if post_mult is not None:
+            fac = {p: fac[p] * np.asarray(post_mult[p])[sel] for p in fac}
+        if post_delay is not None:
+            d1 = {p: (0 if d1 is None else d1[p]) + np.asarray(post_delay[p])[sel] for p in fac}
+        pred = allday_speed(one, fac, P, delay_s=d1)[k]
         rows.append({"road": k, "dft_kmh": float(targets[k]), "predicted_kmh": float(pred),
                      "rel_error": float(pred / targets[k] - 1)})
     return pd.DataFrame(rows)

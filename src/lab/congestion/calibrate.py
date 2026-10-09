@@ -206,6 +206,7 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
     tgt = use.set_index("road")["kmh"]
     tgt = tgt[tgt.index.isin(la["road"])]
     sig = anpr["signals"] if anpr else set()
+    scope = anpr.get("scope") if anpr else None
     base = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False)
     lf = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False, road_lam=road_lam)
     loro = fit.leave_one_road_out(la, tgt, r_main, rho, P, AREAS)
@@ -247,7 +248,7 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
         if anpr:
             layers[variant] = fit_anpr_layer(before[variant], seg, anpr, out_periods)
             ls_by[variant] = _assemble(seg, g_use, mults, r, rho, level, srn, out_periods,
-                                       sig, layers[variant])
+                                       sig, layers[variant], scope)
         else:
             ls_by[variant] = before[variant]
     ls = ls_by["hybrid"]
@@ -267,29 +268,80 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
         after = fit.allday_speed(la, eff, P).reindex(tgt.index)
         err = (after / tgt - 1).rename("rel_error").reset_index()
         err["lad"] = err["road"].str.split(":").str[0]
+        err["before"] = lf["rel_error"].reindex(err["road"]).to_numpy()
+        # share of each target road's length the layer touches
+        _, _, adj_la = layer_arrays(la, sig, layers["hybrid"], scope, periods)
+        touched = (la["length_m"] * adj_la).groupby(la["road"]).sum() \
+            / la["length_m"].groupby(la["road"]).sum()
+        err["layer_share"] = touched.reindex(err["road"]).to_numpy()
+        err["in_scope"] = err["layer_share"] > 0.5
+        by = lambda c: err.groupby(c).agg(  # noqa: E731
+            n=("rel_error", "size"), median_before=("before", "median"),
+            median_after=("rel_error", "median"),
+            median_abs_before=("before", lambda e: e.abs().median()),
+            median_abs_after=("rel_error", lambda e: e.abs().median()),
+            within_5pct_after=("rel_error", lambda e: (e.abs() <= 0.05).mean())) \
+            .round(4).reset_index().to_dict("records")
         rep["dft_after_layer"] = {
             "median_abs_rel_error": float(err["rel_error"].abs().median()),
             "median_rel_error": float(err["rel_error"].median()),
-            "by_authority": err.groupby("lad")["rel_error"].agg(
-                n="size", median="median").round(4).reset_index().to_dict("records"),
+            "by_authority": by("lad"), "by_scope": by("in_scope"),
             "roads": err.round(4).to_dict("records")}
+        pm, pdl, _ = layer_arrays(la, sig, layers["base"], scope, periods)
+        lo2 = fit.leave_one_road_out(la, tgt, r_main, rho, P, AREAS, post_mult=pm,
+                                     post_delay=pdl)
+        lo2["in_scope"] = (touched.reindex(lo2["road"]).to_numpy() > 0.5)
+        e2 = lo2["rel_error"].abs()
+        rep["leave_one_road_out_after_layer"] = {
+            "median_abs_rel_error": float(e2.median()),
+            "p90_abs_rel_error": float(e2.quantile(0.9)),
+            "share_within_15pct": float((e2 <= 0.15).mean()),
+            "by_scope": lo2.assign(a=e2).groupby("in_scope")["a"].agg(
+                n="size", median_abs="median").round(4).reset_index().to_dict("records"),
+            "before_by_scope": loro.assign(a=el, in_scope=lo2["in_scope"].to_numpy())
+            .groupby("in_scope")["a"].agg(n="size", median_abs="median").round(4)
+            .reset_index().to_dict("records"),
+            "roads": lo2.round(4).to_dict("records")}
     return ls, ls_base, rep
 
 
 LAYER_AREAS = ["centre", "urban"]
 
 
-def _anpr_seg_info(seg):
-    info = seg[["u", "v", "area_type", "road_class"]].drop_duplicates(["u", "v"])
+def in_scope(seg, scope) -> np.ndarray:
+    """Segments the ANPR layer may touch: inside the scope LSOAs (all, if no scope)."""
+    if scope is None:
+        return np.ones(len(seg), dtype=bool)
+    return seg["lsoa"].isin(scope).to_numpy()
+
+
+def layer_arrays(seg, sig, layer, scope, periods) -> tuple[dict, dict, np.ndarray]:
+    """Per-segment speed multiplier and signal delay (s) by period, and the mask of
+    adjusted segments: centre/urban, not SRN, in scope."""
+    area = seg["area_type"].replace({"buffer": "rural"}).to_numpy() if "area_type" in seg \
+        else seg["area"].to_numpy()
+    adj = np.isin(area, list(layer["d"])) & (seg["road_class"] != "srn").to_numpy() \
+        & in_scope(seg, scope)
+    approach = seg["v"].isin(sig).to_numpy() & adj
+    d = np.where(approach, pd.Series(area).map(layer["d"]).fillna(0.0).to_numpy(), 0.0)
+    mult = {q: np.where(adj, np.array([layer["k"].get((a, q), 1.0) for a in area]), 1.0)
+            for q in periods}
+    return mult, {q: d for q in periods}, adj
+
+
+def _anpr_seg_info(seg, scope=None):
+    info = seg.assign(_in=in_scope(seg, scope))[["u", "v", "area_type", "road_class", "_in"]] \
+        .drop_duplicates(["u", "v"])
+    area = info["area_type"].replace({"buffer": "rural"})
     return pd.DataFrame({"u": info["u"], "v": info["v"],
-                         "area": info["area_type"].replace({"buffer": "rural"}),
+                         "area": area.where(info["_in"], "outside_scope"),
                          "srn": info["road_class"] == "srn"})
 
 
 def _anpr_components(L, seg, anpr, half, periods):
     from . import signals as sg
     lens = seg[["u", "v", "length_m"]].drop_duplicates(["u", "v"])
-    info = _anpr_seg_info(seg)
+    info = _anpr_seg_info(seg, anpr.get("scope"))
     pth = anpr["paths"][anpr["paths"]["half"] == half].drop(columns=["length_m"], errors="ignore")
     return {q: sg.link_components(
         pth, L[L["period"] == q][["u", "v", "speed_kmh"]].merge(lens, on=["u", "v"]),
@@ -330,7 +382,7 @@ def anpr_report(ls_by, before, seg, anpr) -> dict:
 
 
 def _assemble(seg, g_area, mults, r, rho, level, srn, periods, sig=frozenset(),
-              layer=None) -> pd.DataFrame:
+              layer=None, scope=None) -> pd.DataFrame:
     area = seg["area_type"].replace({"buffer": "rural"}).to_numpy()
     road_key = seg["lad"].fillna("") + ":" + seg["ref"].fillna("")
     M = np.where(seg["road_class"] == "local_a", road_key.map(mults).fillna(1.0), 1.0)
@@ -361,16 +413,13 @@ def _assemble(seg, g_area, mults, r, rho, level, srn, periods, sig=frozenset(),
     # delay on signalised approaches (v is a signal node) written into the segment speed
     # as L / (L / v + d).
     d = np.zeros(len(seg))
-    adj = np.zeros(len(seg), dtype=bool)
+    mult = {per: np.ones(len(seg)) for per in periods}
     if layer:
-        adj = np.isin(area, list(layer["d"])) & ~is_srn
-        approach = seg["v"].isin(sig).to_numpy() & adj
-        d = np.where(approach, pd.Series(area).map(layer["d"]).fillna(0.0).to_numpy(), 0.0)
+        mult, dd, _ = layer_arrays(seg, sig, layer, scope, periods)
+        d = dd[periods[0]]
     for per in periods:
         v = np.clip(ff * fac[per], 3.0, ff * 1.2)
-        k = np.ones(len(seg))
-        if layer:
-            k = np.where(adj, np.array([layer["k"].get((a, per), 1.0) for a in area]), 1.0)
+        k = mult[per]
         v = v * k
         v_eff = np.where(d > 0, (L / 1000) / ((L / 1000) / v + d / 3600), v)
         rows.append(pd.DataFrame({"period": per, "way_id": seg["way_id"].to_numpy(),
