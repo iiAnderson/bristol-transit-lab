@@ -129,6 +129,9 @@ def coverage_stops(elevation: str) -> None:
         res = {
             "network_version": nv, "departures": int(len(dep)), "reconciled_with_independent_count": True,
             "journeys": int(dep.journey.nunique()),
+            # rail has no boarding restrictions, so departures = calls − one last call per trip
+            "rail_departures": int(dep.mode_class.eq("rail").sum()),
+            "rail_stop_times_minus_trips": int(len(feeds_["rail"]["stop_times"]) - len(feeds_["rail"]["trips"])),
             "stops_with_departures": int(len(stops)),
             "departures_by_mode_class": dep.mode_class.value_counts().to_dict(),
             "routes_by_mode_class": dep.groupby("mode_class").route_id.nunique().to_dict(),

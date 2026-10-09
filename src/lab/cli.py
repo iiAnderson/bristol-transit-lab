@@ -1346,6 +1346,100 @@ def spike_d1(cap_min: int, relief_radius_m: float) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@spike.command("d7")
+@click.option("--origins", "n_origins", default=60, show_default=True)
+@click.option("--near-m", default=600.0, show_default=True, help="Origins within this of the route's stops.")
+def spike_d7(n_origins: int, near_m: float) -> None:
+    """Generated-service timing: frequencies.txt vs explicit trips on one existing route."""
+    import datetime as dt
+    import json
+    import shutil
+    import subprocess
+    import duckdb
+    import numpy as np
+    import pandas as pd
+    import yaml
+    from . import coverage as cov, skims as sk
+    from .spikes import d7_frequency as d7
+    from .supply import feeds
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    start = dt.time.fromisoformat(ps["skims.window_start.AM"])
+    win = ps["skims.departure_window_min"]
+    h0 = start.hour * 60 + start.minute
+    rec = runrecord.build(cfg, command="spike-d7", inputs=[
+        {"name": f, "sha256": feeds.get(cfg, f)["sha256"]} for f in ("osm_clip", "bus_gtfs", "rail_gtfs")])
+    run_dir = runrecord.write(cfg, rec).parent
+    try:
+        bus = d7.read(cfg.root / raw["bus"]["out"])
+        span = cov.parse_periods({"AM": ps["periods.AM"]})["AM"]
+        pick = d7.pick_route(bus, (h0, h0 + win), span, min_per_hour=4)
+        rid = pick["route_id"]
+        rt = bus["routes.txt"].set_index("route_id").loc[rid]
+        res: dict = {"route": {**pick, "short_name": rt.route_short_name, "agency_id": rt.agency_id}}
+        stops = bus["stops.txt"][bus["stops.txt"].stop_id.isin(
+            bus["stop_times.txt"].stop_id[bus["stop_times.txt"].trip_id.isin(
+                bus["trips.txt"].trip_id[bus["trips.txt"].route_id == rid])])]
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            o = con.execute("SELECT OA21CD id, lat, lon FROM int_oa_pwc ORDER BY 1").df()
+            d = con.execute("SELECT LSOA21CD id, lat, lon FROM skim_dest ORDER BY 1").df()
+        from scipy.spatial import cKDTree
+        sx, sy = cov._bng(stops.stop_lon, stops.stop_lat)
+        ox, oy = cov._bng(o.lon, o.lat)
+        dist, _ = cKDTree(np.c_[sx, sy]).query(np.c_[ox, oy])
+        near = o[dist <= near_m]
+        o = near.iloc[np.linspace(0, len(near) - 1, min(n_origins, len(near))).astype(int)]
+        o.to_csv(run_dir / "origins.csv", index=False)
+        d.to_csv(run_dir / "dest.csv", index=False)
+        res["origins"] = {"within_near_m": int(len(near)), "used": int(len(o))}
+        variants = {"timetable": (None, {}, 1), "frequencies_1_draw": ("frequencies", {}, 1),
+                    "frequencies_5_draws": ("frequencies", {}, 5),
+                    "frequencies_20_draws": ("frequencies", {}, 20),
+                    "even_offset_0": ("even", {"offset_min": 0.0}, 1),
+                    "even_offset_3": ("even", {"offset_min": 3.0}, 1)}
+        out, built = {}, {}
+        for name, (how, kw, draws) in variants.items():
+            key = (how, tuple(kw.items()))
+            if key not in built:
+                net_dir = cfg.root / "data" / "interim" / "r5r" / f"net_d7_{len(built)}"
+                shutil.rmtree(net_dir, ignore_errors=True)
+                net_dir.mkdir(parents=True)
+                shutil.copy(cfg.root / raw["osm"]["clip"], net_dir)
+                shutil.copy(cfg.root / raw["rail"]["out"], net_dir)
+                if how is None:
+                    shutil.copy(cfg.root / raw["bus"]["out"], net_dir)
+                else:
+                    feed, info = d7.rewrite(bus, rid, how, **kw)
+                    d7.write(feed, net_dir / "bus_variant.zip")
+                    res[f"rewrite_{name}"] = info
+                built[key] = net_dir
+            rcfg = {"net_dir": str(built[key]), "origins": str(run_dir / "origins.csv"),
+                    "destinations": str(run_dir / "dest.csv"),
+                    "departure": dt.datetime.combine(day, start).strftime("%Y-%m-%d %H:%M"),
+                    "window_min": win, "draws_per_minute": draws, "max_rides": ps["routing.max_rides"],
+                    "walk_speed_kmh": ps["routing.walk_speed_kmh"],
+                    "max_trip_min": ps["routing.max_trip_min"], "route_id": rid, "java_mem": "10G",
+                    "out": str(run_dir / f"{name}.parquet")}
+            (run_dir / f"{name}.json").write_text(json.dumps(rcfg))
+            subprocess.run([str(sk.R_ENV / "bin" / "Rscript"), str(cfg.root / "src" / "lab" / "r" / "d7_freq.R"),
+                            str(run_dir / f"{name}.json")], env=sk.r_env(), check=True)
+            out[name] = pd.read_parquet(rcfg["out"])
+            click.echo(f"  {name}: {len(out[name]):,} pairs")
+        for name in variants:
+            if name != "timetable":
+                res[name] = d7.compare(out["timetable"], out[name], 0.5)
+        res["frequencies_5_vs_20_draws"] = d7.compare(out["frequencies_20_draws"], out["frequencies_5_draws"], 0.5)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(json.dumps(res, indent=1, default=str))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.group()
 def skims() -> None:
     """P2c skims: PT (r5r), walk and cycle (r5py)."""

@@ -909,6 +909,39 @@ calendar can rule them out; a scattered INSET day is not a network-wide effect.
   snapshot), although the plan assumed BODS covers England only. Relevant to D8; the
   timetable side is measured in A4.
 
+## P3 — Scenario engine, frequent-service coverage and costs
+
+Working plan and progress log: `plans/P3.md` (approved 2026-10-09). This section is
+written as P3 proceeds; P3a first.
+
+### P3a datasets and sources (2026-10-09)
+
+| Dataset | URL | Accessed | Licence | Version / notes |
+|---|---|---|---|---|
+| OS Terrain 50 (ASCII grid, Great Britain) | product https://api.os.uk/downloads/v1/products/Terrain50 ; file listing https://api.os.uk/downloads/v1/products/Terrain50/downloads ; download `…/downloads?area=GB&format=ASCII+Grid+and+GML+%28Grid%29&redirect` ; overview https://docs.os.uk/os-downloads/products/land-and-terrain-portfolio/os-terrain-50/os-terrain-50-overview | 2026-10-09 | OS OpenData (OGL v3); the zip's `licence.txt` points to www.ordnancesurvey.co.uk/opendata/licence; "© Crown copyright and database right 2026" | version 2026-07 (tiles dated 29 May 2026); `terr50_gagg_gb.zip`, 161.7 MB, MD5 `feba9008…` (matches the API listing), SHA-256 `d03e91d3…`. 50 m post spacing, bare-earth DTM, 4 m RMSE (overview page), 10 km tiles. Covers Wales, so one product serves the whole extent. 35 tiles cover the clip box; warped to WGS84 at 0.0005° (`lab supply dem`, feeds `dem_national`, `dem_clip`) |
+| Environment Agency LIDAR Composite DTM (1 m; a 10 m product also exists) | https://environment.data.gov.uk/dataset/13787b9a-26a4-4775-8523-806d13af58fc (1 m), https://environment.data.gov.uk/dataset/ce8fe7e7-bed0-4889-8825-19b042e128d2 (10 m) | 2026-10-09 | not confirmed (the dataset pages render by script and could not be read; search results describe it as open data) | **Not used.** England only, 5 km GeoTIFF tiles through an interactive download portal. The finer alternative to OS Terrain 50 if D1 asks for it; licence and a scriptable download to be confirmed first |
+| DataMapWales LiDAR (Welsh Government 2020–22 national survey, 1 m DTM) | found by search only | 2026-10-09 | not confirmed | **Not used.** The Welsh counterpart to the EA composite; not navigated |
+| ARE, "Reisezeiten und ÖV-Güteklassen: Aktualisierung der Geodaten und Karten" (Bundesamt für Raumentwicklung, 2013) | https://www.are.admin.ch/dam/de/sd-web/HlgJAh7C0Tq1/reisezeiten_und_oev-gueteklassen.pdf | 2026-10-09 | © ARE (cited, not redistributed) | SHA-256 `6e430e06…`. §5.1.3: departures on all lines counted 06:00–20:00 on a working day outside holidays, **halved** for one direction (corrected for termini and one-way stops), interval = 840 min ÷ that; Tabelle 3 (stop category I–V by interval band and kind of service: rail node, rail line, tram/bus/boat, cableway) and Tabelle 4 (class A–D by category and straight-line distance band: < 300, 300–500, 501–750, 751–1,000 m). The method "takes no account of gradient or impassable obstacles". Later ARE editions exist and were not opened |
+| English indices of deprivation 2025, File 7 (all ranks, scores, deciles) | page https://www.gov.uk/government/statistics/english-indices-of-deprivation-2025 ; https://assets.publishing.service.gov.uk/media/691ded56d140bbbaa59a2a7d/File_7_IoD2025_All_Ranks_Scores_Deciles_Population_Denominators.csv | 2026-10-09 | OGL v3 | 33,755 LSOAs (2021 boundaries); SHA-256 `b1b716aa…`. Published 30 Oct 2025 (date from search results, not read from the page) |
+| Welsh Index of Multiple Deprivation 2025, overall rank and decile | layer https://datamap.gov.wales/layers/geonode:wimd2025_overall ; WFS `https://datamap.gov.wales/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=geonode:wimd2025_overall&outputFormat=application/json&propertyName=lsoa,rank,decile,lsoa_name_en` | 2026-10-09 | **to confirm**: Welsh Government statistics are normally OGL v3, but the layer's API record returned no licence field | 1,917 LSOAs; layer dated 2025-11-25; SHA-256 `b2732127…`. Never pooled with the English index (Q12) |
+
+**Walk-to-stop distances are not sourced (rule 3).** The plan's lead — walk to bus mean
+580 m, 85th percentile 800 m; walk to rail 1,010 m and 1,610 m — traces to Wakenshaw, G.
+and Bunn, N. (WYG), "How far do people walk?", PTRC Transport Practitioners' Meeting,
+July 2015, from the National Travel Survey. Its only known copy,
+`https://new.sthelens.gov.uk/media/331745/cd-2229-wyg_how-far-do-people-walk.pdf`, timed
+out on every attempt on 2026-10-09, and the Wayback Machine refused the lookup (HTTP
+429). What was opened is a secondary source: Oxfordshire County Council, "Parking
+Standards for New Developments: Walking Distances Review"
+(https://mycouncil.oxfordshire.gov.uk/documents/s81450/Annex%202%20PSND%20WD%20Review.pdf),
+which quotes 580 m and 800 m for a bus stop and **1,020 m** and 1,610 m for a station,
+and attributes them to "the South East region". Search summaries of other planning
+documents give 1,010 m for rail, describe the figures as "outside London", and cite a
+second WYG document, "How far is it acceptable to walk?" (2018), with a bus mean of
+**624 m** from NTS 2014. So the secondary sources disagree on the rail mean, the bus
+mean, the area and the year. `coverage.decay.*` stay `[PLACEHOLDER]` (bus 580 / 800,
+rail 1,010 / 1,610) until the paper itself is opened; every coverage output says so.
+
 ## Phase status
 
 | phase | status |
