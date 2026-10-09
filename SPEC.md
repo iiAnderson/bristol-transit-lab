@@ -255,6 +255,13 @@ result(run_id, metric, geography_level, geography_id, period, value, unit)
 line_load(run_id, route_id, from_stop, to_stop, period, pax, capacity, load_factor)
 ```
 
+*Amended at P3 (2026-10-09):* P2 wrote its skims as flat files
+(`data/interim/skims/pt_AM_oa_lsoa.parquet` etc.). P3 moves them into
+`data/interim/skims/<scenario>/<network_version>/<mode>/<period>.parquet`, with a test
+that every P2 output reproduces unchanged. `network_version` identifies the routable
+network a scenario was skimmed on (OSM, any OSM patch file, GTFS feeds and, if adopted,
+the elevation model, by hash) and is stored in every run record.
+
 Zone level for demand and choice: **LSOA → LSOA** (or LSOA → MSOA for commute, where
 the upstream noise finding applies — see §6.1 for the destination-grain decision).
 Access/egress points for routing: **OA population-weighted centroids**, aggregated back
@@ -302,6 +309,18 @@ ops:
 - Run times from geometry + speed profile (accel/decel + dwell), not guessed. For
   `mode: bus` on street, use period congested car speed × `bus_speed_ratio` [CALIBRATED]
   unless a `road_speed_factor` applies.
+  *Amended at P3 (2026-10-09):* P2 did not fit `bus_speed_ratio` (bus speeds shaped the
+  car factors by period; no bus ÷ car ratio was stored). P3 fits it from the P2 bus
+  traversals against the calibrated car speeds on the same links, by road class × area
+  type × period, with a spatial hold-out, and reports it beside P2's held-out bus speed
+  error (27% per cell), which it inherits. It applies to **new** on-street bus and BRT
+  sections and to `road_speed_factor`; existing routes keep their timetabled times.
+  Segregated busway sections of a new BRT route (`alignment_type: at_grade_segregated`,
+  `elevated`, `tunnel`) use the speed-profile rule, not car speeds.
+- *Added at P3:* `fare_change` is validated and recorded but has no effect until fares
+  enter generalised cost (P5); a run reports it as "recorded, not yet modelled".
+  `landuse` and `landuse_delta` act on a minimal `L2026` built in P3 (OA residents from
+  Census 2021 TS001, LSOA jobs from BRES); students and floorspace arrive in P4.
 - Emit `frequencies.txt` for headway-based services; R5 handles these natively.
   *Added at P2 (D7):* R5 routes frequency-based services by randomising schedules. When
   P3 starts, check how r5r's `expanded_travel_time_matrix()` handles them and set
@@ -574,7 +593,28 @@ scenario, its parent, and the difference.
 - Population-weighted means; distribution by IMD decile; a Palma-style ratio (top 10% /
   bottom 40%) of PT accessibility
 - PT/car accessibility ratio per OA
-- Population and jobs within 400 m / 800 m of a stop with ≤ 10 min peak headway
+- **Frequent-service coverage** (*amended at P3, 2026-10-09; replaces "population and
+  jobs within 400 m / 800 m of a stop with ≤ 10 min peak headway"*). Population and jobs
+  by service-quality class, and the population with no frequent service:
+  - walking time from each OA population-weighted centroid to stops **on the network**,
+    not straight-line distance;
+  - a distance-decay weight per mode class (bus, BRT, tram / light rail, heavy rail and
+    metro, ferry), since people walk further to rail than to a bus stop; coaches are
+    excluded and listed;
+  - the service level at each stop cluster, counted in vehicle journeys
+    (`original_trip_id`) at calls where boarding is allowed, per direction;
+  - periods 07–10, 10–16, 16–19 and 19–22, plus the 08–09 skim hour. The headline is
+    the **worse of AM and inter-peak**, so a peak-only service does not count as
+    frequent; the evening is reported separately;
+  - the "frequent" headway threshold is a parameter, reported at 10 and 15 min;
+  - jobs at OA are BRES LSOA jobs split by Census 2021 workplace counts, labelled as
+    such;
+  - deprivation splits use the English Indices of Deprivation and the Welsh Index of
+    Multiple Deprivation **separately, never pooled**;
+  - a reduced-mobility variant (shorter decay) is reported alongside.
+  Decay curves, the class definition, stop clustering and the treatment of gradient are
+  settled at the P3a stop (plans/P3.md D1–D4) and written here then. Every figure names
+  the modelled date, the walk speed and whether gradient is included.
 - Change maps as GeoParquet
 
 ### 8.3 Cost
@@ -676,7 +716,10 @@ tolerances. *Amended at P2a:* `B2028` moves to P3.
 is highest. This needs no behavioural model.
 
 **P3 — Scenario engine and costs.** YAML schema + validator, GTFS generator, patching,
-`costs.yaml`, connectivity and cost metrics, `lab compare`.
+`costs.yaml`, connectivity and cost metrics, `lab compare`. *Amended at P3
+(2026-10-09):* working plan `plans/P3.md`, three stops — P3a frequent-service coverage
+on `B2026` (§8.2; uses no car times), P3b the scenario engine and `B2028`, P3c costs and
+`lab compare`. P3 runs before P7a, so the viewer starts with two baseline maps.
 *Acceptance:* a test scenario (e.g. one frequency change) round-trips; a new-line
 scenario produces sensible run times, fleet size and capex; `B2028` is built from
 `B2026` via scenario ops (moved from P2 at P2a).
@@ -750,7 +793,7 @@ never hand-edited.
   - the gap map (PT GC ÷ car GC, weighted by flow);
   - demand desire lines (filterable by purpose, period and minimum flow);
   - line loads as bandwidths, with load-factor colouring;
-  - frequent-stop coverage (400 m / 800 m);
+  - frequent-service coverage (§8.2 as amended at P3);
   - IMD decile overlay.
 - **Scorecard panel:** headline §8 metrics for the run and the difference against the
   comparison run.
@@ -892,6 +935,14 @@ matter for the scenario being reported.
     cover England only, so factors for the same road class, area type and direction are
     transferred from the English side, `[MODELLED]`. Newport Bus positions are in BODS
     and can check the pattern, but give no absolute target.
+
+**Scenario engine (added at P3)**
+
+20. **Generated services are headway-based; nothing proves a timetable works.** The
+    track-capacity check (plans/P3.md D6) only catches sections loaded beyond a stated
+    limit. Its base usage is passenger and empty-stock paths from Darwin, which holds
+    **no freight**: freight is a `[MODELLED]` allowance per section where it is known
+    to run, not a count. Every capacity table says so.
 
 ---
 
