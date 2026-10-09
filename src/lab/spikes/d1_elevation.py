@@ -12,11 +12,14 @@ from __future__ import annotations
 import datetime as dt
 import math
 import time
+from pathlib import Path
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 from shapely.geometry import Point
+
+from ..supply import dem
 
 
 def relief(dem_tif: str, pts: pd.DataFrame, radius_m: float) -> pd.Series:
@@ -45,7 +48,7 @@ def matrices(osm: str, dem_tif: str | None, fn: str | None, o: pd.DataFrame,
     from r5py import ElevationCostFunction, TransportMode, TransportNetwork, TravelTimeMatrix
     t0 = time.time()
     net = (TransportNetwork(osm, []) if dem_tif is None else
-           TransportNetwork(osm, [], elevation_model=[dem_tif],  # a list: r5py iterates a bare str
+           TransportNetwork(osm, [], elevation_model=[dem.for_function(Path(dem_tif), fn)],
                             elevation_cost_function=ElevationCostFunction(fn)))
     out = {"build_s": round(time.time() - t0, 1)}
     for mode, tm in (("walk", TransportMode.WALK), ("cycle", TransportMode.BICYCLE)):

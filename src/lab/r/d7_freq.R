@@ -10,7 +10,8 @@ dep <- as.POSIXct(cfg$departure, format = "%Y-%m-%d %H:%M", tz = "Europe/London"
 o <- fread(cfg$origins); d <- fread(cfg$destinations)
 net <- build_network(cfg$net_dir, verbose = FALSE)
 res <- list()
-for (k in split(seq_len(nrow(o)), ceiling(seq_len(nrow(o)) / 20))) {
+per <- max(1, 20 %/% cfg$draws_per_minute)   # rows grow with draws: keep each call's output bounded
+for (k in split(seq_len(nrow(o)), ceiling(seq_len(nrow(o)) / per))) {
   x <- expanded_travel_time_matrix(net, origins = o[k], destinations = d,
                                    mode = c("WALK", "TRANSIT"), departure_datetime = dep,
                                    time_window = cfg$window_min, breakdown = TRUE,

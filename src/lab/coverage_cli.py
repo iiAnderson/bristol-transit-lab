@@ -41,10 +41,11 @@ def _walk_matrix(osm: str, tif: str | None, fn: str | None, o, d, ps: dict, max_
     import pandas as pd
     from shapely.geometry import Point
     from r5py import ElevationCostFunction, TransportMode, TransportNetwork, TravelTimeMatrix
+    from .supply import dem
     g = lambda df: gpd.GeoDataFrame({"id": df["id"]}, crs="EPSG:4326",  # noqa: E731
                                     geometry=[Point(x, y) for x, y in zip(df.lon, df.lat)])
     net = (TransportNetwork(osm, []) if fn is None else
-           TransportNetwork(osm, [], elevation_model=[tif],  # a list: r5py iterates a bare str
+           TransportNetwork(osm, [], elevation_model=[dem.for_function(Path(tif), fn)],
                             elevation_cost_function=ElevationCostFunction(fn)))
     dep = dt.datetime.combine(day, dt.time.fromisoformat(ps["skims.window_start.AM"]))
     dd, out = g(d), []
@@ -129,9 +130,10 @@ def coverage_stops(elevation: str) -> None:
         res = {
             "network_version": nv, "departures": int(len(dep)), "reconciled_with_independent_count": True,
             "journeys": int(dep.journey.nunique()),
-            # rail has no boarding restrictions, so departures = calls − one last call per trip
+            # rail: departures = calls − one last call per trip − set-down-only calls that are not last
             "rail_departures": int(dep.mode_class.eq("rail").sum()),
             "rail_stop_times_minus_trips": int(len(feeds_["rail"]["stop_times"]) - len(feeds_["rail"]["trips"])),
+            "rail_set_down_only_calls": int((feeds_["rail"]["stop_times"].get("pickup_type") == "1").sum()),
             "stops_with_departures": int(len(stops)),
             "departures_by_mode_class": dep.mode_class.value_counts().to_dict(),
             "routes_by_mode_class": dep.groupby("mode_class").route_id.nunique().to_dict(),
@@ -277,7 +279,8 @@ def coverage_score(elevation: str) -> None:
     odwp = cfg.upstream_raw / raw["spikes"]["odwp01ew_oa"]
     rec = runrecord.build(cfg, command="coverage-score", inputs=[
         *[{"name": k, "sha256": v} for k, v in hashes.items()],
-        *[{"name": str(p), "sha256": params.file_hash(p)} for p in (*dep_files.values(), odwp)]])
+        *[{"name": str(p), "sha256": params.file_hash(p)}
+          for p in (*dep_files.values(), odwp, cfg.upstream_raw / cc["ts001_oa"])]])
     run_dir = runrecord.write(cfg, rec).parent
     try:
         now = dt.datetime.now(dt.timezone.utc)
@@ -295,9 +298,29 @@ def coverage_score(elevation: str) -> None:
         if set(sc.network_version) != {nv}:
             raise click.ClickException(f"stop tables are for network {set(sc.network_version)}, not {nv}: "
                                        "run `lab coverage stops` with the same --elevation")
+        ts001 = cfg.upstream_raw / cc["ts001_oa"]
         with upstream.connect(cfg) as up:
-            pop = upstream.read_table(up, "ts001").df()
-            geom = up.execute("SELECT OA21CD, ST_AsWKB(geom) wkb FROM oa_geom").df()
+            up_pop = upstream.read_table(up, "ts001").df()
+            pop = up.execute(f"""SELECT "geography code" OA21CD,
+                                        "Residence type: Total; measures: Value" residents
+                                 FROM read_csv('{ts001}')""").df()
+            chk = up_pop.merge(pop, on="OA21CD", how="left", suffixes=("_up", ""))
+            if not (chk.residents_up == chk.residents).all():
+                raise click.ClickException("national TS001 file disagrees with upstream's ts001 table")
+        bgc = cfg.root / cc["oa_bgc"]
+        if not bgc.is_file():
+            import os
+            from .supply import avl, points
+            got = points.fetch(cc["oa_bgc_service"], list(oa.OA21CD), bgc,
+                               avl.user_agent(cfg, os.environ["LAB_CONTACT_EMAIL"]), batch=100)
+            if got["missing"]:
+                raise click.ClickException(f"OA boundaries missing from ONS: {got['missing'][:5]}")
+        feeds.register(cfg, feed_id="ons_oa21_bgc_internal", kind="ref", source_url=cc["oa_bgc_service"],
+                       path=bgc, downloaded_at=dt.datetime.fromtimestamp(bgc.stat().st_mtime, dt.timezone.utc),
+                       licence="OGL v3")
+        geom = gpd.read_file(bgc)[["OA21CD", "geometry"]]
+        if set(geom.OA21CD) != set(oa.OA21CD):
+            raise click.ClickException("OA boundary file does not match the internal OAs")
         walk = pd.read_parquet(cfg.root / cc["dir"] / nv / "oa_stop_walk.parquet")
         walk = walk.merge(sc[["stop_id", "cluster_id"]], on="stop_id") \
             .groupby(["OA21CD", "cluster_id"], as_index=False).walk_min.min()
@@ -362,6 +385,13 @@ def coverage_score(elevation: str) -> None:
             sens[f"brt_towards_rail_{w:g}"] = {
                 f"residents_frequent_{h}": int(head.residents[s2[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
                 for h in hs}
+        # R5 truncates walking times to the whole minute (measured, plans/P3.md §9): the
+        # same score with half a minute added back, as a sensitivity (Q14).
+        s3 = cov.score(walk.assign(walk_min=walk.walk_min + 0.5), cs[cs.period == "HEADLINE"], curves, scfg) \
+            .set_index("OA21CD").reindex(oa.OA21CD)
+        sens["walk_plus_half_minute"] = {
+            f"residents_frequent_{h}": int(head.residents[s3[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
+            for h in hs} | {"mean_score": round(float((s3.score.fillna(0).to_numpy() * head.residents).sum() / head.residents.sum()), 2)}
         cancelled = gtfs_rail.cancellations(
             cfg.root / raw["rail"]["darwin_timetable"], gtfs_rail.read_ref(cfg.root / raw["rail"]["darwin_ref"]),
             gtfs_rail.read_naptan(cfg.root / raw["rail"]["naptan"]),
@@ -379,9 +409,7 @@ def coverage_score(elevation: str) -> None:
                  "No car times are used, so the P2 car spot-check fails do not apply. "
                  "Walk-to-stop distances are placeholders (not yet sourced). "
                  "Sketch-planning model: indicative and comparative, not for a business case.")
-        g = gpd.GeoDataFrame(head.merge(geom, on="OA21CD"),
-                             geometry=gpd.GeoSeries.from_wkb(head.merge(geom, on="OA21CD").wkb.apply(bytes)),
-                             crs="EPSG:4326").drop(columns="wkb")
+        g = gpd.GeoDataFrame(head.merge(geom, on="OA21CD"), geometry="geometry", crs=geom.crs)
         g.insert(0, "network_version", nv)
         g.to_parquet(run_dir / "coverage_oa.parquet")
         with duckdb.connect(str(cfg.lab_db)) as con:
@@ -411,9 +439,8 @@ def coverage_score(elevation: str) -> None:
                 "residents_served_reduced_mobility": int(head.residents[head[f + "_reduced_mobility"]].sum()),
                 **{f"residents_served_{per}": int(head.residents[head[f"{f}_{per}"]].sum())
                    for per in ("AM", "IP", "PM", "EVE", "AMPH")},
-                "share_served_by_imd_decile_england": {int(r.imd_decile_england): round(float(r[f"share_residents_{f}"]), 3)
-                                                       for r in tables["by_imd_decile_england"].itertuples(index=False)
-                                                       for r in [r._asdict()]},
+                "share_served_by_imd_decile_england": {int(r["imd_decile_england"]): round(float(r[f"share_residents_{f}"]), 3)
+                                                       for r in tables["by_imd_decile_england"].to_dict("records")},
                 "share_served_by_wimd_decile_wales": {int(r["wimd_decile_wales"]): round(float(r[f"share_residents_{f}"]), 3)
                                                       for r in tables["by_wimd_decile_wales"].to_dict("records")},
             }

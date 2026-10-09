@@ -404,7 +404,8 @@ def summarise(oa: pd.DataFrame, by: str | None = None) -> pd.DataFrame:
             r[f"residents_not_{f}"] = g.residents[~g[f]].sum()
             r[f"jobs_{f}"] = g.jobs[g[f]].sum()
             r[f"share_residents_{f}"] = g.residents[g[f]].sum() / g.residents.sum()
-            r[f"weighted_residents_{f}"] = (g.residents * g[f + "_weight"]).sum()
+            if f + "_weight" in g:
+                r[f"weighted_residents_{f}"] = (g.residents * g[f + "_weight"]).sum()
         r["mean_score_resident_weighted"] = (g.score * g.residents).sum() / g.residents.sum()
         rows.append(r)
     return pd.DataFrame(rows).sort_values(keys) if keys else pd.DataFrame(rows)

@@ -276,6 +276,15 @@ calendar_2025_26:
 # Frequent-service coverage (plans/P3.md P3a).
 coverage:
   dir: data/interim/coverage
+  # Census 2021 TS001 usual residents by OA: upstream's raw national download, read-only.
+  # Upstream's `ts001` table holds only OAs inside its own extent polygon and lacks three
+  # of the lab's internal OAs (sources.md P1), so the national file is read instead.
+  ts001_oa: ts001/census2021-ts001-oa.csv
+  # OA 2021 boundaries, generalised (BGC), for drawing coverage by OA. From ONS, not
+  # upstream's `oa_geom`, which lacks the same three OAs. Service listed on the ONS Open
+  # Geography ArcGIS server (navigated 2026-10-09).
+  oa_bgc_service: https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/Output_Areas_2021_EW_BGC_V2/FeatureServer/0
+  oa_bgc: data/raw/ons_geo/oa21_bgc_internal.geojson
   # Deprivation indices, kept apart: the English and Welsh indices are not comparable
   # decile for decile (Robbie, 2026-10-09, Q12). Navigated 2026-10-09; see sources.md.
   deprivation:

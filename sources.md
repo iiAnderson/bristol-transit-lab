@@ -942,6 +942,124 @@ second WYG document, "How far is it acceptable to walk?" (2018), with a bus mean
 mean, the area and the year. `coverage.decay.*` stay `[PLACEHOLDER]` (bus 580 / 800,
 rail 1,010 / 1,610) until the paper itself is opened; every coverage output says so.
 
+### P3a findings (2026-10-09)
+
+**Terrain changes walking and cycling by 7–15%, and the two slope functions differ by a
+factor of two** (run `20261009T194106-spike-d1-504f10`; all 3,799 OAs → 890 LSOA points,
+pairs within 30 min on the flat network; OAs classed by the standard deviation of
+terrain height within 500 m: flattest fifth < 4.8 m, steepest fifth > 16.7 m).
+
+| | all | flattest fifth | steepest fifth | pairs ≥ 2 min slower |
+|---|---|---|---|---|
+| walk, Tobler | +1.3 min (+6.6%) | +0.6 (+3.2%) | +2.1 (+10.6%) | 36% |
+| walk, Minetti | +2.8 min (+13.9%) | +1.7 (+8.9%) | +4.0 (+20.0%) | 57% |
+| cycle, Tobler | +1.5 min (+7.9%) | +1.0 (+5.7%) | +2.0 (+10.6%) | 44% |
+| cycle, Minetti | +2.9 min (+15.4%) | +2.4 (+13.2%) | +3.7 (+20.1%) | 70% |
+
+- **One function applies to both modes.** Whichever of R5's two functions is chosen at
+  network build is applied to walking and to cycling alike; there is no per-mode choice
+  in r5py 1.1.7 or r5r 2.4.0.
+- **Neither makes anything faster.** No pair is 2 minutes quicker with terrain under
+  Tobler (0.4% under Minetti), although both published functions have a downhill gain;
+  uphill and downhill differ by a mean of 0.36 min (walk, Tobler; 0.01 on the flat
+  network). So in R5 terrain is in effect a penalty: even the flattest fifth of OAs is
+  3% slower. That is a level shift against the 4.8 km/h `[SOURCED]` flat speed, not only
+  a hill effect.
+- **r5r and r5py agree exactly** on the same raster and function: 2,493 walk pairs,
+  median difference 0.0 min, all within 1 min.
+- **r5py's network cache ignores the cost function.** It keys a built network on the
+  hashes of its input files only, so a network built with Tobler is silently reused when
+  Minetti is asked for: the first full spike run reported identical "Tobler" and
+  "Minetti" results for that reason. `dem.for_function` now writes a copy of the raster
+  tagged with the function's name, which changes the key. A third stale-cache trap after
+  P2's two; same lesson.
+- Runtime is unchanged (network build 11 s with the raster; walk matrix ~1 min).
+- OS Terrain 50 is a 50 m grid with 4 m RMSE: adequate for hills, too coarse for a short
+  steep street. Whether a 1–10 m model changes the result was not tested.
+
+**Coverage with and without terrain** (Tobler; runs `20261009T201834-coverage-score-805714`
+flat, `20261009T201432-coverage-score-7672cd` terrain): residents with a service every
+10 min or better in walking reach 592,621 (48.6%) → 570,032 (46.7%); every 15 min
+815,896 (66.9%) → 796,114 (65.3%); residents in no service-quality class 253,074 →
+282,583.
+
+**Frequent-service coverage, B2026, flat network** (run `20261009T201834-coverage-score-805714`;
+network `flat-4873adf6d2`; 1,219,504 residents, 710,020 jobs; **walk-to-stop distances
+are placeholders**, so these figures are provisional and not for publication).
+
+| | every 10 min or better | every 15 min or better |
+|---|---|---|
+| residents served (worse of AM and inter-peak) | 592,621 (48.6%) | 815,896 (66.9%) |
+| residents not served | 626,883 | 403,608 |
+| jobs served | 433,197 (61.0%) | 553,579 (78.0%) |
+| decay-weighted residents | 408,699 | 606,828 |
+| reduced-mobility variant (distances × 0.70) | 392,592 | 610,255 |
+| AM 07–10 / inter-peak / PM / 08–09 hour | 620,017 / 615,856 / 612,453 / 617,821 | 858,963 / 829,424 / 842,382 / 865,355 |
+| evening 19–22 | 399,253 | 682,863 |
+| England, most → least deprived tenth | 56% … 32% | 90% … 59% |
+| Wales, most → least deprived tenth (never pooled) | 43% … 23% | 60% … 50% |
+
+Service-quality class after the ARE method (residents): A 74,510, B 172,854, C 303,281,
+D 415,785, none 253,074. Jobs at OA are BRES LSOA jobs split by Census 2021 workplace
+counts; 4 LSOAs (90 jobs) had no workplace count and were split equally.
+
+- **Stop service** (run `20261009T201445-coverage-stops-fb3e42`): 276,447 departures by
+  9,466 vehicle journeys from 5,812 stops, reconciled exactly with an independent count
+  from `stop_times`. Rail: 2,727 departures = 3,343 calls − 613 last calls − 3
+  set-down-only calls. By mode class: bus 242 routes, Metrobus (BRT) 5, rail 53, ferry
+  2, coach 14 (excluded from scores, listed).
+- **Stop clusters:** 3,417 from 5,812 stops (2,131 pairs, 1,195 single stops, the largest
+  a 15-stand bus station). 2,786 candidate pairs; **17 cut by the barrier test**.
+  Several of the 17 are opposite stops 10–40 m apart that the network puts 5–10 minutes
+  apart (one pair 9.7 m apart, 7 min), which reads as a walk-network fault, not a
+  barrier. Listed in the run for review; nothing fixed (Q15).
+- **Decay.** A logistic curve reproduces both the mean and the 85th percentile for bus
+  and rail exactly; a negative exponential, having one parameter, puts the 85th
+  percentile at 1,100 m against 800 m (bus) and 1,916 m against 1,610 m (rail). Logistic
+  chosen. BRT at the bus curve or the rail curve moves residents served at 10 min from
+  588,017 to 612,594.
+- **R5 truncates walking times to the whole minute** (563 pairs against itinerary
+  seconds: 95% equal the floor; mean −0.43 min). On a synthetic field of origins round
+  one stop, truncation raises decay-weighted access by 12.5% (bus) and 5.9% (rail) and
+  the share inside the 85th-percentile distance by 21% and 9%; rounding to the nearest
+  minute would be within 0.1% on weighted access. On the real data, adding half a minute
+  back cuts residents served at 10 min from 592,621 to 541,764 (−8.6%) and at 15 min to
+  775,308 (−5.0%). The bus threshold (800 m) is exactly 10.0 minutes at 4.8 km/h, so it
+  sits on a minute boundary: the worst case.
+- **Walk network against the straight line** (460,015 OA → stop pairs 100 m or more
+  apart): median ratio 1.25, 95th percentile 1.62, 805 pairs above 3, 80 above 5. The
+  largest are real water crossings of Bristol's Floating Harbour (ferry landings and the
+  stops beside it: 140–230 m across, 20–28 minutes round). 17 OAs reach no stop within
+  30 minutes; 40 OAs are within 400 m of a stop yet a disproportionate walk from it.
+- **On the day, inside the extent, no rail journey was cancelled and 8 calls were.**
+  The 86 journeys and 658 calls recorded under P2 are national counts.
+
+**Generated services: `frequencies.txt` is not comparable with the timetable; nor is an
+arbitrary offset** (run `20261009T200357-spike-d7-88bf41`). One bus route chosen by rule
+(no restriction copies, one stop pattern per direction, exactly every 15 minutes) was
+rewritten by hand and skimmed from 60 OAs near it to all 890 destinations, 08:00–09:00.
+On the 1,589 pairs that use it for at least half their minutes:
+
+| variant | median total within 1 min of the timetable | mean absolute difference | mean wait difference |
+|---|---|---|---|
+| `frequencies.txt`, 1 draw per minute | 37% | 1.7 min | −0.05 min |
+| `frequencies.txt`, 5 draws | 43% | 1.6 min | −0.11 min |
+| `frequencies.txt`, 20 draws | 42% | 1.6 min | −0.04 min |
+| explicit trips, same headway, same offset | 100% | 0.0 min | 0.0 min |
+| explicit trips, same headway, 3 min later | 46% | 1.5 min | +0.9 min |
+
+More draws do not close the gap (5 against 20 draws agree within 1 min on 97%): the
+difference is the random phase against connecting services, and a fixed 3-minute shift
+of explicit trips moves results as much. Frequency-based runs also need far more
+memory: 20 origins × 5 draws exhausted a 10 GB heap, so the script now sizes its batches
+by the number of draws.
+
+**Three internal OAs are missing from upstream's `ts001` and `oa_geom`** (E00072619,
+W00008407, W00010619: in internal LSOAs but outside upstream's extent polygon, as found
+in P1). Population is read from upstream's raw national TS001 file instead (checked
+equal to the table on all 3,905 OAs it holds), and OA boundaries from
+ONS (`Output_Areas_2021_EW_BGC_V2`, accessed 2026-10-09, OGL v3).
+
 ## Phase status
 
 | phase | status |
@@ -949,3 +1067,4 @@ rail 1,010 / 1,610) until the paper itself is opened; every coverage output says
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
 | P1 | approved 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); external-factor fallback added after approval |
 | P2 | **complete 2026-10-09** (plans/P2.md §9). Delivered: bus and rail GTFS for Wed 23 Sep 2026 (pick-up / set-down restrictions enforced), nine archive and three live AVL days, car speeds (DfT fit + WebTRIS + ANPR layer in the Bristol built-up area), PT / walk / cycle / car skims, accessibility (DfT Connectivity ρ 0.947 OA, 0.952 LSOA), the gap map (door-to-door time difference PT − car: mean 29 min with high car terminal times, 37 with none). **Documented fails:** (1) PT spot checks, AM peak 15 of 20 against ≥ 16 (IP 18 of 20 passes) — 4 comparison artefacts, 1 model error; (2) car spot checks on held-out ANPR links, 8 of 20 (AM peak hour) and 6 of 20 (IP) within ±15% against ≥ 16. **Accepted deviations:** held-out bus speed error 27% per cell / 20% per corridor against ≤ 15%; DfT ±5% given up inside the ANPR layer's scope (Bristol roads −9.6%) in favour of ANPR, met outside it (33 of 35 roads). Leave-one-road-out 11.2% (≤ 15% ✓). Open [PLACEHOLDER]s: 4 in `params/base.yaml` (none used by P2 outputs), 8 in `params/costs.yaml` (P6). Awaiting: Robbie's review of the ANPR-layer scope map |
+| P3 | **in progress** (plans/P3.md, approved 2026-10-09). P3a at its stop: SPEC amendments, rule 6 test, terrain spike, frequent-service coverage on B2026 (provisional: walk-to-stop distances are `[PLACEHOLDER]`), D7 measurement. Open [PLACEHOLDER]s: 8 in `params/base.yaml` (the 4 from P2 plus the 4 walk-to-stop distances), 8 in `params/costs.yaml` (**P3c**, not P6 as the P2 row says) |

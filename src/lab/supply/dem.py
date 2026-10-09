@@ -85,3 +85,22 @@ def build(national_zip: Path, box_wgs84: tuple[float, float, float, float], out:
             "tiles_missing_sea": sorted(set(want) - set(found)), "cell_m": cell,
             "width": w, "height": h, "res_deg": res_deg,
             "min_m": float(dst.min()), "max_m": float(dst.max()), "mean_m": float(dst.mean())}
+
+
+def for_function(tif: Path, cost_function: str) -> Path:
+    """A copy of the raster that is specific to one slope cost function.
+
+    r5py caches a built network under a digest of its input *files*; the cost function
+    is not part of that key, so a network built with one function is silently reused for
+    the other (measured in the D1 spike, plans/P3.md §9). Tagging the copy with the
+    function's name changes its bytes, and so the cache key.
+    """
+    import rasterio
+    out = tif.with_name(f"{tif.stem}.{cost_function.lower()}.tif")
+    if not out.exists() or out.stat().st_mtime < tif.stat().st_mtime:
+        with rasterio.open(tif) as src:
+            prof, data = src.profile, src.read()
+        with rasterio.open(out, "w", **prof) as dst:
+            dst.write(data)
+            dst.update_tags(slope_cost_function=cost_function)
+    return out
