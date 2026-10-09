@@ -422,6 +422,40 @@ def supply_bus_variants(day: str | None) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@supply.command("dem")
+def supply_dem() -> None:
+    """Terrain raster for the clip box from the national grid in config; registered as a feed."""
+    import datetime as dt
+    import hashlib
+    import yaml
+    from .supply import avl as a, dem, feeds
+    cfg = LabConfig.load()
+    dc = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())["dem"]
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    src, out = cfg.root / dc["national_zip"], cfg.root / dc["out"]
+    md5 = hashlib.md5(src.read_bytes()).hexdigest()
+    if md5 != dc["md5"]:
+        raise click.ClickException(f"{src}: md5 {md5} is not the published {dc['md5']}")
+    rec = runrecord.build(cfg, command="supply-dem", inputs=[
+        {"name": dc["source_url"], "md5": md5, "version": dc["version"]}])
+    runrecord.write(cfg, rec)
+    try:
+        stats = dem.build(src, a.clip_box(cfg), out, ps["supply.dem_res_deg"])
+        now = dt.datetime.now(dt.timezone.utc)
+        feeds.register(cfg, feed_id="dem_national", kind="dem", source_url=dc["source_url"],
+                       path=src, downloaded_at=now, licence=dc["licence"],
+                       notes=f"version {dc['version']}; md5 {md5}")
+        feeds.register(cfg, feed_id="dem_clip", kind="dem", source_url="mosaicked + warped "
+                       "by `lab supply dem`", path=out, downloaded_at=now,
+                       licence=dc["licence"], notes=str(stats))
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = stats
+    click.echo(f"  {stats}")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @supply.command("osm")
 def supply_osm() -> None:
     """Download, verify, merge and clip the OSM extracts; register them as feeds."""
@@ -1220,6 +1254,98 @@ def spike_d3() -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@spike.command("d1")
+@click.option("--cap-min", default=30, show_default=True,
+              help="Compare pairs within this many minutes on the flat network.")
+@click.option("--relief-radius-m", default=500.0, show_default=True)
+def spike_d1(cap_min: int, relief_radius_m: float) -> None:
+    """Terrain model: change in walk and cycle times, by local relief; r5r agreement."""
+    import datetime as dt
+    import json
+    import shutil
+    import subprocess
+    import duckdb
+    import pandas as pd
+    import yaml
+    from . import skims as sk
+    from .spikes import d1_elevation as d1
+    from .supply import feeds
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    dep = dt.datetime.combine(day, dt.time.fromisoformat(ps["skims.window_start.AM"]))
+    osm, tif = str(cfg.root / raw["osm"]["clip"]), str(cfg.root / raw["dem"]["out"])
+    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+        o = con.execute("SELECT OA21CD id, lon, lat FROM int_oa_pwc ORDER BY 1").df()
+        d = con.execute("SELECT LSOA21CD id, lon, lat FROM skim_dest ORDER BY 1").df()
+    rec = runrecord.build(cfg, command="spike-d1", inputs=[
+        {"name": f, "sha256": feeds.get(cfg, f)["sha256"]} for f in ("osm_clip", "dem_clip")])
+    run_dir = runrecord.write(cfg, rec).parent
+    res: dict = {"cap_min": cap_min, "relief_radius_m": relief_radius_m}
+    try:
+        rel = d1.relief(tif, o, relief_radius_m)
+        rel.index = o["id"]
+        mx = max(60, 2 * cap_min)       # pairs are compared up to cap_min on the flat network
+        nets = {"flat": d1.matrices(osm, None, None, o, d, dep, ps, mx)}
+        for fn in ("TOBLER", "MINETTI"):
+            nets[fn] = d1.matrices(osm, tif, fn, o, d, dep, ps, mx)
+        res["runtime_s"] = {k: {x: v[x] for x in ("build_s", "walk_s", "cycle_s")}
+                            for k, v in nets.items()}
+        for fn in ("TOBLER", "MINETTI"):
+            for mode in ("walk", "cycle"):
+                res[f"{mode}_{fn}_vs_flat"] = d1.compare(nets["flat"][mode], nets[fn][mode],
+                                                         rel, cap_min)
+                nets[fn][mode].to_parquet(run_dir / f"{mode}_{fn}.parquet")
+        for mode in ("walk", "cycle"):
+            nets["flat"][mode].to_parquet(run_dir / f"{mode}_flat.parquet")
+        # Uphill vs downhill, OA -> OA on every tenth OA.
+        s = o.iloc[::10]
+        for fn in (None, "TOBLER"):
+            m = d1.matrices(osm, tif if fn else None, fn, s, s, dep, ps, mx)
+            res[f"walk_asymmetry_{fn or 'flat'}"] = d1.asymmetry(m["walk"], cap_min)
+        # r5r on the same raster and function, walk only, the D3 1% sample of origins.
+        samp = pd.read_csv(cfg.root / "data" / "interim" / "r5r" / "d3_origins.csv")
+        net_dir = cfg.root / "data" / "interim" / "r5r" / "net_d1"
+        net_dir.mkdir(parents=True, exist_ok=True)
+        for f in net_dir.iterdir():
+            f.unlink()
+        shutil.copy(osm, net_dir / Path(osm).name)
+        shutil.copy(tif, net_dir / "elevation.tif")
+        d.to_csv(run_dir / "dest.csv", index=False)
+        rcfg = {"net_dir": str(net_dir), "elevation": "TOBLER",
+                "origins": str(cfg.root / "data" / "interim" / "r5r" / "d3_origins.csv"),
+                "destinations": str(run_dir / "dest.csv"),
+                "departure": dep.strftime("%Y-%m-%d %H:%M"),
+                "walk_speed_kmh": ps["routing.walk_speed_kmh"], "max_trip_min": mx,
+                "java_mem": "10G", "out": str(run_dir / "r5r_walk_TOBLER.parquet")}
+        (run_dir / "r5r.json").write_text(json.dumps(rcfg))
+        subprocess.run([str(sk.R_ENV / "bin" / "Rscript"),
+                        str(cfg.root / "src" / "lab" / "r" / "d1_walk.R"),
+                        str(run_dir / "r5r.json")], env=sk.r_env(), check=True)
+        r = pd.read_parquet(rcfg["out"]).rename(columns={"travel_time_p50": "t_r5r"})
+        py = nets["TOBLER"]["walk"]
+        j = py[py.from_id.isin(samp["id"])].merge(r, on=["from_id", "to_id"], how="outer")
+        both = j[j.t.notna() & j.t_r5r.notna()]
+        dd = both.t_r5r - both.t
+        res["r5r_vs_r5py_walk_TOBLER"] = {
+            "pairs_both": int(len(both)), "only_r5py": int((j.t.notna() & j.t_r5r.isna()).sum()),
+            "only_r5r": int((j.t.isna() & j.t_r5r.notna()).sum()),
+            "median_diff_min": float(dd.median()), "p5_p95": [float(x) for x in dd.quantile([.05, .95])],
+            "share_within_1min": round(float((dd.abs() <= 1).mean()), 4)}
+        fl = nets["flat"]["walk"]
+        jf = fl[fl.from_id.isin(samp["id"])].merge(r, on=["from_id", "to_id"])
+        jf = jf[jf.t.notna() & jf.t_r5r.notna()]
+        res["r5r_TOBLER_vs_r5py_flat_walk_median_diff_min"] = float((jf.t_r5r - jf.t).median())
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(json.dumps(res, indent=1))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.group()
 def skims() -> None:
     """P2c skims: PT (r5r), walk and cycle (r5py)."""
@@ -1949,6 +2075,11 @@ def params_cmd() -> None:
         for p in ps:
             unit = f" {p.unit}" if p.unit else ""
             click.echo(f"  [{p.tag:<11}] {p.path} = {p.value}{unit}")
+
+
+from .coverage_cli import coverage as _coverage  # noqa: E402
+
+cli.add_command(_coverage)
 
 
 def main() -> None:

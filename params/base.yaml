@@ -173,6 +173,145 @@ periods:
   AM: {value: "07:00-10:00", tag: MODELLED, reasoning: spec §6.3 period definition}
   IP: {value: "10:00-16:00", tag: MODELLED, reasoning: spec §6.3 period definition}
   PM: {value: "16:00-19:00", tag: MODELLED, reasoning: spec §6.3 period definition}
+  EVE:
+    value: "19:00-22:00"
+    tag: MODELLED
+    reasoning: >-
+      Evening band for frequent-service coverage only (Robbie, 2026-10-09, plans/P3.md
+      Q6), so that "frequent all day" can be reported; not a demand period.
+  AMPH:
+    value: "08:00-09:00"
+    tag: MODELLED
+    reasoning: the AM skim hour (skims.window_start.AM plus the 60-minute window), reported beside the periods for consistency with the skims
+
+# Frequent-service coverage (plans/P3.md P3a; SPEC §8.2 as amended at P3).
+coverage:
+  headline_periods:
+    value: [AM, IP]
+    tag: MODELLED
+    reasoning: >-
+      The headline service level of a stop cluster is the worse of these periods, so a
+      peak-only service does not count as frequent (Robbie, 2026-10-09, Q6).
+  frequent_headway_min:
+    value: [10, 15]
+    unit: min between departures in one direction; every listed threshold is reported
+    tag: MODELLED
+    reasoning: >-
+      SPEC §8.2 originally said 10 min; the scenarios under discussion use 15. Both are
+      reported and neither is privileged until the P3a stop (plans/P3.md D3).
+  max_walk_min:
+    value: 30
+    unit: min of walking from an OA centroid to a stop; pairs beyond it are not stored
+    tag: MODELLED
+    reasoning: >-
+      2.4 km at 4.8 km/h: above the 85th-percentile walk to a rail station in the
+      candidate decay (1,610 m, 20 min), so the cap cuts only the tail of the weights.
+  cluster_same_name_m:
+    value: 150
+    unit: m, straight line
+    tag: MODELLED
+    reasoning: >-
+      Stops with the same name this close are treated as one stop cluster (the two
+      sides of a road, the stands of a small interchange). Paired stops are staggered
+      by up to about 100 m; 150 m leaves a margin. Plans/P3.md D4; reviewed on a plot.
+  cluster_any_name_m:
+    value: 40
+    unit: m, straight line
+    tag: MODELLED
+    reasoning: >-
+      Stops this close are one cluster whatever they are called (adjacent stands with
+      different names). About two bus lengths plus a carriageway.
+  cluster_max_walk_min:
+    value: 4
+    unit: min of walking on the network between two stops of one cluster
+    tag: MODELLED
+    reasoning: >-
+      Barrier test: 150 m in a straight line is a 2-minute walk; a pair further apart
+      than 4 minutes on the network (320 m) has a river, railway or dual carriageway
+      between it and is not one stop to a passenger.
+  direction_min_share:
+    value: 0.1
+    unit: share of a cluster's departures in a compass octant for that direction to count
+    tag: MODELLED
+    reasoning: stops a handful of short workings or diversions from making a one-way stop look two-way
+  score_cap_dph:
+    value: 12
+    unit: departures per hour in one direction; the continuous score counts no more than this per cluster
+    tag: MODELLED
+    reasoning: >-
+      A 5-minute headway is turn-up-and-go; further departures add capacity, not
+      access. Stops a bus-station cluster from dominating the continuous score.
+  reduced_mobility_half_weight_m:
+    value: 400
+    unit: m at which the bus decay weight is 0.5 in the reduced-mobility variant; other modes scale by the same factor
+    tag: MODELLED
+    reasoning: >-
+      The 400 m convention for an acceptable walk to a bus stop, used as the half-weight
+      point for people who walk less far. Plans/P3.md D2; reported alongside, for equity.
+  # Walk-to-stop distances by mode: the decay weight at distance d is the share of
+  # observed walks that are at least that long. NOT YET SOURCED. The figures are those
+  # attributed to Wakenshaw and Bunn (WYG), "How far do people walk?", PTRC Transport
+  # Practitioners' Meeting 2015, from the National Travel Survey, as quoted in
+  # Oxfordshire County Council, "Parking Standards for New Developments: Walking
+  # Distances Review" (opened 2026-10-09). The paper itself could not be opened (its
+  # only known host timed out), so rule 3 keeps them PLACEHOLDER.
+  decay:
+    bus:
+      mean_m: {value: 580, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC; primary not opened"}
+      p85_m: {value: 800, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC; primary not opened"}
+    rail:
+      mean_m: {value: 1010, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC (which gives 1,020 m in one place and 1,010 m in the search summary); primary not opened"}
+      p85_m: {value: 1610, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC; primary not opened"}
+    brt_towards_rail:
+      value: 0.33
+      unit: position of the BRT decay between bus (0) and rail (1)
+      tag: MODELLED
+      reasoning: >-
+        No observed walk distances for BRT. People walk further to faster, more
+        legible services; BRT here runs partly in mixed traffic, so it sits nearer
+        bus. Sensitivity runs at 0 and 1 (plans/P3.md D2).
+    tram_towards_rail:
+      value: 0.67
+      unit: position of the tram / light-rail decay between bus (0) and rail (1)
+      tag: MODELLED
+      reasoning: >-
+        No observed UK walk distances by tram in the source. Fixed track and higher
+        speed put it nearer rail. Sensitivity runs at 0 and 1 (plans/P3.md D2).
+  # Service-quality classes after the Swiss ARE method (ÖV-Güteklassen): a stop
+  # category from the kind of service and the interval between departures in one
+  # direction, then a class from the category and the distance to the stop.
+  # Source for both tables: Bundesamt für Raumentwicklung ARE (2013), "Reisezeiten und
+  # ÖV-Güteklassen: Aktualisierung der Geodaten und Karten", Tabelle 3 and Tabelle 4
+  # (opened 2026-10-09). Adapted here: the interval is per period, not 06:00–20:00;
+  # distance is walking on the network, not a straight line.
+  are_interval_bands_min:
+    value: [5, 10, 20, 40, 60]
+    unit: upper edges of the interval bands (min); the source prints "< 5, 6–9, 10–19, 20–39, 40–60"
+    tag: SOURCED
+    source: ARE (2013) Reisezeiten und ÖV-Güteklassen, Tabelle 3. https://www.are.admin.ch/dam/de/sd-web/HlgJAh7C0Tq1/reisezeiten_und_oev-gueteklassen.pdf
+  are_stop_category:
+    value: {rail_node: [1, 1, 2, 3, 4], rail_line: [1, 2, 3, 4, 5], street: [2, 3, 4, 5, 5]}
+    unit: stop category I–V (1–5) per interval band; street = tram, bus, ferry (ARE group B)
+    tag: SOURCED
+    source: ARE (2013) Reisezeiten und ÖV-Güteklassen, Tabelle 3 (Bahnknoten, Bahnlinien, VM-Gruppe B).
+  are_distance_bands_m:
+    value: [300, 500, 750, 1000]
+    unit: upper edges of the distance bands (m)
+    tag: SOURCED
+    source: ARE (2013) Reisezeiten und ÖV-Güteklassen, Tabelle 4.
+  are_class:
+    value: {1: [A, A, B, C], 2: [A, B, C, D], 3: [B, C, D, none], 4: [C, D, none, none], 5: [D, none, none, none]}
+    unit: class per distance band, by stop category
+    tag: SOURCED
+    source: ARE (2013) Reisezeiten und ÖV-Güteklassen, Tabelle 4.
+  rail_node_min_directions:
+    value: 3
+    unit: compass octants with departures (each at least direction_min_share) for a station to be a rail node
+    tag: MODELLED
+    reasoning: >-
+      ARE defines a rail node as several lines in different directions without a
+      numeric rule. Three or more departure directions separates junction stations
+      from stations on one line (which have two).
 
 supply:
   clip_buffer_km:
@@ -183,6 +322,15 @@ supply:
       Feeds (OSM, bus GTFS, vehicle locations) are clipped to the extent plus this
       margin so that routes and bus tracks near the edge are not truncated. 5 km is
       about one inter-urban bus stage; the plan's default (plans/P2.md A3).
+
+  dem_res_deg:
+    value: 0.0005
+    unit: degrees per cell of the terrain raster given to R5
+    tag: MODELLED
+    reasoning: >-
+      About 35 m east–west and 56 m north–south at this latitude: no coarser than the
+      50 m source grid (OS Terrain 50), so the warp to WGS84 loses nothing, and no
+      finer, which would only interpolate. Plans/P3.md D1.
 
 # P2 car congestion (plans/P2.md §5). Set in P2b from the vehicle-location data; the
 # notes give the starting values to test.

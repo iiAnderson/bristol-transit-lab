@@ -151,6 +151,19 @@ osm:
   clip: data/interim/osm/b2026_clip.osm.pbf
   osrm_base: data/interim/osrm/b2026        # OSRM MLD files (osrm-extract/partition)
 
+# Terrain model (plans/P3.md D1). OS Terrain 50: 50 m grid, bare earth, 4 m RMSE, Great
+# Britain (so the Welsh zones are covered by the same product). Navigated 2026-10-09:
+# product page, the Downloads API listing (which gives the md5 below) and the licence
+# text inside the zip. Candidate for the P3a spike; finer sources are in sources.md.
+dem:
+  product: https://api.os.uk/downloads/v1/products/Terrain50
+  source_url: "https://api.os.uk/downloads/v1/products/Terrain50/downloads?area=GB&format=ASCII+Grid+and+GML+%28Grid%29&redirect"
+  version: "2026-07"
+  md5: feba9008db55cdcb5c5e5b7896e3428b
+  licence: "OS OpenData (Open Government Licence v3); contains OS data © Crown copyright and database right 2026"
+  national_zip: data/raw/dem/terr50_gagg_gb.zip
+  out: data/interim/dem/clip_dem.tif
+
 # WebTRIS (plans/P2.md A7): the latest 12 months published. Data lags ~3 months; on
 # 2026-09-27 the last day with data was 30 Jun 2026.
 webtris:
@@ -259,3 +272,22 @@ calendar_2025_26:
     - [2026-06-01, 2026-07-22]
   bank_holidays: [2025-08-25, 2025-12-25, 2025-12-26, 2026-01-01, 2026-04-03,
                   2026-04-06, 2026-05-04, 2026-05-25]
+
+# Frequent-service coverage (plans/P3.md P3a).
+coverage:
+  dir: data/interim/coverage
+  # Deprivation indices, kept apart: the English and Welsh indices are not comparable
+  # decile for decile (Robbie, 2026-10-09, Q12). Navigated 2026-10-09; see sources.md.
+  deprivation:
+    england:
+      path: data/raw/deprivation/iod2025_file7.csv
+      url: https://assets.publishing.service.gov.uk/media/691ded56d140bbbaa59a2a7d/File_7_IoD2025_All_Ranks_Scores_Deciles_Population_Denominators.csv
+      page: https://www.gov.uk/government/statistics/english-indices-of-deprivation-2025
+      lsoa_column: "LSOA code (2021)"
+      decile_column: "Index of Multiple Deprivation (IMD) Decile (where 1 is most deprived 10% of LSOAs)"
+      licence: OGL v3
+    wales:
+      path: data/raw/deprivation/wimd2025_overall.json
+      url: "https://datamap.gov.wales/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=geonode:wimd2025_overall&outputFormat=application/json&propertyName=lsoa,rank,decile,lsoa_name_en"
+      page: https://datamap.gov.wales/layers/geonode:wimd2025_overall
+      licence: OGL v3 (Welsh Government; to be confirmed on the layer's metadata page before publication)

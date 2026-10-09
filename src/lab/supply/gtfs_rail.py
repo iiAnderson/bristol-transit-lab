@@ -255,6 +255,43 @@ def convert(timetable: Path, ref: Ref, naptan: dict, service_date: dt.date,
     return res
 
 
+def cancellations(timetable: Path, ref: Ref, naptan: dict, service_date: dt.date,
+                  box: tuple[float, float, float, float]) -> dict:
+    """What the on-the-day snapshot leaves out of the timetable at stations inside
+    ``box``: rail passenger journeys cancelled as a whole that had a public call there,
+    and single cancelled calls there on journeys that still ran. Counted so that outputs
+    labelled "timetabled service" can say what is missing (plans/P3.md Q11)."""
+    x0, y0, x1, y1 = box
+
+    def inside(tpl: str) -> bool:
+        q = naptan.get(tpl)
+        return tpl in ref.crs and q is not None and x0 <= q[0] <= x1 and y0 <= q[1] <= y1
+
+    day = service_date.isoformat()
+    out: Counter = Counter()
+    for _, el in ET.iterparse(_open(timetable), events=("end",)):
+        if _local(el.tag) != "Journey":
+            continue
+        a = el.attrib
+        if a.get("ssd") == day:
+            whole = a.get("can") == "true"
+            a2 = {k: v for k, v in a.items() if k != "can"}
+            probe = ET.Element("Journey", a2)
+            if _exclusion(probe) is None:
+                public = [c for c in el if _local(c.tag) in PUBLIC
+                          and (c.get("pta") or c.get("ptd")) and inside(c.get("tpl"))]
+                if whole and public:
+                    out["journeys_cancelled"] += 1
+                    out["calls_on_cancelled_journeys"] += len(public)
+                elif not whole:
+                    out["calls_cancelled_on_running_journeys"] += sum(
+                        c.get("can") == "true" for c in public)
+        el.clear()
+    out["calls_cancelled"] = (out["calls_on_cancelled_journeys"]
+                              + out["calls_cancelled_on_running_journeys"])
+    return dict(out)
+
+
 def _stops(res: Result, ref: Ref, naptan: dict) -> None:
     """One stop per CRS (per TIPLOC if it has none); merge repeated consecutive stops."""
     for trip in res.trips:
