@@ -29,7 +29,30 @@ def r_env() -> dict:
     return env
 
 
-def run_pt(script: Path, cfg: dict, cfg_path: Path, log) -> None:
+def chunk_key(cfg: dict, inputs: list[str]) -> str:
+    """Identity of a PT skim build: every setting the R script reads plus the input
+    dataset hashes. Chunks written under another key must not be resumed."""
+    import hashlib
+    return hashlib.sha256(json.dumps([cfg, inputs], sort_keys=True).encode()).hexdigest()
+
+
+def reset_stale_chunks(out_dir: Path, key: str, log) -> bool:
+    """The R script skips chunks that already exist (resume after an interruption). Clear
+    them when they were built with different settings or inputs. Returns True if cleared."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    kf = out_dir / "_key.txt"
+    old = list(out_dir.glob("chunk_*.parquet"))
+    stale = bool(old) and (not kf.is_file() or kf.read_text().strip() != key)
+    if stale:
+        log(f"settings or inputs changed: clearing {len(old)} stale chunks")
+        for f in [*old, *out_dir.glob("minutes_*.parquet")]:
+            f.unlink()
+    kf.write_text(key)
+    return stale
+
+
+def run_pt(script: Path, cfg: dict, cfg_path: Path, log, inputs: list[str]) -> None:
+    reset_stale_chunks(Path(cfg["out_dir"]), chunk_key(cfg, inputs), log)
     cfg_path.write_text(json.dumps(cfg))
     p = subprocess.Popen([str(R_ENV / "bin" / "Rscript"), str(script), str(cfg_path)],
                          env=r_env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

@@ -1199,7 +1199,8 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
     runrecord.write(cfg, rec)
     try:
         sk.run_pt(cfg.root / "src" / "lab" / "r" / "pt_skims.R", rcfg, work / "config.json",
-                  lambda m: click.echo(f"  {m}", err=True))
+                  lambda m: click.echo(f"  {m}", err=True),
+                  [feeds.get(cfg, f)["sha256"] for f in ("osm_clip", "bus_gtfs", "rail_gtfs")])
         s = sk.combine(work / "chunks")
         w = {k: ps[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
         curve = ps["generalised_cost.first_wait_curve"]

@@ -100,3 +100,20 @@ def test_gc_tag_equals_random_arrival_gc_for_frequent_service():
                         "best_min": [29.0]})     # initial wait 3 min -> headway 6 min
     curve = PS["generalised_cost.first_wait_curve"]
     assert abs(skims.gc_tag(row, W, curve).iloc[0] - skims.gc_from_components(row, W).iloc[0]) < 0.1
+
+
+def test_chunks_from_other_settings_are_not_resumed(tmp_path):
+    d = tmp_path / "chunks"
+    d.mkdir()
+    (d / "chunk_0001.parquet").write_bytes(b"x")
+    cfg = {"walk_speed_kmh": 3.6, "out_dir": str(d)}
+    sk = skims
+    k1 = sk.chunk_key(cfg, ["a"])
+    assert sk.reset_stale_chunks(d, k1, lambda m: None)             # no key recorded: stale
+    (d / "chunk_0001.parquet").write_bytes(b"x")
+    assert not sk.reset_stale_chunks(d, k1, lambda m: None)         # same build: resume
+    assert (d / "chunk_0001.parquet").exists()
+    k2 = sk.chunk_key({**cfg, "walk_speed_kmh": 4.8}, ["a"])
+    assert k2 != k1 and sk.chunk_key(cfg, ["b"]) != k1
+    assert sk.reset_stale_chunks(d, k2, lambda m: None)
+    assert not list(d.glob("chunk_*.parquet"))
