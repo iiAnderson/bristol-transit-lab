@@ -165,7 +165,7 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
         road_lam: float, anpr: dict | None = None,
         trav_pm: pd.DataFrame | None = None) -> tuple[pd.DataFrame, pd.DataFrame, dict]:
     """Returns (hybrid link_speed, base link_speed, report). ``anpr`` (paths, obs,
-    signals) turns on signal delays calibrated to the ANPR calibration half."""
+    signals) turns on the ANPR layer fitted on the ANPR calibration half."""
     periods = fit.PERIODS
     out_periods = periods + ["AMPH"]
     seg = seg.copy()
@@ -205,38 +205,10 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
     r_main = {(k[0], k[1], k[2]): v for k, v in r.items() if k[3] == "main"}
     tgt = use.set_index("road")["kmh"]
     tgt = tgt[tgt.index.isin(la["road"])]
-    # Signal delays: alternate (a) the DfT level fit with the current delays and (b) the
-    # delay fit on the ANPR calibration half with the current speeds (IP labels 11–15);
-    # AM and other periods take the IP delay [MODELLED] until the ANPR hour convention is
-    # confirmed; SRN approaches carry no delay (WebTRIS measures SRN speeds directly).
-    delays = {"centre": 0.0, "urban": 0.0, "rural": 0.0}
     sig = anpr["signals"] if anpr else set()
-    la_d = None
-    rep["signals"] = {"enabled": bool(anpr), "iterations": []}
-    for it in range(3 if anpr else 1):
-        if anpr:
-            la_d = _delays_for(la, sig, delays, periods)
-        base = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False, delay_s=la_d)
-        lf = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False,
-                           road_lam=road_lam, delay_s=la_d)
-        if not anpr:
-            break
-        ls_ip = _assemble(seg, lf["g"], lf["m"], r, rho, level, srn, ["IP"], sig, None)
-        from . import signals as sg
-        cal = anpr["obs"][(anpr["obs"]["half"] == "calibration") & (anpr["obs"]["period"] == "IP")]
-        spd = ls_ip[["u", "v", "speed_kmh"]].merge(
-            seg[["u", "v", "length_m"]].drop_duplicates(["u", "v"]), on=["u", "v"])
-        area = seg[["u", "v", "area_type"]].drop_duplicates(["u", "v"]).rename(
-            columns={"area_type": "area"})
-        area["area"] = area["area"].replace({"buffer": "rural"})
-        paths = anpr["paths"][anpr["paths"]["half"] == "calibration"]
-        fitted = sg.fit_delays(paths, spd, area, sig, cal.set_index("link_id")["obs_s"],
-                               ["centre", "urban"])
-        delays = {"centre": fitted["centre"], "urban": fitted["urban"], "rural": fitted["urban"]}
-        rep["signals"]["iterations"].append({"it": it, "delays_s": dict(delays),
-                                             "g": dict(lf["g"])})
-    rep["signals"]["delays_s"] = delays
-    loro = fit.leave_one_road_out(la, tgt, r_main, rho, P, AREAS, delay_s=la_d)
+    base = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False)
+    lf = fit.fit_level(la, tgt, r_main, rho, P, AREAS, authority=False, road_lam=road_lam)
+    loro = fit.leave_one_road_out(la, tgt, r_main, rho, P, AREAS)
     e0, e1, el = base["rel_error"].abs(), lf["rel_error"].abs(), loro["rel_error"].abs()
     n_shape_cells = len(r) + 2 * len(AREAS) + 2          # AM/PM cells, class levels, OP/WE
     rep["base"] = {"g": base["g"], "n_params_fitted_to_dft": base["n_params"],
@@ -262,55 +234,103 @@ def run(seg: pd.DataFrame, trav: pd.DataFrame, wspeed: pd.DataFrame, wsites: pd.
                         ["lad", "ref", "coverage"]].round(3).to_dict("records")}
 
     # 6–7. assemble per-segment factors: the hybrid (with per-road multipliers on the
-    # measured roads) and the base alone, so validation can compare them
-    ls_by = {}
+    # measured roads) and the base alone, so validation can compare them. Then the ANPR
+    # layer (Robbie, 2026-10-09: "as close to ANPR as possible"): after the DfT fit, a
+    # speed multiplier k[area, period] and a delay per signalised approach d[area] on
+    # centre and urban non-SRN segments, fitted per variant on the ANPR calibration half.
+    # It is applied model-wide by area type: [CALIBRATED] on Bristol's links, a
+    # [MODELLED] transfer to other towns' centre and urban areas.
+    ls_by, before, layers = {}, {}, {}
     for variant, mults in (("hybrid", lf["m"]), ("base", {})):
-        ls_by[variant] = _assemble(seg, base["g"] if variant == "base" else lf["g"], mults,
-                                   r, rho, level, srn, out_periods, sig,
-                                   delays if anpr else None)
+        g_use = base["g"] if variant == "base" else lf["g"]
+        before[variant] = _assemble(seg, g_use, mults, r, rho, level, srn, out_periods)
+        if anpr:
+            layers[variant] = fit_anpr_layer(before[variant], seg, anpr, out_periods)
+            ls_by[variant] = _assemble(seg, g_use, mults, r, rho, level, srn, out_periods,
+                                       sig, layers[variant])
+        else:
+            ls_by[variant] = before[variant]
     ls = ls_by["hybrid"]
     ls_base = ls_by["base"]
     rep["median_factor"] = ls.groupby("period")["factor"].median().round(3).to_dict()
     if anpr:
-        rep["anpr"] = anpr_report(ls, ls_base, seg, anpr, delays)
+        rep["anpr_layer"] = {v: {"k": {"|".join(kk): round(x, 4) for kk, x in L["k"].items()},
+                                 "delay_s": {a: round(x, 2) for a, x in L["d"].items()},
+                                 "n_links": L["n_links"], "n_rows": L["n_rows"]}
+                             for v, L in layers.items()}
+        rep["anpr"] = anpr_report(ls_by, before, seg, anpr)
         rep["anpr_excluded_links"] = anpr.get("excluded", [])
+        # what the layer does to the DfT all-day fit (the two sources disagree on level)
+        pos = seg.index.get_indexer(la.index)
+        eff = {q: ls[ls["period"] == q]["speed_kmh"].to_numpy()[pos] / la["ff_kmh"].to_numpy()
+               for q in periods}
+        after = fit.allday_speed(la, eff, P).reindex(tgt.index)
+        err = (after / tgt - 1).rename("rel_error").reset_index()
+        err["lad"] = err["road"].str.split(":").str[0]
+        rep["dft_after_layer"] = {
+            "median_abs_rel_error": float(err["rel_error"].abs().median()),
+            "median_rel_error": float(err["rel_error"].median()),
+            "by_authority": err.groupby("lad")["rel_error"].agg(
+                n="size", median="median").round(4).reset_index().to_dict("records"),
+            "roads": err.round(4).to_dict("records")}
     return ls, ls_base, rep
 
 
-def _delays_for(la, sig, delays, periods):
-    is_sig = la["v"].isin(sig).to_numpy()
-    d = np.where(is_sig, la["area"].map(delays).fillna(0.0).to_numpy(), 0.0)
-    return {p: d for p in periods}
+LAYER_AREAS = ["centre", "urban"]
 
 
-def anpr_report(ls, ls_base, seg, anpr, delays) -> dict:
-    """Modelled ÷ observed on both ANPR halves, IP and the AM peak hour (both hour
-    conventions), for the hybrid and the base, with the fitted signal delays."""
+def _anpr_seg_info(seg):
+    info = seg[["u", "v", "area_type", "road_class"]].drop_duplicates(["u", "v"])
+    return pd.DataFrame({"u": info["u"], "v": info["v"],
+                         "area": info["area_type"].replace({"buffer": "rural"}),
+                         "srn": info["road_class"] == "srn"})
+
+
+def _anpr_components(L, seg, anpr, half, periods):
     from . import signals as sg
-    area = seg[["u", "v", "area_type"]].drop_duplicates(["u", "v"]).rename(
-        columns={"area_type": "area"})
-    area["area"] = area["area"].replace({"buffer": "rural"})
     lens = seg[["u", "v", "length_m"]].drop_duplicates(["u", "v"])
+    info = _anpr_seg_info(seg)
+    pth = anpr["paths"][anpr["paths"]["half"] == half].drop(columns=["length_m"], errors="ignore")
+    return {q: sg.link_components(
+        pth, L[L["period"] == q][["u", "v", "speed_kmh"]].merge(lens, on=["u", "v"]),
+        info, anpr["signals"], LAYER_AREAS) for q in periods}
+
+
+def fit_anpr_layer(ls0, seg, anpr, periods) -> dict:
+    from . import signals as sg
+    comp = _anpr_components(ls0, seg, anpr, "calibration", periods)
+    obs = anpr["obs"][anpr["obs"]["half"] == "calibration"]
+    return sg.fit_layer(comp, obs, LAYER_AREAS, periods)
+
+
+def anpr_report(ls_by, before, seg, anpr) -> dict:
+    """Modelled ÷ observed per period on both ANPR halves, hybrid and base, with the layer
+    and before it. Speeds in the link table already include the layer, so link times are
+    plain sums. PMPH (17:00–18:00 observed) is set against the modelled PM period."""
+    from . import signals as sg
     out = {}
-    for variant, L in (("hybrid", ls), ("base", ls_base)):
-        for per, obs_per in (("IP", "IP"), ("AMPH", "AMPH_if_start"), ("AMPH", "AMPH_if_end")):
-            # speeds in `ls` already include the delays on approaches, so no extra delay
-            spd = L[L["period"] == per][["u", "v", "speed_kmh"]].merge(lens, on=["u", "v"])
+    pairs = [("AM", "AM"), ("AMPH", "AMPH"), ("IP", "IP"), ("PM", "PM"), ("PM", "PMPH"),
+             ("OP", "OP"), ("WE", "WE")]
+    for stage, tables in (("", ls_by), ("|before", before)):
+        for variant, L in tables.items():
             for half in ("calibration", "validation"):
-                pth = anpr["paths"][anpr["paths"]["half"] == half]
-                t = sg.link_times(pth, spd, area, set(), {})
-                o = anpr["obs"][(anpr["obs"]["half"] == half) & (anpr["obs"]["period"] == obs_per)]
-                j = pd.concat([t.rename("m"), o.set_index("link_id")["obs_s"].rename("o")],
-                              axis=1, join="inner")
-                ratio = j["m"] / j["o"]
-                out[f"{variant}|{obs_per}|{half}"] = {
-                    "n": int(len(j)), "median_ratio": float(ratio.median()),
-                    "median_abs_rel_error": float((ratio - 1).abs().median())}
+                comp = _anpr_components(L, seg, anpr, half, sorted({m for m, _ in pairs}))
+                for per, obs_per in pairs:
+                    t = comp[per][["T_centre", "T_urban", "T_other"]].sum(axis=1)
+                    o = anpr["obs"][(anpr["obs"]["half"] == half)
+                                    & (anpr["obs"]["period"] == obs_per)]
+                    j = pd.concat([t.rename("m"), o.set_index("link_id")["obs_s"].rename("o")],
+                                  axis=1, join="inner")
+                    ratio = j["m"] / j["o"]
+                    out[f"{variant}|{obs_per}|{half}{stage}"] = {
+                        "n": int(len(j)), "median_ratio": float(ratio.median()),
+                        "median_abs_rel_error": float((ratio - 1).abs().median()),
+                        "share_within_15pct": float(((ratio - 1).abs() <= 0.15).mean())}
     return out
 
 
 def _assemble(seg, g_area, mults, r, rho, level, srn, periods, sig=frozenset(),
-              delays=None) -> pd.DataFrame:
+              layer=None) -> pd.DataFrame:
     area = seg["area_type"].replace({"buffer": "rural"}).to_numpy()
     road_key = seg["lad"].fillna("") + ":" + seg["ref"].fillna("")
     M = np.where(seg["road_class"] == "local_a", road_key.map(mults).fillna(1.0), 1.0)
@@ -337,19 +357,26 @@ def _assemble(seg, g_area, mults, r, rho, level, srn, periods, sig=frozenset(),
     rows = []
     ff = seg["ff"].to_numpy()
     L = seg["length_m"].to_numpy()
-    # Signal delay on approach segments (v is a signal node; not SRN), written into the
-    # segment speed: L / (L / v + d).
+    # ANPR layer on centre and urban non-SRN segments: speed × k[area, period], and a
+    # delay on signalised approaches (v is a signal node) written into the segment speed
+    # as L / (L / v + d).
     d = np.zeros(len(seg))
-    if delays:
-        approach = seg["v"].isin(sig).to_numpy() & ~is_srn
-        d = np.where(approach, pd.Series(area).map(delays).fillna(0.0).to_numpy(), 0.0)
+    adj = np.zeros(len(seg), dtype=bool)
+    if layer:
+        adj = np.isin(area, list(layer["d"])) & ~is_srn
+        approach = seg["v"].isin(sig).to_numpy() & adj
+        d = np.where(approach, pd.Series(area).map(layer["d"]).fillna(0.0).to_numpy(), 0.0)
     for per in periods:
         v = np.clip(ff * fac[per], 3.0, ff * 1.2)
+        k = np.ones(len(seg))
+        if layer:
+            k = np.where(adj, np.array([layer["k"].get((a, per), 1.0) for a in area]), 1.0)
+        v = v * k
         v_eff = np.where(d > 0, (L / 1000) / ((L / 1000) / v + d / 3600), v)
         rows.append(pd.DataFrame({"period": per, "way_id": seg["way_id"].to_numpy(),
                                   "u": seg["u"].to_numpy(), "v": seg["v"].to_numpy(),
                                   "speed_kmh": np.clip(v_eff, 1.0, None),
-                                  "factor": fac[per], "signal_delay_s": d,
+                                  "factor": fac[per], "anpr_k": k, "signal_delay_s": d,
                                   "source": src, "tag": "CALIBRATED"}))
     return pd.concat(rows, ignore_index=True)
 

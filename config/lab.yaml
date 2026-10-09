@@ -62,6 +62,12 @@ paths:
   avl: data/raw/avl
   progress_log: plans/P2.md            # halt records from the AVL fetcher go in its §9
 
+# Bristol ANPR journey times. The hourly stamp is taken to mark the END of its hour
+# (Robbie, 2026-10-09, on the profile evidence in sources.md "P2b round 2 findings";
+# not confirmed by Bristol City Council).
+anpr:
+  hour_stamp: end                      # "start" | "end"
+
 # Bus vehicle locations, BODS SIRI-VM (plans/P2.md A6, decided 2026-09-27).
 avl:
   timezone: Europe/London              # hours below are local; archive filenames are UTC

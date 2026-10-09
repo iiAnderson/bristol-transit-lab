@@ -7,10 +7,12 @@ Traffic-signal delays and the ANPR constraint (plans/P2.md §8 "Central bias").
   (L / (L / v + d)), so only OSRM's customise step changes.
 * ANPR links are routed once on free-flow speeds for their node paths; a link's modelled
   time in a period is Σ L / v over its segments plus the signal delays on the path.
-* The links are split into spatial blocks; delays d[area][period] are fitted on the
-  calibration half (least squares on log time), the other half validates.
-* IP uses hour labels 11–15 only, which lie inside 10:00–16:00 whether the ANPR stamp
-  marks the start or the end of its hour (the convention is unconfirmed).
+* The links are split into spatial blocks, balanced within each area type; the ANPR
+  layer — a speed multiplier k[area, period] and a delay per signalised approach
+  d[area], for centre and urban non-SRN segments — is fitted on the calibration half
+  (robust least squares on log modelled ÷ observed time); the other half validates.
+* The ANPR hourly stamp is taken to mark the **end** of its hour (adopted 2026-10-09 on
+  the profile evidence in sources.md; ``anpr.hour_stamp`` in config).
 """
 from __future__ import annotations
 
@@ -129,3 +131,123 @@ def anpr_obs_by_label(counts: list[Path], tz: str) -> pd.DataFrame:
     g = x.groupby(["link_id", "period"])
     return pd.DataFrame({"obs_s": g.apply(lambda d: np.average(d["journey_s"], weights=d["matches"])),
                          "hours": g.size()}).reset_index()
+
+
+PERIODS_ALL = ["AM", "AMPH", "IP", "PM", "PMPH", "OP", "WE"]
+
+
+def anpr_obs(counts: list[Path], tz: str, periods: dict[str, tuple[str, str]],
+             stamp: str = "end") -> pd.DataFrame:
+    """Observed link times (plate-match-weighted mean s) per model period. ``stamp`` says
+    whether the hourly timestamp marks the hour's "start" or "end". Neutral days as
+    before (Tue–Thu for weekday periods; Sat–Sun for WE; holiday windows excluded,
+    approximate). AMPH = 08:00–09:00, PMPH = 17:00–18:00 (diagnostic)."""
+    x = pd.concat([pd.read_parquet(f) for f in counts], ignore_index=True)
+    t = pd.to_datetime(x["t_ms"], unit="ms", utc=True)
+    if stamp == "end":
+        t = t - pd.Timedelta(hours=1)
+    elif stamp != "start":
+        raise ValueError(f"anpr hour stamp must be 'start' or 'end', not {stamp!r}")
+    t = t.dt.tz_convert(tz)
+    hol = ((t.dt.month == 8) | ((t.dt.month == 12) & (t.dt.day >= 18))
+           | ((t.dt.month == 1) & (t.dt.day <= 4)) | ((t.dt.month == 7) & (t.dt.day >= 22))
+           | ((t.dt.month == 9) & (t.dt.day <= 3)))
+    keep = (~hol & (x["matches"] > 0) & (x["journey_s"] > 0)).to_numpy()
+    x = x[keep].assign(h=t[keep].dt.hour.to_numpy(), wd=t[keep].dt.weekday.to_numpy())
+    hr = {k: (int(a[:2]), int(b[:2])) for k, (a, b) in periods.items()}
+    in_p = lambda k: x["h"].between(hr[k][0], hr[k][1] - 1)  # noqa: E731
+    x["period"] = np.select(
+        [x["wd"] >= 5, ~x["wd"].isin([1, 2, 3]), in_p("AM"), in_p("IP"), in_p("PM")],
+        ["WE", "drop", "AM", "IP", "PM"], "OP")
+    x = x[x["period"] != "drop"]
+    x = pd.concat([x, x[(x["period"] == "AM") & (x["h"] == 8)].assign(period="AMPH"),
+                   x[(x["period"] == "PM") & (x["h"] == 17)].assign(period="PMPH")])
+    g = x.groupby(["link_id", "period"])
+    return pd.DataFrame({"obs_s": g.apply(lambda d: np.average(d["journey_s"], weights=d["matches"])),
+                         "hours": g.size()}).reset_index()
+
+
+def link_area(paths: pd.DataFrame, seg_area: pd.DataFrame) -> pd.Series:
+    """link_id -> the area type carrying most of the link's length."""
+    p = paths.merge(seg_area, on=["u", "v"], how="left")
+    p["area"] = p["area"].fillna("rural")
+    return p.groupby(["link_id", "area"])["length_m"].sum().unstack(fill_value=0).idxmax(axis=1)
+
+
+def split_links_balanced(paths: pd.DataFrame, area: pd.Series, block_km: float,
+                         seed: int = 0) -> pd.Series:
+    """link_id -> 'calibration' | 'validation'. Whole spatial blocks go to one half; within
+    each area type the blocks are dealt in a seeded random order to whichever half has
+    fewer links so far, so both halves hold about half of each area type's links."""
+    m = paths.groupby("link_id")[["mlon", "mlat"]].first()
+    bx = np.floor(m["mlon"] * 111.32 * 0.623 / block_km).astype(int)
+    by = np.floor(m["mlat"] * 111.32 / block_km).astype(int)
+    key = area.reindex(m.index).fillna("rural") + "_" + bx.astype(str) + "_" + by.astype(str)
+    rng = np.random.default_rng(seed)
+    out: dict[str, str] = {}
+    for a in sorted(area.reindex(m.index).fillna("rural").unique()):
+        sizes = key[key.str.startswith(a + "_")].value_counts()
+        n = {"calibration": 0, "validation": 0}
+        for b in rng.permutation(sorted(sizes.index)):
+            h = "calibration" if n["calibration"] <= n["validation"] else "validation"
+            out[b] = h
+            n[h] += int(sizes[b])
+    return key.map(out)
+
+
+def link_components(paths: pd.DataFrame, speeds: pd.DataFrame, seg_info: pd.DataFrame,
+                    signals: set[int], areas: list[str]) -> pd.DataFrame:
+    """Per link: seconds on adjustable segments of each area (T_<area>), signalised
+    approaches there (S_<area>) and seconds elsewhere (T_other). Adjustable = not SRN.
+    speeds: u, v, speed_kmh, length_m; seg_info: u, v, area, srn (bool)."""
+    p = paths.merge(speeds, on=["u", "v"], how="left").merge(seg_info, on=["u", "v"], how="left")
+    p["t"] = p["length_m"] / (p["speed_kmh"] / 3.6)
+    adj = p["area"].isin(areas) & ~p["srn"].fillna(False).astype(bool)
+    p["sig"] = p["v"].isin(signals) & adj
+    out = pd.DataFrame(index=sorted(p["link_id"].unique()))
+    for a in areas:
+        m = adj & (p["area"] == a)
+        out[f"T_{a}"] = p[m].groupby("link_id")["t"].sum()
+        out[f"S_{a}"] = p[m].groupby("link_id")["sig"].sum()
+    out["T_other"] = p[~adj].groupby("link_id")["t"].sum()
+    miss = p.groupby("link_id")["t"].apply(lambda x: x.isna().mean())
+    return out.fillna(0.0)[miss.reindex(out.index) < 0.05]
+
+
+def layer_times(comp: pd.DataFrame, k: dict[str, float], d: dict[str, float]) -> pd.Series:
+    t = comp["T_other"].copy()
+    for a in k:
+        t = t + comp[f"T_{a}"] / k[a] + comp[f"S_{a}"] * d.get(a, 0.0)
+    return t
+
+
+def fit_layer(comp: dict[str, pd.DataFrame], obs: pd.DataFrame, areas: list[str],
+              periods: list[str]) -> dict:
+    """comp: period -> link components; obs: link_id, period, obs_s (calibration half).
+    Minimises a soft-L1 loss on log(modelled / observed) over link × period rows.
+    Returns {"k": {(area, period): k}, "d": {area: seconds}} with k in [0.3, 1.5], d ≥ 0."""
+    rows = []
+    for per in periods:
+        o = obs[obs["period"] == per].set_index("link_id")["obs_s"]
+        j = comp[per].join(o.rename("o"), how="inner")
+        rows.append(j.assign(pi=periods.index(per)))
+    J = pd.concat(rows)
+    na, npd = len(areas), len(periods)
+    T = np.stack([J[f"T_{a}"].to_numpy() for a in areas])
+    S = np.stack([J[f"S_{a}"].to_numpy() for a in areas])
+    pi = J["pi"].to_numpy()
+
+    def resid(x):
+        k = x[: na * npd].reshape(na, npd)
+        d = x[na * npd:]
+        t = J["T_other"].to_numpy() + sum(T[i] / k[i, pi] + S[i] * d[i] for i in range(na))
+        return np.log(t / J["o"].to_numpy())
+    x0 = np.r_[np.ones(na * npd), np.full(na, 5.0)]
+    lo = np.r_[np.full(na * npd, 0.3), np.zeros(na)]
+    hi = np.r_[np.full(na * npd, 1.5), np.full(na, 120.0)]
+    sol = least_squares(resid, x0, bounds=(lo, hi), loss="soft_l1", f_scale=0.3)
+    k = sol.x[: na * npd].reshape(na, npd)
+    return {"k": {(a, p): float(k[i, q]) for i, a in enumerate(areas)
+                  for q, p in enumerate(periods)},
+            "d": {a: float(sol.x[na * npd + i]) for i, a in enumerate(areas)},
+            "n_rows": int(len(J)), "n_links": int(J.index.nunique())}

@@ -17,6 +17,7 @@ Commands not yet built fail with a non-zero exit naming the phase that builds th
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import click
 
@@ -840,19 +841,23 @@ def congestion_calibrate(days: str | None) -> None:
     click.echo(f"  leave-one-road-out: median |err| {lo['median_abs_rel_error']:.3f}, p90 "
                f"{lo['p90_abs_rel_error']:.3f}, pass (<=15%): {lo['passes_15pct_median']}")
     click.echo(f"  median factor by period {rep['median_factor']}")
-    if rep.get("signals", {}).get("enabled"):
-        click.echo(f"  signal delays (s): {rep['signals']['delays_s']}")
+    if "anpr_layer" in rep:
+        click.echo(f"  ANPR layer (hybrid): {rep['anpr_layer']['hybrid']}")
         for k, v in rep["anpr"].items():
-            click.echo(f"  ANPR {k}: n {v['n']}, median modelled/observed {v['median_ratio']:.3f}, "
-                       f"median |err| {v['median_abs_rel_error']:.3f}")
+            if k.startswith("hybrid"):
+                click.echo(f"  ANPR {k}: n {v['n']}, modelled/observed {v['median_ratio']:.3f}, "
+                           f"median |err| {v['median_abs_rel_error']:.3f}")
+        da = rep["dft_after_layer"]
+        click.echo(f"  DfT all-day after the layer: median error {da['median_rel_error']:+.3f}, "
+                   f"median |err| {da['median_abs_rel_error']:.3f}; {da['by_authority']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
 @congestion.command("anpr-prep")
-@click.option("--block-km", default=1.5, show_default=True)
+@click.option("--block-km", default=1.0, show_default=True)
 def congestion_anpr_prep(block_km: float) -> None:
-    """ANPR constraint inputs: free-flow link paths, spatial calibration/validation split,
-    observed times (IP; AM peak hour under both hour conventions)."""
+    """ANPR inputs: free-flow link paths, a spatial calibration/validation split balanced
+    within each area type, observed times per period (hour stamp per config)."""
     import yaml
     from .congestion import signals as sg
     from .supply import osrm
@@ -866,18 +871,29 @@ def congestion_anpr_prep(block_km: float) -> None:
     runrecord.write(cfg, rec)
     with osrm.Server(base) as srv:
         paths = sg.link_paths(an / "journey_links.geojson", srv.port)
-    split = sg.split_links(paths, block_km)
+    import pandas as pd
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    periods = {k: tuple(ps[f"periods.{k}"].split("-")) for k in ("AM", "IP", "PM")}
+    seg = pd.read_parquet(d / "segments_annotated.parquet",
+                          columns=["u", "v", "area_type", "length_m"]).drop_duplicates(["u", "v"])
+    seg_area = seg.rename(columns={"area_type": "area"})
+    seg_area["area"] = seg_area["area"].replace({"buffer": "rural"})
+    area = sg.link_area(paths, seg_area)
+    split = sg.split_links_balanced(paths, area, block_km)
     paths["half"] = paths["link_id"].map(split)
-    obs = sg.anpr_obs_by_label([an / "journey_counts_2023.parquet",
-                                an / "journey_counts_2024.parquet"], raw["avl"]["timezone"])
+    stamp = raw["anpr"]["hour_stamp"]
+    obs = sg.anpr_obs([an / "journey_counts_2023.parquet", an / "journey_counts_2024.parquet"],
+                      raw["avl"]["timezone"], periods, stamp)
     obs["half"] = obs["link_id"].map(split)
+    obs["area"] = obs["link_id"].map(area)
     sig = sg.signal_nodes(cfg.root / raw["osm"]["clip"])
     paths.to_parquet(d / "anpr_paths.parquet")
     obs.to_parquet(d / "anpr_obs.parquet")
-    import pandas as pd
     pd.DataFrame({"node": sorted(sig)}).to_parquet(d / "signal_nodes.parquet")
-    res = {"links_routed": int(paths["link_id"].nunique()),
+    res = {"links_routed": int(paths["link_id"].nunique()), "hour_stamp": stamp,
            "by_half": split.value_counts().to_dict(),
+           "links_with_obs_by_area_half": obs[obs["period"] == "IP"]
+           .groupby(["area", "half"]).size().to_dict(),
            "obs_by_period": obs.groupby(["period", "half"]).size().to_dict(),
            "signal_nodes": len(sig), "block_km": block_km}
     rec["result"] = {k: {str(kk): vv for kk, vv in v.items()} if isinstance(v, dict) else v
@@ -892,6 +908,7 @@ def congestion_validate(days: str | None) -> None:
     """P2b held-out validation (spatially blocked bus speeds; ANPR 2023–24), hybrid vs base,
     against the pre-registered rule."""
     import json
+    import numpy as np
     import pandas as pd
     import yaml
     from .congestion import calibrate as cal, validate as va
@@ -935,12 +952,14 @@ def congestion_validate(days: str | None) -> None:
             n="size", median_abs_half_diff="median").reset_index()
         cor = va.corridors(bus, seg)
         cor_sum = {v: va.summarise(g["rel_error"]) for v, g in cor.groupby("variant")}
-        # ANPR validation half (the calibration half fed the signal-delay fit); IP uses hour
-        # labels 11–15 (convention-proof); the AM peak hour is shown under both conventions
+        # ANPR validation half (the calibration half fed the ANPR layer); the rule's ANPR
+        # figure is the mean over the six periods of the median |error|
         an = rep.get("anpr", {})
-        anpr_sum = {v: {"median_abs_rel_error": an[f"{v}|IP|validation"]["median_abs_rel_error"],
-                        "median_ratio": an[f"{v}|IP|validation"]["median_ratio"],
-                        "n": an[f"{v}|IP|validation"]["n"]} for v in ("hybrid", "base")}
+        vper = ("AM", "AMPH", "IP", "PM", "OP", "WE")
+        anpr_sum = {v: {"median_abs_rel_error": float(np.mean(
+                            [an[f"{v}|{q}|validation"]["median_abs_rel_error"] for q in vper])),
+                        "by_period": {q: an[f"{v}|{q}|validation"] for q in vper}}
+                    for v in ("hybrid", "base")}
         excluded = rep.get("anpr_excluded_links", [])
         # pre-registered rule
         lo = rep["leave_one_road_out"]["median_abs_rel_error"]
@@ -962,7 +981,8 @@ def congestion_validate(days: str | None) -> None:
              "bus_corridor": cor_sum, "noise_floor_by_class_area": nf_by.to_dict("records"),
              "noise_floor_overall": float(nf["rel_diff"].median()),
              "anpr_validation_half": anpr_sum, "anpr_all": an,
-             "signals": rep.get("signals"), "anpr_excluded_links": excluded},
+             "anpr_layer": rep.get("anpr_layer"), "dft_after_layer": rep.get("dft_after_layer"),
+             "anpr_excluded_links": excluded},
             indent=1, default=str))
     except Exception:
         runrecord.finish(cfg, rec, "failed")
@@ -970,7 +990,7 @@ def congestion_validate(days: str | None) -> None:
     rec["result"] = {"days": use_days, "rule": rule, "bus_cell": bus_sum,
                      "bus_corridor": cor_sum, "noise_floor_overall": float(nf["rel_diff"].median()),
                      "noise_floor_by_class_area": nf_by.round(4).to_dict("records"),
-                     "anpr_validation_half": anpr_sum, "signals": rep.get("signals")}
+                     "anpr_validation_half": anpr_sum, "anpr_layer": rep.get("anpr_layer")}
     click.echo(json.dumps(rec["result"], indent=1, default=str))
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
@@ -1547,7 +1567,9 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
 
 @cli.command("spotchecks")
 @click.option("--slots", default="AM=08:15,IP=13:20,EVE=20:40", show_default=True)
-def spotchecks_cmd(slots: str) -> None:
+@click.option("--walk-kmh", type=float, default=None,
+              help="Diagnostic: override routing.walk_speed_kmh for this run only.")
+def spotchecks_cmd(slots: str, walk_kmh: float | None) -> None:
     """C4: model PT times for the spot-check journeys at three departure slots; CSV with
     blank observed columns for both pairings, and a README."""
     import datetime as dt
@@ -1563,6 +1585,8 @@ def spotchecks_cmd(slots: str) -> None:
     day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
     sc = pd.read_csv(cfg.root / "config" / "spotchecks_pt.csv").drop(columns=["depart_local"])
     slot = dict(x.split("=") for x in slots.split(","))
+    if walk_kmh is not None:
+        ps["routing.walk_speed_kmh"] = walk_kmh
     rec = runrecord.build(cfg, command="spotchecks")
     runrecord.write(cfg, rec)
     net = TransportNetwork(str(cfg.root / raw["osm"]["clip"]),
@@ -1594,9 +1618,81 @@ def spotchecks_cmd(slots: str) -> None:
     out = cfg.runs_dir / rec["run_id"] / "pt_spotchecks.csv"
     out_df.to_csv(out, index=False)
     (out.parent / "README.md").write_text(PT_SPOT_README)
-    rec["result"] = {"csv": str(out), "rows": len(out_df), "slots": slot}
+    rec["result"] = {"csv": str(out), "rows": len(out_df), "slots": slot,
+                     "walk_speed_kmh": ps["routing.walk_speed_kmh"],
+                     "walk_speed_overridden": walk_kmh is not None}
     click.echo(out_df[["id", "slot", "origin", "destination", "model_best_min", "model_p50_min"]]
                .to_string(index=False))
+    click.echo(f"wrote {out}")
+    runrecord.finish(cfg, rec, "ok")
+
+
+@cli.command("spotchecks-eval")
+@click.argument("filled", type=click.Path(exists=True))
+@click.option("--model", "model_csv", type=click.Path(exists=True), default=None,
+              help="Take the model columns from another `lab spotchecks` CSV (same rows).")
+def spotchecks_eval(filled: str, model_csv: str | None) -> None:
+    """C4: score a filled PT spot-check CSV. ``observed_elapsed_min`` holds
+    "Leave H:MM, Arrive H:MM. N" (12-hour clock, resolved against the slot). Pairing A:
+    planner duration (arrive − leave) vs model_best, ±15%. Pairing B: elapsed from the
+    slot time (arrive − depart_local) within [p25, p75] or ±15% of p50. A row passes if
+    either does; acceptance is ≥ 16 of 20 in AM and in IP (EVE is diagnostic)."""
+    import re
+    import pandas as pd
+    cfg = LabConfig.load()
+    r = pd.read_csv(filled)
+    mcols = ["model_best_min", "model_p25_min", "model_p50_min", "model_p75_min"]
+    if model_csv:
+        m = pd.read_csv(model_csv)[["id", "slot", *mcols]]
+        r = r.drop(columns=mcols).merge(m, on=["id", "slot"], validate="1:1")
+
+    def parse(row):
+        g = re.match(r"\s*Leave (\d+):(\d+), Arrive (\d+):(\d+)\.\s*(\d+)", str(row["observed_elapsed_min"]))
+        if not g:
+            raise click.ClickException(f"row {row['id']} {row['slot']}: cannot read "
+                                       f"{row['observed_elapsed_min']!r}")
+        lh, lm, ah, am, stated = map(int, g.groups())
+        dh, dm = map(int, row["depart_local"].split(":"))
+        dep = dh * 60 + dm
+
+        def clock(h, mi):                      # 12-hour clock → first time at/after the slot
+            t = (h % 12) * 60 + mi
+            while t < dep:
+                t += 720
+            return t
+        leave = clock(lh, lm)
+        arrive = clock(ah, am)
+        if arrive < leave:
+            arrive += 720
+        return pd.Series({"planner_duration_min": arrive - leave, "stated_duration_min": stated,
+                          "elapsed_from_slot_min": arrive - dep})
+    x = pd.concat([r, r.apply(parse, axis=1)], axis=1)
+    x["a_ratio"] = x["planner_duration_min"] / x["model_best_min"]
+    x["b_ratio_p50"] = x["elapsed_from_slot_min"] / x["model_p50_min"]
+    x["pass_a"] = (x["a_ratio"] - 1).abs() <= 0.15
+    x["pass_b"] = (x["elapsed_from_slot_min"].between(x["model_p25_min"], x["model_p75_min"])
+                   | ((x["b_ratio_p50"] - 1).abs() <= 0.15))
+    x["pass"] = x["pass_a"] | x["pass_b"]
+    x["duration_mismatch"] = x["planner_duration_min"] != x["stated_duration_min"]
+    rec = runrecord.build(cfg, command="spotchecks-eval", inputs=[
+        {"name": f, "sha256": params.file_hash(Path(f))} for f in [filled, model_csv] if f])
+    runrecord.write(cfg, rec)
+    out = cfg.runs_dir / rec["run_id"] / "pt_spotchecks_scored.csv"
+    x.to_csv(out, index=False)
+    summ = x.groupby("slot").agg(rows=("pass", "size"), pass_a=("pass_a", "sum"),
+                                 pass_b=("pass_b", "sum"), passing=("pass", "sum"),
+                                 median_a_ratio=("a_ratio", "median"),
+                                 median_b_ratio=("b_ratio_p50", "median")).round(3)
+    acc = {s_: bool(summ.loc[s_, "passing"] >= 16) for s_ in ("AM", "IP") if s_ in summ.index}
+    rec["result"] = {"csv": str(out), "summary": summ.reset_index().to_dict("records"),
+                     "acceptance_16_of_20": acc,
+                     "failures": x[~x["pass"] & (x["slot"] != "EVE")][
+                         ["id", "slot", "origin", "destination"]].to_dict("records"),
+                     "stated_duration_differs_from_clock_times":
+                         x[x["duration_mismatch"]][["id", "slot", "observed_elapsed_min"]]
+                         .to_dict("records")}
+    click.echo(summ.to_string())
+    click.echo(f"acceptance (>= 16 of 20): {acc}")
     click.echo(f"wrote {out}")
     runrecord.finish(cfg, rec, "ok")
 
@@ -1604,44 +1700,56 @@ def spotchecks_cmd(slots: str) -> None:
 @cli.command("spotchecks-car")
 @click.option("--n", "n_links", default=20, show_default=True)
 def spotchecks_car(n_links: int) -> None:
-    """Car spot checks from held-out ANPR routes (validation half): the n links whose
-    routed length best matches the ANPR path; modelled vs observed, IP and AM peak hour
-    (both hour conventions). Pass: within ±15% on at least 16 of 20."""
+    """Car spot checks from held-out ANPR routes (validation half): the n links with
+    observations whose routed length best matches the ANPR path. Modelled time = OSRM
+    route on the calibrated period speeds (what the car skims use, turn penalties
+    included) vs observed, IP and the AM peak hour. Pass: ≥ 16 of 20 within ±15%."""
     import pandas as pd
-    from .congestion import signals as sg
+    import yaml
+    from .congestion import validate as va
+    from .supply import osrm
     cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
     d = cfg.root / "data" / "interim" / "congestion"
     anpr = _anpr_inputs(cfg)
     if anpr is None:
         raise click.ClickException("run `lab congestion anpr-prep` first")
-    ls = pd.read_parquet(d / "link_speed.parquet")
-    seg = pd.read_parquet(d / "segments_annotated.parquet", columns=["u", "v", "length_m", "area_type"])
-    lens = seg[["u", "v", "length_m"]].drop_duplicates(["u", "v"])
-    area = seg[["u", "v", "area_type"]].drop_duplicates(["u", "v"]).rename(columns={"area_type": "area"})
+    obs = anpr["obs"]
     val = anpr["paths"][anpr["paths"]["half"] == "validation"]
+    has = set(obs[obs["period"] == "IP"]["link_id"]) & set(obs[obs["period"] == "AMPH"]["link_id"])
+    val = val[val["link_id"].isin(has)]
     fit_q = (val.groupby("link_id")["route_m"].first() / val.groupby("link_id")["link_m"].first() - 1).abs()
-    pick = fit_q.sort_values().head(n_links).index
+    pick = set(fit_q.sort_values().head(n_links).index)
+    rec = runrecord.build(cfg, command="spotchecks-car", inputs=[
+        {"name": str(d / "osrm_speeds" / f"speeds_{q}.csv"),
+         "sha256": params.file_hash(d / "osrm_speeds" / f"speeds_{q}.csv")} for q in ("IP", "AMPH")])
+    runrecord.write(cfg, rec)
     rows = []
-    for per, obs_per in (("IP", "IP"), ("AMPH", "AMPH_if_start"), ("AMPH", "AMPH_if_end")):
-        spd = ls[ls["period"] == per][["u", "v", "speed_kmh"]].merge(lens, on=["u", "v"])
-        t = sg.link_times(val[val["link_id"].isin(pick)], spd, area, set(), {})
-        o = anpr["obs"][anpr["obs"]["period"] == obs_per].set_index("link_id")["obs_s"]
-        j = pd.concat([t.rename("model_s"), o.rename("obs_s")], axis=1, join="inner")
-        j["comparison"] = obs_per
-        rows.append(j.reset_index())
+    try:
+        for per in ("IP", "AMPH"):
+            ds = va.period_dataset(cfg.root / raw["osm"]["osrm_base"], d / "osrm_speeds" / f"speeds_{per}.csv",
+                                   cfg.root / "data" / "interim" / "osrm" / f"hybrid_{per}")
+            with osrm.Server(ds) as srv:
+                m = va.anpr_modelled(cfg.root / "data/raw/bristol_anpr/journey_links.geojson", srv.port)
+            m["link_id"] = m["link_id"].astype(obs["link_id"].dtype)
+            j = m[m["link_id"].isin(pick)].merge(
+                obs[obs["period"] == per][["link_id", "obs_s", "area"]], on="link_id")
+            rows.append(j.assign(period=per).rename(columns={"mod_s": "model_s"}))
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
     res = pd.concat(rows)
     res["rel_error"] = res["model_s"] / res["obs_s"] - 1
     res["within_15pct"] = res["rel_error"].abs() <= 0.15
-    rec = runrecord.build(cfg, command="spotchecks-car")
-    runrecord.write(cfg, rec)
     out = cfg.runs_dir / rec["run_id"] / "car_spotchecks_anpr.csv"
-    res.merge(fit_q.rename("route_len_mismatch"), left_on="link_id", right_index=True) \
-        .to_csv(out, index=False)
-    summ = res.groupby("comparison").agg(n=("within_15pct", "size"), passing=("within_15pct", "sum"),
-                                         median_abs_err=("rel_error", lambda e: e.abs().median()))
-    rec["result"] = {"csv": str(out), "links": int(len(pick)),
+    res.to_csv(out, index=False)
+    summ = res.groupby("period").agg(n=("within_15pct", "size"), passing=("within_15pct", "sum"),
+                                     median_ratio=("rel_error", lambda e: 1 + e.median()),
+                                     median_abs_err=("rel_error", lambda e: e.abs().median()))
+    rec["result"] = {"csv": str(out), "links": len(pick),
                      "summary": summ.round(3).reset_index().to_dict("records"),
-                     "pass_rule": ">= 16 of 20 within ±15%"}
+                     "pass_rule": ">= 16 of 20 within ±15%",
+                     "passes": bool((summ["passing"] >= 16).all())}
     click.echo(summ.round(3).to_string())
     click.echo(f"wrote {out}")
     runrecord.finish(cfg, rec, "ok")

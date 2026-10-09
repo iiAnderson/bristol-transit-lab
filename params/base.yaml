@@ -337,10 +337,19 @@ routing:
       r5py's default; r5r's default is 3, which changed p50 times on the D7 comparison.
       8 is effectively unlimited for this network, so the router, not a cap, decides.
   walk_speed_kmh:
-    value: 3.6
+    value: 4.8
     unit: km/h
-    tag: PLACEHOLDER
-    note: R5 default (1 m/s) in both engines; to be sourced (e.g. TAG / NTS) before published output
+    tag: SOURCED
+    source: >-
+      DfT Journey Time Statistics: Notes and Definitions, journey-time calculation
+      parameters: "Walking speed on road/path network of 4.8km/h."
+      https://assets.publishing.service.gov.uk/media/5dfa46f2ed915d54ab87c859/notes-and-definitions.pdf
+      (checked 2026-10-09). TfL's "Assessing transport connectivity in London" assumes the
+      same 4.8 kph for PTAL and public-transport access times.
+    note: >-
+      Robbie, 2026-10-09. Replaces R5's default 3.6 km/h, which made the model 5–10% slower
+      than journey planners in the PT spot checks (a 1.5 km walk: planner 19 min, model 25
+      at 3.6 km/h, 19 at 4.8 km/h).
   cycle_speed_kmh:
     value: 12.0
     unit: km/h
