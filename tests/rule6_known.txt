@@ -1,0 +1,18 @@
+# Rule 6 findings in P2 code, found when the test was written (2026-10-09).
+# Reported at the P3a stop; fix or accept each, then delete its line. path|term
+src/lab/cli.py|Bristol
+src/lab/congestion/annotate.py|Bristol
+src/lab/congestion/annotate.py|Clevedon
+src/lab/congestion/annotate.py|Newport
+src/lab/congestion/annotate.py|Portishead
+src/lab/congestion/annotate.py|Thornbury
+src/lab/congestion/annotate.py|Weston-super-Mare
+src/lab/congestion/annotate.py|Yate
+src/lab/congestion/anpr.py|Bristol
+src/lab/congestion/avl_speeds.py|Metrobus
+src/lab/congestion/calibrate.py|Bristol
+src/lab/congestion/road_class.py|Newport
+src/lab/congestion/validate.py|Bristol
+src/lab/congestion/webtris.py|Almondsbury
+src/lab/gapmap.py|Bristol
+src/lab/supply/bus_variants.py|Bristol

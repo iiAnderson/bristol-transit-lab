@@ -1,0 +1,285 @@
+# Place and line names the rule 6 test looks for in src/ (CLAUDE.md rule 6).
+# Generated 2026-10-09 from config/lab.yaml (centres, authorities), the B2026 rail GTFS
+# station names and the ONS built-up areas in the clip box; add to it freely.
+[names]
+Abbots Leigh
+Acton Turville
+Almondsbury
+Alveston
+Alvington
+Amberley (Stroud)
+Ashley Down
+Atworth
+Avoncliff
+Avonmouth
+Axbridge
+Backwell
+Badminton
+Banwell
+Barrow Gurney
+Bath
+Bath Spa
+Bath and North East Somerset
+Bathampton
+Batheaston
+Bathford
+Beachley
+Beckington
+Bedminster
+Berkeley
+Berrow and Brean
+Beverston
+Biddestone
+Bishop Sutton
+Bitton
+Blagdon
+Bleadon
+Box (Stroud)
+Box (Wiltshire)
+Brabazon
+Bradford-on-Avon
+Bradley Stoke
+Brent Knoll
+Bristol
+Bristol Parkway
+Bristol Temple Meads
+Broadstreet Common
+Buckland Dinham
+Burnham-on-Sea
+Caer-went
+Caerleon
+Caldicot
+Cambridge Batch
+Cardiff
+Castleton (Newport)
+Charfield
+Cheddar
+Chepstow
+Chew Magna
+Chew Stoke
+Chilcompton
+Chipping Sodbury
+Churchill (North Somerset)
+Clapton
+Clapton in Gordano
+Cleeve
+Clevedon
+Clifton
+Clifton Down
+Clutton
+Coalpit Heath
+Cocklake
+Colerne
+Compton Martin
+Congresbury
+Corsham
+Corston (Bath and North East Somerset)
+Cross
+Cwmbrân
+Dilton Marsh
+Downside
+Draycott
+Dundry
+Dursley
+East Brent
+East Harptree
+Easter Compton
+Engine Common
+Failand
+Falfield
+Farmborough
+Farrington Gurney
+Felton (North Somerset)
+Filton
+Filton Abbey Wood
+Flax Bourton
+Frampton Cotterell and Winterbourne
+Freshford
+Hallatrow
+Hambrook (South Gloucestershire)
+Hawkesbury Upton
+Heath End
+Henbury
+High Littleton
+Hillesley
+Holcombe (Mendip)
+Holt (Wiltshire)
+Horsley (Stroud)
+Hutton (North Somerset)
+Iron Acton
+Kewstoke
+Keynsham
+Kingsdown
+Kingswood (Stroud)
+Kingswood and Fishponds
+Langstone
+Lawrence Hill
+Leigh Woods
+Limpley Stoke
+Llandevaud
+Llandevenny
+Llangibby
+Llanwern
+Locking
+Long Ashton
+Lower Weare
+Lower Wraxall
+Luckington
+Lympsham
+Marsh Common
+Marshfield (Newport)
+Marshfield (South Gloucestershire)
+Metrobus
+Midsomer Norton
+Monkton Combe
+Monmouthshire
+Montpelier
+Nailsea
+Nailsea & Backwell
+Nailsworth
+Neston (Wiltshire)
+Newport
+Newport (Newport)
+Newport (South Wales)
+Newton St Loe
+North Bradley
+North Nibley
+North Somerset
+Norton St Philip
+Nympsfield
+Old Sodbury
+Oldbury Naite
+Oldbury-on-Severn
+Oldfield Park
+Olveston
+Parc-Seymour
+Parson Street
+Patchway
+Paulton
+Peasedown St John
+Pensford
+Pilning
+Ponthir
+Pontypool
+Portishead
+Portskewett
+Portway Park and Ride
+Pucklechurch
+Pye Corner
+Radstock
+Rangeworthy
+Redhill (North Somerset)
+Redland
+Risca
+Rogerstone
+Rogiet
+Rooks Bridge
+Rudgeway
+Rudloe
+Saltford
+Sea Mills
+Severn Beach
+Severn Tunnel Junction
+Sherston
+Shipham
+Shirehampton
+Shirenewton
+South Gloucestershire
+Southwick (Wiltshire)
+St Andrews Road
+St Arvans
+Stapleton Road
+Stoke Gifford
+Stone (Stroud)
+Stone-edge Batch
+Stratton-on-the-Fosse
+Sudbrook
+Temple Cloud
+Temple Meads
+Thornbury
+Tickenham
+Timsbury (Bath and North East Somerset)
+Tintern
+Tockington
+Tormarton
+Tortworth Green
+Totterdown
+Townwell
+Trowbridge
+Tutshill and Sedbury
+Tytherington
+Ubley
+Underwood
+Undy and Magor
+Upper Castle Combe
+Upthorpe (Stroud)
+Upton Cheyney
+Weare
+Wellow (Bath and North East Somerset)
+West Hill (North Somerset)
+West Kington
+West Wick
+Westbury (Wiltshire)
+Westerleigh
+Weston Milton
+Weston-super-Mare
+Westonbirt
+Westwood
+Whitchurch (Bath and North East Somerset)
+Whiteshill
+Wick (South Gloucestershire)
+Wickwar
+Wiltshire
+Winford (North Somerset)
+Winscombe and Sandford
+Winsley
+Woodcroft
+Woolaston
+Worle
+Wotton-under-Edge
+Wrington
+Yate
+Yatton
+[station_codes]
+ASD
+AVF
+AVN
+BMT
+BOA
+BPW
+BRI
+BTH
+CDT
+CFN
+CPW
+FFD
+FIT
+HENBURY
+KYN
+LWH
+MTP
+NLS
+NRHFILT
+NWP
+OLF
+PILL
+PILNING
+PRI
+PRTSHD
+PSN
+PWY
+PYE
+RDA
+ROR
+SAR
+SHH
+SML
+SRD
+STJ
+SVB
+TRO
+WNM
+WOR
+WSM
+YAE
+YAT
