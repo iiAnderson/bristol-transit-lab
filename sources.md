@@ -655,10 +655,19 @@ Working plan and progress log: `plans/P2.md`.
 | Dataset | URL | Accessed | Licence | Version / notes |
 |---|---|---|---|---|
 | ONS Built Up Areas (December 2022) Boundaries GB BGG | https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/BUA_2022_GB/FeatureServer/0 (ArcGIS item `ad30b234308f4b02b4bb9b0f4766f7bb`) | 2026-10-09 | OGL v3 (ONS geography licence) | 206 built-up areas intersecting the box −3.1, 51.25, −2.2, 51.7, saved as `data/raw/ons_geo/bua22_bbox.geojson` (sha256 `28b7f104c7610db7…`). Defines the scope of the ANPR layer: the 13 areas that touch "Bristol" (E63005057) directly or through one another |
+| ONS LSOA (2021) to Electoral Ward (2025) to LAD (2025) Best Fit Lookup in EW (V2) | https://services1.arcgis.com/ESMARspQHYMw9BZ9/arcgis/rest/services/LSOA21_WD25_LAD25_EW_LU_v2/FeatureServer/0 (ArcGIS item `f29a49574cc84f6d8e6e59ce2d8efb18`) | 2026-10-09 | OGL v3 | 581 LSOAs of Bristol, South Gloucestershire and North Somerset → 97 wards (`data/raw/ons_geo/lsoa21_wd25_scope_lads.csv`, sha256 `8c4b743cf5672a55…`); used only to list the ANPR layer's scope by ward for review |
 | DfT Journey Time Statistics: Notes and Definitions | https://assets.publishing.service.gov.uk/media/5dfa46f2ed915d54ab87c859/notes-and-definitions.pdf | 2026-10-09 | OGL v3 | "Walking speed on road/path network of 4.8km/h"; cycling 16.0 km/h on A, B, minor roads and local streets. Source of `routing.walk_speed_kmh` and `routing.cycle_speed_kmh` |
 | TfL, Assessing transport connectivity in London | https://content.tfl.gov.uk/connectivity-assessment-guide.pdf | 2026-10-09 | © TfL (cited, not redistributed) | "A walking speed of 4.8 kph is assumed" (PTAL and access times); corroborates the DfT figure |
 | G-BATS3 Demand Model Report (South Bristol Link) | https://travelwest.info/app/uploads/2020/05/23.-GBATS-3-Demand-Model-Report.pdf | 2026-10-09 | © West of England authorities (cited) | §2.22: car GC = Vwk·A + T + …, "Vwk is the weight applied to walking time (assumed 0 currently)". No parking search or terminal-time minutes |
 | TAG unit M2.1 (Nov 2025) and M5.1 (Jan 2014) | https://assets.publishing.service.gov.uk/media/693bf693adb5707d9f33d6a0/tag-unit-m21-variable-demand-modelling.pdf ; https://assets.publishing.service.gov.uk/media/5fbfd49ee90e077edf112801/tag-m5-1-modelling-parking-and-park-and-ride.pdf | 2026-10-09 | OGL v3 | Define walk to/from the car, parking search and egress time as GC terms; give no default minutes |
+
+**Accessibility is sensitive to walking speed.** With walking at 3.6 km/h (R5's default)
+the median core output area reaches 10,000 jobs within 30 minutes and 53,610 within 45
+by public transport in the AM peak hour; at 4.8 km/h (DfT Journey Time Statistics) it is
+17,288 and 78,630 — up 73% and 47%. Edge output areas: 5,200 / 21,610 → 10,715 / 29,890.
+The rank correlation with DfT's Connectivity Metric (employment, PT) rose from 0.921 to
+0.947 (OA) and 0.930 to 0.952 (LSOA). Every accessibility figure quoted from this model
+must state the walk speed; all current outputs use 4.8 km/h.
 
 **Car terminal times cannot be sourced.** Neither TAG nor the local model report gives
 parking-search or car-access minutes, so `car.parking_search_min` and

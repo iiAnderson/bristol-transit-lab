@@ -1,0 +1,8 @@
+id,slot,class,reason
+4,AM,comparison_artefact,"Legal itinerary the planner omitted: a 10-minute walk to Cater Road Roundabout for The Big Lemon 100 (08:38, 12 min to Temple Gate); the planner offers only the 76"
+8,AM,comparison_artefact,"Legal itinerary the planner omitted: 515 then The Big Lemon 100 from Cater Road Roundabout (08:38); the planner offers the m1 (46-minute ride at this hour)"
+15,AM,model_error,"Egress walk at Bath Spa: buses set down at Lyncombe Hill behind the station and passengers use the rear entrance; the model's walk network goes round to the front (about 750 m, 9 min)"
+17,AM,comparison_artefact,"Legal itinerary the planner omitted: direct X5 (08:50, 29 min) then a 17-minute walk; the planner changes to the X6 to avoid the walk"
+19,AM,comparison_artefact,"Endpoint: the planner's 'Caldicot town centre' starts at the station (leave 08:30 = the 08:30 train); the spot-check point is in the town centre, a 13-minute walk away, so the model misses that train"
+18,IP,model_error,"Same bus as the planner (Newport Bus 19, 13:28, 9 min). The model walks 6 min (480 m) from Friars Walk stand 2 to a point 147 m away: walk-network detour at the bus station; plus 2 min more at the origin"
+19,IP,comparison_artefact,"Endpoint: as AM — the planner starts at Caldicot station (leave 13:27 = the 13:27 train)"

@@ -307,6 +307,12 @@ ops:
   P3 starts, check how r5r's `expanded_travel_time_matrix()` handles them and set
   `draws_per_minute` deliberately (a tagged parameter), so scenario PT skims are
   comparable with the timetable-based baseline.
+- *Added at the end of P2:* the baseline bus GTFS holds **copies** of trips that carry
+  pick-up or set-down restrictions (976 source trips written as 4,727 copies; R5 ignores
+  the GTFS flags, §7.1). `trips.txt` has an `original_trip_id` column. The generator and
+  every scenario op must treat a source trip and its copies as one vehicle journey:
+  modify, remove and re-time by `original_trip_id`, and never derive frequencies or
+  headways from `trip_id` counts.
 - Validate every op: stops within 50 m of the alignment, alignment within the extent,
   headways positive, `route_id` exists for modify/remove. Fail loudly.
 - `spec_hash` = hash of the YAML plus referenced files, stored on `scenario`.
@@ -532,6 +538,10 @@ P¹_m = P⁰_m · exp(λ · ΔGC_m) / Σ_k P⁰_k · exp(λ · ΔGC_k),   ΔGC_m
 - `load_factor = pax_per_hour / (vehicles_per_hour × vehicle.capacity)`; flag > 0.8
   [MODELLED threshold].
 - No crowding feedback into GC in v1 (see §11).
+- *Added at the end of P2:* `vehicles_per_hour`, vehicle-hours, vehicle-km and line loads
+  count vehicle journeys by `original_trip_id` (`gtfs_bods.trips_per_route`), not
+  `trip_id`: the restriction copies of one trip are one vehicle, and boardings assigned
+  to different copies of a trip are summed onto it.
 
 ### 7.5 Optional: AequilibraE
 

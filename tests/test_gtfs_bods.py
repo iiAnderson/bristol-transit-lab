@@ -33,8 +33,8 @@ def gtfs(tmp_path, name, trips, calendar=None, calendar_dates=()):
                      + [[r, sv, t, "", 0] for t, r, sv, _ in trips],
         "stop_times.txt": [["trip_id", "arrival_time", "departure_time", "stop_id",
                             "stop_sequence", "pickup_type", "drop_off_type"]]
-                          + [[t, tm, tm, s, i + 1, 0, 0]
-                             for t, _, _, calls in trips for i, (s, tm) in enumerate(calls)],
+                          + [[t, c[1], c[1], c[0], i + 1, *(c[2:] or (0, 0))]
+                             for t, _, _, calls in trips for i, c in enumerate(calls)],
     }
     p = tmp_path / f"{name}.zip"
     with zipfile.ZipFile(p, "w") as z:
@@ -162,3 +162,21 @@ def test_split_restricted_keeps_plain_trips_whole_and_caps_pairs():
         + [(i, False, True) for i in range(11, 21)] + [(21, True, True)]
     copies, skipped = g.split_restricted(many)
     assert skipped == 100 and _legal(many, copies)[1]
+
+
+def test_trip_counts_by_original_id_survive_the_restriction_split(tmp_path):
+    # t3 is pick-up only at IN2 (leaving town): written as two copies
+    restricted = [("IN1", "09:00:00", 0, 1), ("IN2", "09:10:00", 0, 1), ("BUF", "09:20:00", 0, 0)]
+    trips = [("t1", "R1", "WK", CALLS), ("t2", "R2", "WK", CALLS), ("t3", "R1", "WK", restricted)]
+    counts = {}
+    for enforce in (True, False):
+        con = duckdb.connect()
+        g.load(con, {"a": gtfs(tmp_path, "a", trips=trips)})
+        r = g.build(con, ["a"], DAY, EXTENT, BOX, None, enforce_restrictions=enforce)
+        out = g.write(con, ["a"], DAY, tmp_path / f"out_{enforce}.zip", "test")
+        counts[enforce] = g.trips_per_route(out)
+        with zipfile.ZipFile(out) as z:
+            n_rows = len(z.read("trips.txt").decode().strip().splitlines()) - 1
+        assert n_rows == (4 if enforce else 3)
+        assert r["source_trips_out"] == 3
+    assert counts[True] == counts[False] == {"a:R1": 2, "a:R2": 1}

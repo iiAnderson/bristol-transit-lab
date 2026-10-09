@@ -1569,9 +1569,10 @@ explained.
 @click.option("--pt-period", default="AM", show_default=True,
               help="PT AM skim is the 08:00–09:00 window (skims.window_start).")
 def gapmap_cmd(car_period: str, pt_period: str) -> None:
-    """C5: gap map — PT GC (≥ 1 ride) vs car GC per internal HBW LSOA pair beyond
-    gapmap.min_distance_km; ratio of sums, flow-weighted median, GC difference; both ends
-    of the car parking/access range; by distance band; robustness of the rankings."""
+    """C5: gap map — PT (≥ 1 ride) vs car per internal HBW LSOA pair beyond
+    gapmap.min_distance_km: door-to-door time difference (published default), GC
+    difference and GC ratio (generalised minutes); both ends of the car parking/access
+    range; by distance band; robustness of the rankings."""
     import json
     import duckdb
     import geopandas as gpd
@@ -1631,22 +1632,24 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
         old.to_csv(out / "by_band_old_metric.csv", index=False)
         new.to_csv(out / "by_band_new_metric.csv", index=False)
         for v in ("high", "low"):
-            for by in ("ratio", "diff"):
+            for by in ("tdiff", "diff", "ratio"):
                 gm.top_pairs(g, v, by).to_csv(out / f"gapmap_top50_{by}_{v}.csv", index=False)
         z = gpd.read_file(geo / "lsoa21_bgc_internal.geojson")[["LSOA21CD", "geometry"]]
         gz = z.merge(orig, left_on="LSOA21CD", right_on="o_zone", how="left").drop(columns="o_zone")
         gz.to_file(out / "gapmap_origin.geojson", driver="GeoJSON")
-        fig, ax = plt.subplots(2, 2, figsize=(16, 10.5))
-        for a, col, t, vmin, vmax, lab in (
-                (ax[0, 0], "ratio_high", "PT ÷ car GC — car parking/access: high", 1, 5, "Σ PT GC ÷ Σ car GC"),
-                (ax[0, 1], "ratio_low", "PT ÷ car GC — car parking/access: low (none)", 1, 5, "Σ PT GC ÷ Σ car GC"),
-                (ax[1, 0], "diff_high", "PT − car GC (min) — high", 0, 120, "flow-weighted mean, minutes"),
-                (ax[1, 1], "diff_low", "PT − car GC (min) — low (none)", 0, 120, "flow-weighted mean, minutes")):
-            gz.plot(column=col, ax=a, cmap="RdYlGn_r", vmin=vmin, vmax=vmax, legend=True,
-                    missing_kwds={"color": "lightgrey"}, linewidth=0,
-                    legend_kwds={"label": lab, "shrink": 0.6})
-            a.set_title(t)
-            a.set_axis_off()
+        fig, ax = plt.subplots(3, 2, figsize=(16, 15.5))
+        panels = (("tdiff", "PT − car door-to-door time (real minutes)", 0, 60, "flow-weighted mean, minutes"),
+                  ("diff", "PT − car GC (generalised minutes)", 0, 120, "flow-weighted mean, generalised minutes"),
+                  ("ratio", "PT ÷ car GC (generalised minutes)", 1, 5, "Σ PT GC ÷ Σ car GC"))
+        for i, (var, title, vmin, vmax, lab) in enumerate(panels):
+            for jx, (v, vt) in enumerate((("high", "car parking/access: high"),
+                                          ("low", "car parking/access: low (none)"))):
+                a = ax[i, jx]
+                gz.plot(column=f"{var}_{v}", ax=a, cmap="RdYlGn_r", vmin=vmin, vmax=vmax,
+                        legend=True, missing_kwds={"color": "lightgrey"}, linewidth=0,
+                        legend_kwds={"label": lab, "shrink": 0.7})
+                a.set_title(f"{title} — {vt}", fontsize=10)
+                a.set_axis_off()
         fig.suptitle("\n".join(__import__("textwrap").wrap(label, 150)), fontsize=9)
         fig.savefig(out / "gapmap.png", dpi=150, bbox_inches="tight")
     except Exception:
@@ -1673,6 +1676,11 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
     click.echo("revised metric by distance band:")
     click.echo(new.round(3).to_string(index=False))
     click.echo(f"headline (mapped pairs): {json.dumps({k: round(v, 3) for k, v in head.items()})}")
+    tcols = ["band", "trips", "mean_pt_time_min", "mean_car_time_min_high", "mean_time_diff_min_high",
+             "median_time_diff_min_high", "mean_time_diff_min_low", "median_time_diff_min_low"]
+    click.echo(f"door-to-door time difference by band:\n{new[tcols].round(1).to_string(index=False)}")
+    click.echo("by destination area type (time difference): " + by_area[
+        ["area_type", "mean_time_diff_min_high", "mean_time_diff_min_low"]].round(1).to_string(index=False))
     click.echo(f"by destination area type:\n{by_area.round(3).to_string(index=False)}")
     click.echo(f"robustness: {rec['result']['robustness_low_vs_high']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
@@ -1787,6 +1795,19 @@ def spotchecks_eval(filled: str, model_csv: str | None) -> None:
                    | ((x["b_ratio_p50"] - 1).abs() <= 0.15))
     x["pass"] = x["pass_a"] | x["pass_b"]
     x["duration_mismatch"] = x["planner_duration_min"] != x["stated_duration_min"]
+    # every failing AM / IP row carries a recorded class and reason (config)
+    cl = pd.read_csv(cfg.root / "config" / "spotchecks_pt_failures.csv")
+    bad = set(cl["class"]) - {"model_error", "comparison_artefact"}
+    if bad:
+        raise click.ClickException(f"unknown failure class {sorted(bad)}")
+    x = x.merge(cl.rename(columns={"class": "failure_class", "reason": "failure_reason"}),
+                on=["id", "slot"], how="left")
+    x.loc[x["pass"], ["failure_class", "failure_reason"]] = None
+    missing = x[~x["pass"] & (x["slot"] != "EVE") & x["failure_class"].isna()]
+    if len(missing):
+        raise click.ClickException(
+            "failing rows without a classification in config/spotchecks_pt_failures.csv: "
+            f"{missing[['id', 'slot']].to_dict('records')}")
     rec = runrecord.build(cfg, command="spotchecks-eval", inputs=[
         {"name": f, "sha256": params.file_hash(Path(f))} for f in [filled, model_csv] if f])
     runrecord.write(cfg, rec)
@@ -1800,12 +1821,17 @@ def spotchecks_eval(filled: str, model_csv: str | None) -> None:
     rec["result"] = {"csv": str(out), "summary": summ.reset_index().to_dict("records"),
                      "acceptance_16_of_20": acc,
                      "failures": x[~x["pass"] & (x["slot"] != "EVE")][
-                         ["id", "slot", "origin", "destination"]].to_dict("records"),
+                         ["id", "slot", "origin", "destination", "failure_class",
+                          "failure_reason"]].to_dict("records"),
+                     "failures_by_class": x[~x["pass"] & (x["slot"] != "EVE")]
+                     .groupby(["slot", "failure_class"]).size().unstack(fill_value=0)
+                     .reset_index().to_dict("records"),
                      "stated_duration_differs_from_clock_times":
                          x[x["duration_mismatch"]][["id", "slot", "observed_elapsed_min"]]
                          .to_dict("records")}
     click.echo(summ.to_string())
     click.echo(f"acceptance (>= 16 of 20): {acc}")
+    click.echo(f"failures by class: {rec['result']['failures_by_class']}")
     click.echo(f"wrote {out}")
     runrecord.finish(cfg, rec, "ok")
 
@@ -1837,7 +1863,7 @@ def spotchecks_car(n_links: int) -> None:
         {"name": str(d / "osrm_speeds" / f"speeds_{q}.csv"),
          "sha256": params.file_hash(d / "osrm_speeds" / f"speeds_{q}.csv")} for q in ("IP", "AMPH")])
     runrecord.write(cfg, rec)
-    rows = []
+    rows, allv = [], []
     try:
         for per in ("IP", "AMPH"):
             ds = va.period_dataset(cfg.root / raw["osm"]["osrm_base"], d / "osrm_speeds" / f"speeds_{per}.csv",
@@ -1848,6 +1874,11 @@ def spotchecks_car(n_links: int) -> None:
             j = m[m["link_id"].isin(pick)].merge(
                 obs[obs["period"] == per][["link_id", "obs_s", "area"]], on="link_id")
             rows.append(j.assign(period=per).rename(columns={"mod_s": "model_s"}))
+            # diagnostic: every validation link with observations and a matching route
+            a = m[m["link_id"].isin(set(val["link_id"]))
+                  & ((m["route_m"] / m["link_m"] - 1).abs() <= 0.2)].merge(
+                obs[obs["period"] == per][["link_id", "obs_s", "area"]], on="link_id")
+            allv.append(a.assign(period=per))
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
@@ -1859,7 +1890,20 @@ def spotchecks_car(n_links: int) -> None:
     summ = res.groupby("period").agg(n=("within_15pct", "size"), passing=("within_15pct", "sum"),
                                      median_ratio=("rel_error", lambda e: 1 + e.median()),
                                      median_abs_err=("rel_error", lambda e: e.abs().median()))
+    # does link-level error fall with link length? (validation half, OSRM routes)
+    av = pd.concat(allv)
+    av["ratio"] = av["mod_s"] / av["obs_s"]
+    av["km_band"] = pd.cut(av["link_m"] / 1000, [0, 1, 2, 4, 100],
+                           labels=["< 1 km", "1–2 km", "2–4 km", "> 4 km"])
+    bands = av.groupby(["period", "km_band"], observed=True).agg(
+        links=("ratio", "size"), median_ratio=("ratio", "median"),
+        median_abs_err=("ratio", lambda r: (r - 1).abs().median()),
+        within_15pct=("ratio", lambda r: ((r - 1).abs() <= 0.15).mean())).round(3).reset_index()
+    av.to_csv(out.parent / "car_anpr_validation_links.csv", index=False)
+    click.echo("validation half by ANPR link length:")
+    click.echo(bands.to_string(index=False))
     rec["result"] = {"csv": str(out), "links": len(pick),
+                     "by_link_length": bands.to_dict("records"),
                      "summary": summ.round(3).reset_index().to_dict("records"),
                      "pass_rule": ">= 16 of 20 within ±15%",
                      "passes": bool((summ["passing"] >= 16).all())}

@@ -265,8 +265,11 @@ def write(con: duckdb.DuckDBPyConnection, feeds: list[str], day: dt.date, out: P
         "stop_times": """SELECT trip_id, arrival_time, departure_time, stop_id,
             row_number() OVER (PARTITION BY trip_id ORDER BY seq) stop_sequence,
             pickup_type, drop_off_type FROM st_out ORDER BY trip_id, seq""",
+        # original_trip_id (an extension column) links the copies written for pick-up /
+        # set-down restrictions to their source trip: count trips, frequencies,
+        # vehicle-hours and loads by it, never by trip_id.
         "trips": f"""SELECT t.route_id, 'D{d}' service_id, c.trip_id, t.trip_headsign,
-                            t.direction_id
+                            t.direction_id, c.src_trip original_trip_id
             FROM ({trips}) t JOIN (SELECT DISTINCT trip_id, src_trip FROM st_out) c
               ON c.src_trip = t.trip_id""",
         "routes": f"""SELECT * FROM ({routes}) WHERE route_id IN
@@ -315,3 +318,11 @@ def trips_per_route_on(con: duckdb.DuckDBPyConnection, feeds: list[str],
         for noc, rsn, n in rows:
             out[(noc, rsn)] = out.get((noc, rsn), 0) + n
     return out
+
+
+def trips_per_route(gtfs_zip: Path) -> dict[str, int]:
+    """Trips per route counted by ``original_trip_id`` — the vehicle journeys actually
+    run. Counting ``trip_id`` would count the restriction copies."""
+    with zipfile.ZipFile(gtfs_zip) as z:
+        t = pd.read_csv(z.open("trips.txt"), dtype=str)
+    return t.groupby("route_id")["original_trip_id"].nunique().to_dict()

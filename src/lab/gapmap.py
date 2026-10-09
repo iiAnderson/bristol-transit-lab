@@ -18,8 +18,11 @@ car GC in the AM peak hour.
 * **Scope:** intrazonal pairs and pairs under ``gapmap.min_distance_km`` (straight line
   between population-weighted centroids) are left out of the gap map and reported
   separately: there PT is mostly a walk and a minute of parking time swings the ratio.
-* **Headline:** Σ(trips × PT GC) ÷ Σ(trips × car GC) and the flow-weighted median of the
-  pair ratios (not the mean of ratios). Second variable: GC difference, PT − car (min).
+* **Three variables per pair.** The published default is the **door-to-door time
+  difference** in real minutes, no GC weights: PT p50 total time − (car in-vehicle time +
+  parking search + access walk). Then the GC difference, PT − car, in generalised
+  minutes, and the GC ratio: Σ(trips × PT GC) ÷ Σ(trips × car GC) with the flow-weighted
+  median of the pair ratios (not the mean of ratios).
 """
 from __future__ import annotations
 
@@ -29,7 +32,9 @@ import pandas as pd
 
 LABEL = ("Provisional. Commute only (daily HBW flows, AM peak-hour times; internal commuters). "
          "PT = itineraries with at least one ride; pairs under {min_km:g} km and intrazonal "
-         "pairs excluded. Time-based GC; car parking/access times are a modelled range "
+         "pairs excluded. Time difference = PT median door-to-door time − car door-to-door "
+         "time, real minutes; GC in generalised minutes (walk and wait weighted, interchange "
+         "penalty). Car parking/access times are a modelled range "
          "(low = none; high = centre {centre:g}, urban {urban:g}, rural {rural:g} min). Car "
          "AM peak hour is still ~10% too fast in central Bristol on held-out ANPR "
          "(validation half {anpr:.2f}), so PT's disadvantage is slightly understated.")
@@ -58,7 +63,7 @@ def build(con, pt_parquet: str, car_parquet: str, park: dict, walk: dict) -> pd.
         SELECT o_zone, d_zone, sum(trips) trips FROM demand
         WHERE demand_version = 'p1-central' AND purpose = 'HBW' AND external IS NULL
         GROUP BY ALL HAVING sum(trips) > 0""")
-    ride = lsoa_agg(con, pt_parquet, {"pt_gc": "gc_ride_min"}, "gc_ride_min")
+    ride = lsoa_agg(con, pt_parquet, {"pt_gc": "gc_ride_min", "pt_time": "p50"}, "gc_ride_min")
     anym = lsoa_agg(con, pt_parquet, {"pt_gc_any": "gc_min", "walk_only_share": "walk_only_share"},
                     "gc_min")
     car = lsoa_agg(con, car_parquet, {"car_ivt": "ivt_min"}, "ivt_min")
@@ -74,7 +79,7 @@ def build(con, pt_parquet: str, car_parquet: str, park: dict, walk: dict) -> pd.
         JOIN lsoa_pwc b ON b.LSOA21CD = h.d_zone""").df()
     k = ["o_zone", "d_zone"]
     m = con.execute("SELECT * FROM hbw").df().merge(dist, on=k, how="left") \
-        .merge(ride[[*k, "pt_gc"]], on=k, how="left") \
+        .merge(ride[[*k, "pt_gc", "pt_time"]], on=k, how="left") \
         .merge(anym[[*k, "pt_gc_any", "walk_only_share"]], on=k, how="left") \
         .merge(car[[*k, "car_gc_high", "car_gc_low", "area_type"]], on=k, how="left")
     m["intrazonal"] = m["o_zone"] == m["d_zone"]
@@ -82,6 +87,8 @@ def build(con, pt_parquet: str, car_parquet: str, park: dict, walk: dict) -> pd.
     for v in ("high", "low"):
         m[f"ratio_{v}"] = m["pt_gc"] / m[f"car_gc_{v}"]
         m[f"diff_{v}"] = m["pt_gc"] - m[f"car_gc_{v}"]
+        # car GC is unweighted time, so it is also the car door-to-door time
+        m[f"tdiff_{v}"] = m["pt_time"] - m[f"car_gc_{v}"]
         m[f"ratio_any_{v}"] = m["pt_gc_any"] / m[f"car_gc_{v}"]
     m["band"] = band(m)
     return m
@@ -129,6 +136,11 @@ def headline(g: pd.DataFrame) -> dict:
         out[f"median_ratio_{v}"] = wmedian(ok[f"ratio_{v}"], w)
         out[f"mean_diff_min_{v}"] = float(np.average(ok[f"diff_{v}"], weights=w))
         out[f"median_diff_min_{v}"] = wmedian(ok[f"diff_{v}"], w)
+        out[f"mean_time_diff_min_{v}"] = float(np.average(ok[f"tdiff_{v}"], weights=w))
+        out[f"median_time_diff_min_{v}"] = wmedian(ok[f"tdiff_{v}"], w)
+    out["mean_pt_time_min"] = float(np.average(ok["pt_time"], weights=w))
+    for v in ("high", "low"):
+        out[f"mean_car_time_min_{v}"] = float(np.average(ok[f"car_gc_{v}"], weights=w))
     return out
 
 
@@ -146,12 +158,15 @@ def origin_summary(g: pd.DataFrame) -> pd.DataFrame:
     ok = g.dropna(subset=["pt_gc", "car_gc_low"])
     t = ok["trips"]
     s = pd.DataFrame({"o_zone": ok["o_zone"], "trips": t, "pt": t * ok["pt_gc"],
+                      "ptt": t * ok["pt_time"],
                       "car_high": t * ok["car_gc_high"], "car_low": t * ok["car_gc_low"]}) \
         .groupby("o_zone").sum()
     return pd.DataFrame({"trips": s["trips"], "ratio_high": s["pt"] / s["car_high"],
                          "ratio_low": s["pt"] / s["car_low"],
                          "diff_high": (s["pt"] - s["car_high"]) / s["trips"],
-                         "diff_low": (s["pt"] - s["car_low"]) / s["trips"]}).reset_index()
+                         "diff_low": (s["pt"] - s["car_low"]) / s["trips"],
+                         "tdiff_high": (s["ptt"] - s["car_high"]) / s["trips"],
+                         "tdiff_low": (s["ptt"] - s["car_low"]) / s["trips"]}).reset_index()
 
 
 def top_pairs(g: pd.DataFrame, variant: str, by: str = "ratio", n: int = 50) -> pd.DataFrame:
@@ -165,11 +180,13 @@ def robustness(g: pd.DataFrame, orig: pd.DataFrame, n: int = 50) -> dict:
     high rankings (pairs and origins) and the overlap of the top-n corridors."""
     ok = g.dropna(subset=["pt_gc", "car_gc_low"])
     key = lambda d: set(zip(d["o_zone"], d["d_zone"]))  # noqa: E731
-    out = {"spearman_pair_ratio": float(ok["ratio_high"].corr(ok["ratio_low"], method="spearman")),
-           "spearman_pair_diff": float(ok["diff_high"].corr(ok["diff_low"], method="spearman")),
-           "spearman_origin_ratio": float(orig["ratio_high"].corr(orig["ratio_low"], method="spearman")),
-           "spearman_origin_diff": float(orig["diff_high"].corr(orig["diff_low"], method="spearman"))}
-    for by in ("ratio", "diff"):
+    out = {}
+    for by in ("tdiff", "diff", "ratio"):
+        out[f"spearman_pair_{by}"] = float(
+            ok[f"{by}_high"].corr(ok[f"{by}_low"], method="spearman"))
+        out[f"spearman_origin_{by}"] = float(
+            orig[f"{by}_high"].corr(orig[f"{by}_low"], method="spearman"))
+    for by in ("tdiff", "diff", "ratio"):
         out[f"top{n}_overlap_trips_x_{by}"] = len(
             key(top_pairs(g, "high", by, n)) & key(top_pairs(g, "low", by, n)))
     return out
