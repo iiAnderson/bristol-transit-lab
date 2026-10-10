@@ -22,18 +22,16 @@ def _ctx():
     return cfg, raw, ps
 
 
-def _net(cfg, elevation: str | None) -> tuple[str, dict]:
-    from .supply import feeds
-    names = ["osm_clip", "bus_gtfs", "rail_gtfs"] + (["dem_clip"] if elevation else [])
-    h = {n: feeds.get(cfg, n)["sha256"] for n in names}
-    return network.version(h, elevation), h
+def _net(cfg, raw, ps) -> dict:
+    """The baseline network (terrain per params; LAB_NETWORK=flat for network v1)."""
+    return network.settings(cfg, raw, ps)
 
 
 def _periods(ps: dict) -> dict:
     return cov.parse_periods({k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("periods.")})
 
 
-def _walk_matrix(osm: str, tif: str | None, fn: str | None, o, d, ps: dict, max_min: float,
+def _walk_matrix(osm: str, nw: dict, o, d, ps: dict, max_min: float,
                  day: dt.date, chunk: int = 400):
     """r5py walk times, origins → destinations (frames with id, lon, lat), long format
     with unreachable pairs dropped."""
@@ -44,6 +42,7 @@ def _walk_matrix(osm: str, tif: str | None, fn: str | None, o, d, ps: dict, max_
     from .supply import dem
     g = lambda df: gpd.GeoDataFrame({"id": df["id"]}, crs="EPSG:4326",  # noqa: E731
                                     geometry=[Point(x, y) for x, y in zip(df.lon, df.lat)])
+    fn, tif = nw["elevation"], nw["tif"]
     net = (TransportNetwork(osm, []) if fn is None else
            TransportNetwork(osm, [], elevation_model=[dem.for_function(Path(tif), fn)],
                             elevation_cost_function=ElevationCostFunction(fn)))
@@ -53,7 +52,7 @@ def _walk_matrix(osm: str, tif: str | None, fn: str | None, o, d, ps: dict, max_
         t = TravelTimeMatrix(net, origins=g(o.iloc[i:i + chunk]), destinations=dd, departure=dep,
                              transport_modes=[TransportMode.WALK],
                              max_time=dt.timedelta(minutes=max_min),
-                             speed_walking=ps["routing.walk_speed_kmh"])
+                             speed_walking=nw["walk_kmh"])
         out.append(t[t["travel_time"].notna()])
     return pd.concat(out, ignore_index=True)
 
@@ -64,15 +63,13 @@ def coverage() -> None:
 
 
 @coverage.command("stops")
-@click.option("--elevation", type=click.Choice(["none", "TOBLER", "MINETTI"]), default="none",
-              show_default=True, help="Slope cost for the barrier test's walking times.")
-def coverage_stops(elevation: str) -> None:
+def coverage_stops() -> None:
     """Stop service table and stop clusters from the baseline bus and rail GTFS."""
     import duckdb
     import pandas as pd
     cfg, raw, ps = _ctx()
-    fn = None if elevation == "none" else elevation
-    nv, hashes = _net(cfg, fn)
+    nw = _net(cfg, raw, ps)
+    nv, hashes = nw["version"], nw["hashes"]
     day = raw["modelled_date"]
     rec = runrecord.build(cfg, command="coverage-stops",
                           inputs=[{"name": k, "sha256": v} for k, v in hashes.items()])
@@ -106,7 +103,7 @@ def coverage_stops(elevation: str) -> None:
         t0 = time.time()
         inv = street[street.stop_id.isin(set(pairs.a) | set(pairs.b))][["stop_id", "lon", "lat"]] \
             .rename(columns={"stop_id": "id"})
-        m = _walk_matrix(str(cfg.root / raw["osm"]["clip"]), str(cfg.root / raw["dem"]["out"]), fn,
+        m = _walk_matrix(str(cfg.root / raw["osm"]["clip"]), nw,
                          inv, inv, ps, 3 * ps["coverage.cluster_max_walk_min"],
                          day if isinstance(day, dt.date) else dt.date.fromisoformat(day))
         walk = m.set_index(["from_id", "to_id"])["travel_time"].astype(float)
@@ -186,15 +183,13 @@ def _cluster_plot(sc, cut, out: Path) -> None:
 
 
 @coverage.command("walk")
-@click.option("--elevation", type=click.Choice(["none", "TOBLER", "MINETTI"]), default="none",
-              show_default=True)
-def coverage_walk(elevation: str) -> None:
+def coverage_walk() -> None:
     """Walking times on the network from every OA centroid to every stop with service."""
     import duckdb
     import numpy as np
     cfg, raw, ps = _ctx()
-    fn = None if elevation == "none" else elevation
-    nv, hashes = _net(cfg, fn)
+    nw = _net(cfg, raw, ps)
+    nv, hashes, elevation = nw["version"], nw["hashes"], nw["elevation"] or "none"
     day = raw["modelled_date"]
     day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
     with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
@@ -206,8 +201,7 @@ def coverage_walk(elevation: str) -> None:
     try:
         t0 = time.time()
         cap = ps["coverage.max_walk_min"]
-        m = _walk_matrix(str(cfg.root / raw["osm"]["clip"]), str(cfg.root / raw["dem"]["out"]), fn,
-                         o, s, ps, cap, day)
+        m = _walk_matrix(str(cfg.root / raw["osm"]["clip"]), nw, o, s, ps, cap, day)
         m = m.rename(columns={"from_id": "OA21CD", "to_id": "stop_id", "travel_time": "walk_min"})
         m["walk_min"] = m.walk_min.astype(float)
         out = cfg.root / raw["coverage"]["dir"] / nv
@@ -220,7 +214,7 @@ def coverage_walk(elevation: str) -> None:
         si = {k: i for i, k in enumerate(s.id)}
         a, b = m.OA21CD.map(oi).to_numpy(), m.stop_id.map(si).to_numpy()
         m["straight_m"] = np.hypot(ox[a] - sx[b], oy[a] - sy[b])
-        m["network_m"] = m.walk_min * ps["routing.walk_speed_kmh"] * 1000 / 60
+        m["network_m"] = m.walk_min * ps["routing.walk_speed_kmh"] * 1000 / 60   # nominal: flat-ground speed
         near = m[m.straight_m >= 100].assign(ratio=lambda x: x.network_m / x.straight_m)
         worst = near.sort_values("ratio", ascending=False).head(400) \
             .merge(s[["id", "stop_name", "cluster_id"]], left_on="stop_id", right_on="id").drop(columns="id")
@@ -238,7 +232,7 @@ def coverage_walk(elevation: str) -> None:
                       (nearest.walk_to_it_min.isna() | (nearest.walk_to_it_min * 80 > 3 * nearest.nearest_straight_m + 240))]
         odd.sort_values("nearest_straight_m").to_csv(run_dir / "origins_far_from_their_nearest_stop.csv", index=False)
         r = near.ratio
-        res = {"network_version": nv, "elevation": elevation, "origins": int(len(o)), "stops": int(len(s)),
+        res = {"network_version": nv, "elevation": elevation, "walk_speed_kmh": nw["walk_kmh"], "origins": int(len(o)), "stops": int(len(s)),
                "pairs_within_cap": int(len(m)), "cap_min": cap, "runtime_s": round(time.time() - t0, 1),
                "origins_reaching_no_stop": int((~o.id.isin(m.OA21CD)).sum()),
                "median_walk_to_nearest_stop_min": float(got.median()),
@@ -256,15 +250,13 @@ def coverage_walk(elevation: str) -> None:
 
 
 def _obs(ps: dict) -> tuple[dict, dict]:
-    obs = {m: {k: ps[f"coverage.decay.{m}.{k}"] for k in ("mean_m", "p85_m")} for m in ("bus", "rail")}
+    obs = {m: {k: ps[f"coverage.decay.{m}.{k}"] for k in ("mean_m", "p85_m")} for m in ("bus", "rail", "metro")}
     between = {"brt": ps["coverage.decay.brt_towards_rail"], "tram": ps["coverage.decay.tram_towards_rail"]}
     return obs, between
 
 
 @coverage.command("score")
-@click.option("--elevation", type=click.Choice(["none", "TOBLER", "MINETTI"]), default="none",
-              show_default=True, help="Which walking-time matrix to use.")
-def coverage_score(elevation: str) -> None:
+def coverage_score() -> None:
     """Service-quality class, continuous score and frequent-service coverage per OA."""
     import duckdb
     import geopandas as gpd
@@ -272,8 +264,8 @@ def coverage_score(elevation: str) -> None:
     from . import upstream
     from .supply import feeds, gtfs_rail
     cfg, raw, ps = _ctx()
-    fn = None if elevation == "none" else elevation
-    nv, hashes = _net(cfg, fn)
+    nw = _net(cfg, raw, ps)
+    nv, hashes, fn = nw["version"], nw["hashes"], nw["elevation"]
     cc = raw["coverage"]
     dep_files = {k: cfg.root / v["path"] for k, v in cc["deprivation"].items()}
     odwp = cfg.upstream_raw / raw["spikes"]["odwp01ew_oa"]
@@ -297,7 +289,7 @@ def coverage_score(elevation: str) -> None:
                                  WHERE "Place of work indicator (4 categories) code" = 3 GROUP BY 1""").df()
         if set(sc.network_version) != {nv}:
             raise click.ClickException(f"stop tables are for network {set(sc.network_version)}, not {nv}: "
-                                       "run `lab coverage stops` with the same --elevation")
+                                       "run `lab coverage stops` on this network first")
         ts001 = cfg.upstream_raw / cc["ts001_oa"]
         with upstream.connect(cfg) as up:
             up_pop = upstream.read_table(up, "ts001").df()
@@ -324,6 +316,10 @@ def coverage_score(elevation: str) -> None:
         walk = pd.read_parquet(cfg.root / cc["dir"] / nv / "oa_stop_walk.parquet")
         walk = walk.merge(sc[["stop_id", "cluster_id"]], on="stop_id") \
             .groupby(["OA21CD", "cluster_id"], as_index=False).walk_min.min()
+        # R5 truncates walking times to the whole minute; half a minute is added back
+        # (coverage.walk_truncation_correction_min). ``walk_plain`` is the uncorrected input.
+        walk_plain = walk
+        walk = walk.assign(walk_min=walk.walk_min + ps["coverage.walk_truncation_correction_min"])
         missing = sorted(set(oa.OA21CD) - set(pop.OA21CD))
         if missing:
             raise click.ClickException(f"{len(missing)} internal OAs have no population: {missing[:5]}")
@@ -348,7 +344,7 @@ def coverage_score(elevation: str) -> None:
             "coverage.frequent_headway_min", "coverage.score_cap_dph", "coverage.are_interval_bands_min",
             "coverage.are_stop_category", "coverage.are_distance_bands_m", "coverage.are_class",
             "coverage.rail_node_min_directions")}}
-        rm_scale = ps["coverage.reduced_mobility_half_weight_m"] / cov.half_weight_m(curves["bus"])
+        rm_scale = ps["coverage.reduced_mobility_scale"]
         tables, per_period = {}, {}
         for per in ["HEADLINE", *_periods(ps)]:
             lv = cs[cs.period == per]
@@ -385,11 +381,10 @@ def coverage_score(elevation: str) -> None:
             sens[f"brt_towards_rail_{w:g}"] = {
                 f"residents_frequent_{h}": int(head.residents[s2[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
                 for h in hs}
-        # R5 truncates walking times to the whole minute (measured, plans/P3.md §9): the
-        # same score with half a minute added back, as a sensitivity (Q14).
-        s3 = cov.score(walk.assign(walk_min=walk.walk_min + 0.5), cs[cs.period == "HEADLINE"], curves, scfg) \
+        # alongside: the same score on R5's plain (truncated) walking times
+        s3 = cov.score(walk_plain, cs[cs.period == "HEADLINE"], curves, scfg) \
             .set_index("OA21CD").reindex(oa.OA21CD)
-        sens["walk_plus_half_minute"] = {
+        sens["plain_truncated_walk_times"] = {
             f"residents_frequent_{h}": int(head.residents[s3[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
             for h in hs} | {"mean_score": round(float((s3.score.fillna(0).to_numpy() * head.residents).sum() / head.residents.sum()), 2)}
         cancelled = gtfs_rail.cancellations(
@@ -402,12 +397,14 @@ def coverage_score(elevation: str) -> None:
                  f"(the rail timetable is the on-the-day snapshot: it omits "
                  f"{cancelled.get('journeys_cancelled', 0)} cancelled journeys and "
                  f"{cancelled.get('calls_cancelled', 0)} cancelled calls at stations inside the extent). "
-                 f"Walking on the network at {kmh:g} km/h, "
-                 f"{'without gradient' if fn is None else 'with gradient (' + fn.title() + ')'}; "
-                 f"whole-minute walking times. Service level = the worse of "
+                 f"Walking on the network at {kmh:g} km/h on flat ground, "
+                 f"{'without gradient' if fn is None else 'with gradient (' + fn.title() + ' slope cost, 50 m terrain grid)'}; "
+                 f"R5's whole-minute walking times plus {ps['coverage.walk_truncation_correction_min']:g} min. "
+                 f"Frequent = every {ps['coverage.headline_headway_min']} min or better, high frequency = every "
+                 f"{min(ps['coverage.frequent_headway_min'])} min or better, in the worse of "
                  f"{' and '.join(ps['coverage.headline_periods'])}, departures in one direction. "
-                 "No car times are used, so the P2 car spot-check fails do not apply. "
-                 "Walk-to-stop distances are placeholders (not yet sourced). "
+                 "How far people walk to a stop is taken from Montréal survey data (El-Geneidy et al. 2014), "
+                 "not UK data. No car times are used, so the P2 car spot-check fails do not apply. "
                  "Sketch-planning model: indicative and comparative, not for a business case.")
         g = gpd.GeoDataFrame(head.merge(geom, on="OA21CD"), geometry="geometry", crs=geom.crs)
         g.insert(0, "network_version", nv)
@@ -415,11 +412,14 @@ def coverage_score(elevation: str) -> None:
         with duckdb.connect(str(cfg.lab_db)) as con:
             con.register("df_", pd.DataFrame(g.drop(columns="geometry")))
             con.execute("CREATE OR REPLACE TABLE coverage_oa AS SELECT * FROM df_")
-        _coverage_map(g, hs, label, run_dir / "coverage_map.png")
+        _coverage_map(g, hs, ps["coverage.headline_headway_min"], label, run_dir / "coverage_map.png")
         (run_dir / "label.txt").write_text(label + "\n")
         a = tables["all"]
         res = {
             "network_version": nv, "label": label, "totals": tot, "jobs_split": jobs_info,
+            "walk_speed_kmh": nw["walk_kmh"], "elevation": fn,
+            "walk_truncation_correction_min": ps["coverage.walk_truncation_correction_min"],
+            "headline_headway_min": ps["coverage.headline_headway_min"],
             "decay_curves": {m: {k: round(v, 1) if isinstance(v, float) else v for k, v in c.items()}
                              for m, c in curves.items()},
             "exponential_misfit_p85_m": {m: round(cov.fit_exponential(**obs[m])["fit_p85_m"]) for m in obs},
@@ -452,7 +452,7 @@ def coverage_score(elevation: str) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
-def _coverage_map(g, hs: list, label: str, out: Path) -> None:
+def _coverage_map(g, hs: list, headline: int, label: str, out: Path) -> None:
     import textwrap
     import matplotlib
     matplotlib.use("Agg")
@@ -468,8 +468,9 @@ def _coverage_map(g, hs: list, label: str, out: Path) -> None:
     col = {2: "#1b7837", 1: "#a6dba0", 0: "#eeeeee"}
     lvl = g[f"frequent_{hi}"].astype(int) + g[f"frequent_{lo}"].astype(int)
     g.plot(ax=ax[1], color=lvl.map(col), linewidth=0)
-    ax[1].legend(handles=[Patch(color=col[2], label=f"every {hi} min or better"),
-                          Patch(color=col[1], label=f"every {lo} min or better"),
+    name = {headline: "frequent"}
+    ax[1].legend(handles=[Patch(color=col[2], label=f"high frequency: every {hi} min or better"),
+                          Patch(color=col[1], label=f"{name.get(lo, 'service')}: every {lo} min or better"),
                           Patch(color=col[0], label="no frequent service in walking reach")],
                  loc="lower left", frameon=False)
     ax[1].set_title("Frequent service within the 85th-percentile walk for its mode")

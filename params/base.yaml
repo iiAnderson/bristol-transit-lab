@@ -197,8 +197,22 @@ coverage:
     unit: min between departures in one direction; every listed threshold is reported
     tag: MODELLED
     reasoning: >-
-      SPEC §8.2 originally said 10 min; the scenarios under discussion use 15. Both are
-      reported and neither is privileged until the P3a stop (plans/P3.md D3).
+      15 min is "frequent" and the headline, matching the scheme design standard; 10 min
+      is reported as "high frequency" (Robbie, 2026-10-10, P3a stop decision 4).
+  headline_headway_min:
+    value: 15
+    unit: min; which of frequent_headway_min is the headline
+    tag: MODELLED
+    reasoning: Robbie, 2026-10-10 (P3a stop decision 4).
+  walk_truncation_correction_min:
+    value: 0.5
+    unit: min added to every R5 walking time used in coverage
+    tag: MODELLED
+    reasoning: >-
+      R5's matrix truncates walking times to the whole minute (563 pairs against
+      itinerary seconds: 95% equal the floor, mean −0.43 min; sources.md P3a). Half a
+      minute is the unbiased correction for a truncated value. The uncorrected figure is
+      reported alongside (Robbie, 2026-10-10, P3a stop decision 3).
   max_walk_min:
     value: 30
     unit: min of walking from an OA centroid to a stop; pairs beyond it are not stored
@@ -241,27 +255,67 @@ coverage:
     reasoning: >-
       A 5-minute headway is turn-up-and-go; further departures add capacity, not
       access. Stops a bus-station cluster from dominating the continuous score.
-  reduced_mobility_half_weight_m:
-    value: 400
-    unit: m at which the bus decay weight is 0.5 in the reduced-mobility variant; other modes scale by the same factor
+  reduced_mobility_scale:
+    value: 0.7
+    unit: multiplier on every distance the decay curves are defined on, in the reduced-mobility variant
     tag: MODELLED
     reasoning: >-
-      The 400 m convention for an acceptable walk to a bus stop, used as the half-weight
-      point for people who walk less far. Plans/P3.md D2; reported alongside, for equity.
+      People who walk less far, reported alongside for equity (plans/P3.md D2). First
+      defined as a 400 m half-weight point for bus, which was 0.70 of the first candidate
+      curve's; the sourced bus curve's half-weight point is already 245 m, so the same
+      proportion is kept as a scale rather than a distance. For Robbie to confirm.
   # Walk-to-stop distances by mode: the decay weight at distance d is the share of
-  # observed walks that are at least that long. NOT YET SOURCED. The figures are those
-  # attributed to Wakenshaw and Bunn (WYG), "How far do people walk?", PTRC Transport
-  # Practitioners' Meeting 2015, from the National Travel Survey, as quoted in
-  # Oxfordshire County Council, "Parking Standards for New Developments: Walking
-  # Distances Review" (opened 2026-10-09). The paper itself could not be opened (its
-  # only known host timed out), so rule 3 keeps them PLACEHOLDER.
+  # observed walks that are at least that long. Source (Robbie, 2026-10-10): Montréal's
+  # 2003 origin–destination survey, 16,014 home-based transit trips, walking distance on
+  # the network from home to the first stop — NOT UK DATA. Distances in the source stop
+  # at about 1.5 km. The UK figures first proposed (Wakenshaw and Bunn, WYG 2015: bus
+  # 85th percentile 800 m, rail 1,610 m) could not be opened and are much longer:
+  # sources.md P3 records the disagreement. Cross-check only: TfL's PTAL takes 640 m
+  # (8 min) to a bus and 960 m (12 min) to rail as the furthest walk.
   decay:
     bus:
-      mean_m: {value: 580, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC; primary not opened"}
-      p85_m: {value: 800, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC; primary not opened"}
+      mean_m:
+        value: 296
+        unit: m
+        tag: SOURCED
+        source: >-
+          El-Geneidy, Grimsrud, Wasfi, Tétreault and Surprenant-Legault (2014), "New evidence on walking distances to transit stops: identifying redundancies and gaps using variable service areas", Transportation 41:193–210; authors' version https://www.tram.mcgill.ca/Research/Publications/Transit_service_area.pdf (opened 2026-10-10), Table 2: mean walking distance by bus operator (275.96, 314.50, 347.01,
+          488.73 m) weighted by the table's n (8,745, 1,628, 887, 538). Non-UK. The
+          weighting is this repo's; the paper gives no pooled bus mean.
+      p85_m:
+        value: 524
+        unit: m
+        tag: SOURCED
+        source: >-
+          El-Geneidy, Grimsrud, Wasfi, Tétreault and Surprenant-Legault (2014), "New evidence on walking distances to transit stops: identifying redundancies and gaps using variable service areas", Transportation 41:193–210; authors' version https://www.tram.mcgill.ca/Research/Publications/Transit_service_area.pdf (opened 2026-10-10), abstract and conclusion: "The 85th percentile walking distance to bus
+          transit service is around 524 meters from home-based trip origins". Non-UK.
+          Table 2's operator values run from 484 m (city) to 897 m (outer suburban).
     rail:
-      mean_m: {value: 1010, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC (which gives 1,020 m in one place and 1,010 m in the search summary); primary not opened"}
-      p85_m: {value: 1610, unit: m, tag: PLACEHOLDER, note: "WYG 2015 via Oxfordshire CC; primary not opened"}
+      mean_m:
+        value: 818
+        unit: m
+        tag: SOURCED
+        source: >-
+          El-Geneidy, Grimsrud, Wasfi, Tétreault and Surprenant-Legault (2014), "New evidence on walking distances to transit stops: identifying redundancies and gaps using variable service areas", Transportation 41:193–210; authors' version https://www.tram.mcgill.ca/Research/Publications/Transit_service_area.pdf (opened 2026-10-10), Table 2, Train (commuter rail): mean 817.98 m, n = 493. Non-UK.
+      p85_m:
+        value: 1259
+        unit: m
+        tag: SOURCED
+        source: >-
+          El-Geneidy, Grimsrud, Wasfi, Tétreault and Surprenant-Legault (2014), "New evidence on walking distances to transit stops: identifying redundancies and gaps using variable service areas", Transportation 41:193–210; authors' version https://www.tram.mcgill.ca/Research/Publications/Transit_service_area.pdf (opened 2026-10-10), Table 2, Train: 85th percentile 1,259.41 m. Non-UK.
+    metro:
+      mean_m:
+        value: 565
+        unit: m
+        tag: SOURCED
+        source: >-
+          El-Geneidy, Grimsrud, Wasfi, Tétreault and Surprenant-Legault (2014), "New evidence on walking distances to transit stops: identifying redundancies and gaps using variable service areas", Transportation 41:193–210; authors' version https://www.tram.mcgill.ca/Research/Publications/Transit_service_area.pdf (opened 2026-10-10), Table 2, Metro: mean 564.80 m, n = 3,723. Non-UK.
+      p85_m:
+        value: 873
+        unit: m
+        tag: SOURCED
+        source: >-
+          El-Geneidy, Grimsrud, Wasfi, Tétreault and Surprenant-Legault (2014), "New evidence on walking distances to transit stops: identifying redundancies and gaps using variable service areas", Transportation 41:193–210; authors' version https://www.tram.mcgill.ca/Research/Publications/Transit_service_area.pdf (opened 2026-10-10), Table 2, Metro: 85th percentile 873.35 m. Non-UK.
     brt_towards_rail:
       value: 0.33
       unit: position of the BRT decay between bus (0) and rail (1)
@@ -498,6 +552,27 @@ routing:
     reasoning: >-
       r5py's default; r5r's default is 3, which changed p50 times on the D7 comparison.
       8 is effectively unlimited for this network, so the router, not a cap, decides.
+  elevation_cost_function:
+    value: TOBLER
+    unit: R5 slope cost function applied to walking and cycling (NONE = flat network)
+    tag: MODELLED
+    reasoning: >-
+      Network v2 (Robbie, 2026-10-10): terrain from OS Terrain 50 with Tobler's hiking
+      function, the smaller departure from the sourced flat speeds (walk +6.6% against
+      Minetti's +13.9%; sources.md P3a). R5 applies one function to both modes: Tobler
+      likely under-penalises cycling uphill, a recorded limitation of the cycle skims
+      (revisit in P5). LAB_NETWORK=flat in the environment reproduces network v1.
+  walk_speed_terrain_factor:
+    value: 1.0318
+    unit: multiplier on walk_speed_kmh when the terrain model is on (4.953 km/h)
+    tag: MODELLED
+    reasoning: >-
+      R5's slope cost never speeds walking up, and a 50 m terrain grid is noisy, so with
+      terrain even the flattest fifth of OAs (terrain s.d. within 500 m below 4.8 m) walk
+      3.2% slower. 4.8 km/h is a flat-network convention, so the base speed is rescaled
+      until those OAs average 4.8 km/h effective: factor = their terrain ÷ flat walk-time
+      ratio, 1.0318 (13,805 pairs within 30 min); check after rescaling 0.9994. All OAs
+      then +3.3%, the steepest fifth +7.2% (Robbie, 2026-10-10; plans/P3.md §9).
   walk_speed_kmh:
     value: 4.8
     unit: km/h

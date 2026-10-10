@@ -1467,9 +1467,19 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
         feeds.check_file_unchanged(feeds.get(cfg, fid))
         if fid != "osm_clip":
             feeds.require_covers(feeds.get(cfg, fid), day)
-    work = cfg.root / "data" / "interim" / "skims" / f"pt_{period}"
-    net = cfg.root / "data" / "interim" / "r5r" / "net"
+    from . import network
+    nw = network.settings(cfg, raw, ps)
+    work = nw["skims"] / "_work" / f"pt_{period}"
+    net = nw["r5r_net"]
     work.mkdir(parents=True, exist_ok=True)
+    net.mkdir(parents=True, exist_ok=True)
+    for src in (raw["osm"]["clip"], raw["bus"]["out"], raw["rail"]["out"]):
+        dst = net / Path(src).name
+        if not dst.is_file() or params.file_hash(dst) != params.file_hash(cfg.root / src):
+            shutil.copyfile(cfg.root / src, dst)
+    if nw["elevation"] and not ((net / "elevation.tif").is_file()
+                                and params.file_hash(net / "elevation.tif") == nw["hashes"]["dem_clip"]):
+        shutil.copyfile(nw["tif"], net / "elevation.tif")
     with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
         con.execute("SELECT OA21CD id, lat, lon FROM int_oa_pwc ORDER BY 1").df() \
             .to_csv(work / "origins.csv", index=False)
@@ -1481,20 +1491,22 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
             "destinations": str(work / "destinations.csv"),
             "departure": f"{day} {ps[f'skims.window_start.{period}']}",
             "window_min": ps["skims.departure_window_min"],
-            "max_rides": ps["routing.max_rides"], "walk_speed_kmh": ps["routing.walk_speed_kmh"],
+            "max_rides": ps["routing.max_rides"], "walk_speed_kmh": nw["walk_kmh"],
+            "elevation": nw["elevation"], "network_version": nw["version"],
             "max_walk_min": ps["routing.max_walk_min"], "max_trip_min": ps["routing.max_trip_min"],
             "reach_share_min": ps["routing.pt_reachable_share_min"], "chunk": chunk,
             "sample_ids": str(work / "sample_ids.csv"), "out_dir": str(work / "chunks"),
             "java_mem": "10G"}
     rec = runrecord.build(cfg, command=f"skims-pt-{period}", inputs=[
-        {"name": f, "sha256": feeds.get(cfg, f)["sha256"]} for f in
-        ("osm_clip", "bus_gtfs", "rail_gtfs")] + [{"name": "r5r", "version": "2.4.0 (R5 7.5.1)"}])
+        {"name": f, "sha256": h} for f, h in nw["hashes"].items()]
+        + [{"name": "r5r", "version": "2.4.0 (R5 7.5.1)"},
+           {"name": "network_version", "version": nw["version"]}])
     runrecord.write(cfg, rec)
     try:
         sk.run_pt(cfg.root / "src" / "lab" / "r" / "pt_skims.R", rcfg, work / "config.json",
                   lambda m: click.echo(f"  {m}", err=True),
-                  [feeds.get(cfg, f)["sha256"] for f in ("osm_clip", "bus_gtfs", "rail_gtfs")]
-                  + [params.file_hash(cfg.root / "src" / "lab" / "r" / "pt_skims.R")])
+                  [nw["hashes"][f] for f in ("osm_clip", "bus_gtfs", "rail_gtfs")]
+                  + [params.file_hash(cfg.root / "src" / "lab" / "r" / "pt_skims.R"), nw["version"]])
         s = sk.combine(work / "chunks")
         w = {k: ps[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
         curve = ps["generalised_cost.first_wait_curve"]
@@ -1505,13 +1517,14 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
         s["gc_ride_min"] = sk.gc_tag(sk.ride_only(s), w, curve).where(
             s["ride_share"] >= ps["routing.pt_reachable_share_min"])
         s["provisional"] = provisional
-        out = cfg.root / "data" / "interim" / "skims" / f"pt_{period}_oa_lsoa.parquet"
+        out = network.skim(nw, "pt", period)
         s.to_parquet(out, compression="zstd")
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
     rec["result"] = {"pairs": len(s), "unreachable_share": float(s["unreachable"].mean()),
                      "median_p50": float(s["p50"].median()), "provisional": provisional,
+                     "network_version": nw["version"], "walk_speed_kmh": nw["walk_kmh"],
                      "out": str(out)}
     click.echo(f"  {rec['result']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
@@ -1524,15 +1537,18 @@ def skims_pt_gc(periods: tuple[str, ...]) -> None:
     M3.2 first-wait curve; gc_min_random_arrival keeps half-headway waiting."""
     import pandas as pd
     from . import skims as sk
+    import yaml
+    from . import network
     cfg = LabConfig.load()
     ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    nw = network.settings(cfg, yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text()), ps)
     w = {k: ps[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
     curve = ps["generalised_cost.first_wait_curve"]
     rec = runrecord.build(cfg, command="skims-pt-gc")
     runrecord.write(cfg, rec)
     res = {}
     for per in periods:
-        f = cfg.root / "data" / "interim" / "skims" / f"pt_{per}_oa_lsoa.parquet"
+        f = network.skim(nw, "pt", per)
         s = pd.read_parquet(f)
         s["gc_min"] = sk.gc_tag(s, w, curve).where(~s["unreachable"])
         s["gc_min_random_arrival"] = sk.gc_from_components(s, w).where(~s["unreachable"])
@@ -1562,6 +1578,7 @@ def skims_car(periods: tuple[str, ...], variant: str) -> None:
     import numpy as np
     import pandas as pd
     import yaml
+    from . import network
     from .congestion import validate as va
     from .supply import osrm
     cfg = LabConfig.load()
@@ -1594,7 +1611,7 @@ def skims_car(periods: tuple[str, ...], variant: str) -> None:
             t["access_walk_min"] = np.nan       # (by destination area type)
             t["gc_min"] = np.nan
             t["variant"], t["period"] = variant, per
-            out = cfg.root / "data" / "interim" / "skims" / f"car_{per}_oa_lsoa.parquet"
+            out = network.skim(network.settings(cfg, raw, ps), "car", per)
             t.to_parquet(out, compression="zstd")
             res[per] = {"pairs": len(t), "unroutable": int(t["ivt_min"].isna().sum()),
                         "median_ivt_min": float(t["ivt_min"].median())}
@@ -1633,16 +1650,23 @@ def skims_active() -> None:
     runrecord.write(cfg, rec)
     res = {}
     try:
-        net = TransportNetwork(str(cfg.root / raw["osm"]["clip"]), [])
+        from r5py import ElevationCostFunction
+        from . import network
+        from .supply import dem
+        nw = network.settings(cfg, raw, ps)
+        net = (TransportNetwork(str(cfg.root / raw["osm"]["clip"]), []) if not nw["elevation"] else
+               TransportNetwork(str(cfg.root / raw["osm"]["clip"]), [],
+                                elevation_model=[dem.for_function(nw["tif"], nw["elevation"])],
+                                elevation_cost_function=ElevationCostFunction(nw["elevation"])))
         dep = dt.datetime.combine(day, dt.time.fromisoformat(ps["skims.window_start.AM"]))
         mx = dt.timedelta(minutes=ps["routing.max_trip_min"])
         for mode, tm in (("walk", TransportMode.WALK), ("cycle", TransportMode.BICYCLE)):
             t = TravelTimeMatrix(net, origins=g(o), destinations=g(d), departure=dep,
                                  transport_modes=[tm], max_time=mx,
-                                 speed_walking=ps["routing.walk_speed_kmh"],
+                                 speed_walking=nw["walk_kmh"],
                                  speed_cycling=ps["routing.cycle_speed_kmh"],
                                  max_bicycle_traffic_stress=ps["routing.max_bicycle_lts"])
-            out = cfg.root / "data" / "interim" / "skims" / f"{mode}_oa_lsoa.parquet"
+            out = network.skim(nw, mode)
             t.to_parquet(out)
             res[mode] = {"pairs": len(t), "reachable": int(t["travel_time"].notna().sum()),
                          "median_min": float(t["travel_time"].median())}
@@ -1650,7 +1674,7 @@ def skims_active() -> None:
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
-    rec["result"] = res
+    rec["result"] = {**res, "network_version": nw["version"], "walk_speed_kmh": nw["walk_kmh"]}
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
@@ -1660,13 +1684,17 @@ def access_cmd(thresholds: str) -> None:
     """C2: cumulative BRES jobs reachable per OA (PT AM p50; walk for context)."""
     import duckdb
     from .supply import avl as a
+    import yaml
+    from . import network
     cfg = LabConfig.load()
-    sk = cfg.root / "data" / "interim" / "skims"
+    nw = network.settings(cfg, yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text()),
+                          {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")})
+    f_pt, f_wk = network.skim(nw, "pt", "AM"), network.skim(nw, "walk")
     th = [int(x) for x in thresholds.split(",")]
     x0, y0, x1, y1 = cfg.extent
     rec = runrecord.build(cfg, command="access", inputs=[
-        {"name": str(sk / f), "sha256": params.file_hash(sk / f)}
-        for f in ("pt_AM_oa_lsoa.parquet", "walk_oa_lsoa.parquet")])
+        {"name": str(f), "sha256": params.file_hash(f)} for f in (f_pt, f_wk)]
+        + [{"name": "network_version", "version": nw["version"]}])
     runrecord.write(cfg, rec)
     try:
         with duckdb.connect(str(cfg.lab_db)) as con:
@@ -1674,9 +1702,9 @@ def access_cmd(thresholds: str) -> None:
                 f"sum(j.jobs) FILTER (WHERE s.t <= {t}) AS jobs_{t}" for t in th)
             con.execute(f"""CREATE OR REPLACE TEMP VIEW pt AS
                 SELECT from_id, to_id, CASE WHEN NOT unreachable THEN p50 END t
-                FROM read_parquet('{sk / 'pt_AM_oa_lsoa.parquet'}')""")
+                FROM read_parquet('{f_pt}')""")
             con.execute(f"""CREATE OR REPLACE TEMP VIEW wk AS
-                SELECT from_id, to_id, travel_time t FROM read_parquet('{sk / 'walk_oa_lsoa.parquet'}')""")
+                SELECT from_id, to_id, travel_time t FROM read_parquet('{f_wk}')""")
             for mode in ("pt", "wk"):
                 con.execute(f"""CREATE OR REPLACE TEMP TABLE acc_{mode} AS
                     SELECT o.OA21CD, {cols}
@@ -1806,10 +1834,11 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
     cfg = LabConfig.load()
     raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
     ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
-    sk = cfg.root / "data" / "interim" / "skims"
+    from . import network
+    nw = network.settings(cfg, raw, ps)
     geo = cfg.root / "data" / "raw" / "ons_geo"
     ruc = cfg.root / "data/raw/ons/ruc21_lsoa_ew.csv"
-    pt, car = sk / f"pt_{pt_period}_oa_lsoa.parquet", sk / f"car_{car_period}_oa_lsoa.parquet"
+    pt, car = network.skim(nw, "pt", pt_period), network.skim(nw, "car", car_period)
     park = {k: ps[f"car.parking_search_min.{k}"] for k in ("centre", "urban", "rural")}
     walk = {k: ps[f"car.access_walk_min.{k}"] for k in ("centre", "urban", "rural")}
     min_km = ps["gapmap.min_distance_km"]
@@ -1930,8 +1959,17 @@ def spotchecks_cmd(slots: str, walk_kmh: float | None) -> None:
         ps["routing.walk_speed_kmh"] = walk_kmh
     rec = runrecord.build(cfg, command="spotchecks")
     runrecord.write(cfg, rec)
-    net = TransportNetwork(str(cfg.root / raw["osm"]["clip"]),
-                           [str(cfg.root / raw["bus"]["out"]), str(cfg.root / raw["rail"]["out"])])
+    from r5py import ElevationCostFunction
+    from . import network
+    from .supply import dem
+    nw = network.settings(cfg, raw, ps)
+    if walk_kmh is None:
+        ps["routing.walk_speed_kmh"] = nw["walk_kmh"]
+    gtfs = [str(cfg.root / raw["bus"]["out"]), str(cfg.root / raw["rail"]["out"])]
+    net = (TransportNetwork(str(cfg.root / raw["osm"]["clip"]), gtfs) if not nw["elevation"] else
+           TransportNetwork(str(cfg.root / raw["osm"]["clip"]), gtfs,
+                            elevation_model=[dem.for_function(nw["tif"], nw["elevation"])],
+                            elevation_cost_function=ElevationCostFunction(nw["elevation"])))
     rows = []
     for name, hhmm in slot.items():
         for _, r in sc.iterrows():
@@ -1961,6 +1999,7 @@ def spotchecks_cmd(slots: str, walk_kmh: float | None) -> None:
     (out.parent / "README.md").write_text(PT_SPOT_README)
     rec["result"] = {"csv": str(out), "rows": len(out_df), "slots": slot,
                      "walk_speed_kmh": ps["routing.walk_speed_kmh"],
+                     "network_version": nw["version"],
                      "walk_speed_overridden": walk_kmh is not None}
     click.echo(out_df[["id", "slot", "origin", "destination", "model_best_min", "model_p50_min"]]
                .to_string(index=False))

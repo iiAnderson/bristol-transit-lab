@@ -258,14 +258,15 @@ def fit_exponential(mean_m: float, p85_m: float) -> dict:
 
 
 def decay_curves(obs: dict[str, dict[str, float]], between: dict[str, float]) -> dict[str, dict]:
-    """Logistic curves per mode class. ``obs`` has mean_m and p85_m for bus and rail;
-    ``between`` places other classes between bus (0) and rail (1). Metro takes the rail
-    curve and ferry the bus curve."""
-    fit = {m: fit_logistic(obs[m]["mean_m"], obs[m]["p85_m"]) | obs[m] for m in ("bus", "rail")}
+    """Logistic curves per mode class. ``obs`` has mean_m and p85_m for bus and rail
+    (and metro, if observed; otherwise metro takes the rail curve); ``between`` places
+    other classes between bus (0) and rail (1). Ferry takes the bus curve."""
+    fit = {m: fit_logistic(obs[m]["mean_m"], obs[m]["p85_m"]) | obs[m] for m in obs}
     for m, w in between.items():
         o = {k: (1 - w) * obs["bus"][k] + w * obs["rail"][k] for k in ("mean_m", "p85_m")}
         fit[m] = fit_logistic(o["mean_m"], o["p85_m"]) | o
-    fit["metro"], fit["ferry"] = fit["rail"], fit["bus"]
+    fit.setdefault("metro", fit["rail"])
+    fit["ferry"] = fit["bus"]
     return fit
 
 

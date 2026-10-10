@@ -326,6 +326,15 @@ ops:
   P3 starts, check how r5r's `expanded_travel_time_matrix()` handles them and set
   `draws_per_minute` deliberately (a tagged parameter), so scenario PT skims are
   comparable with the timetable-based baseline.
+  *Decided at the P3a stop (2026-10-10), replacing the two sentences above:* generated
+  services are written as **explicit trips** (`stop_times.txt`), not `frequencies.txt`.
+  Measured on one existing 15-minute route rewritten by hand: frequency-based routing
+  matched the timetable's median within 1 minute on only 37–43% of the pairs that use
+  the route, whatever the number of draws, while explicit trips at the same offset
+  reproduce it exactly. A 3-minute shift of the explicit trips moves results as much, so
+  **every generated service is run at 3 offsets spread evenly across its headway; the
+  mean and the range are reported and comparisons use the mean.** The offsets are
+  recorded inputs of the run.
 - *Added at the end of P2:* the baseline bus GTFS holds **copies** of trips that carry
   pick-up or set-down restrictions (976 source trips written as 4,727 copies; R5 ignores
   the GTFS flags, §7.1). `trips.txt` has an `original_trip_id` column. The generator and
@@ -497,6 +506,19 @@ this is what the code does (detail and run ids in plans/P2.md §9):
   (hourly stamp = end of hour) and validated on the other half. Inside that scope the
   ANPR level takes priority over DfT's (Robbie, 2026-10-09) and the ±5% DfT acceptance
   is given up; outside it speeds stay on the DfT fit.
+- *Network v2 (decided at the P3a stop, 2026-10-10; adopted subject to the PT spot-check
+  re-score, plans/P3.md §9).* Walking and cycling use a terrain model: OS Terrain 50
+  (50 m grid) with R5's Tobler slope cost, the same raster and function in r5py and r5r.
+  R5 applies one function to both modes and never speeds anything up downhill, and the
+  grid is noisy, so flat ground would be 3% slower: the base walk speed is therefore
+  rescaled (`routing.walk_speed_terrain_factor`, × 1.0318 → 4.95 km/h) until the
+  flattest fifth of OAs average the sourced 4.8 km/h. Cycle speed is not rescaled.
+  Network v1 (flat) stays on record; `LAB_NETWORK=flat` reproduces it. A network is
+  identified by `network_version` (§4). r5py caches built networks by input file hash
+  only, so each slope function gets its own tagged copy of the raster.
+- *Whole minutes.* r5py's travel time matrix truncates to the minute; r5r's expanded
+  matrix (PT skims) reports tenths. Coverage adds half a minute to r5py walking times;
+  the walk and cycle skims are still truncated (to settle when P5 uses them as modes).
 - *Car GC.* In-vehicle time plus parking search and access walk by destination area
   type. Those terminal times cannot be sourced: they are a [MODELLED] range (low = none,
   high = the values in params) and outputs report both ends.
@@ -612,9 +634,25 @@ scenario, its parent, and the difference.
   - deprivation splits use the English Indices of Deprivation and the Welsh Index of
     Multiple Deprivation **separately, never pooled**;
   - a reduced-mobility variant (shorter decay) is reported alongside.
-  Decay curves, the class definition, stop clustering and the treatment of gradient are
-  settled at the P3a stop (plans/P3.md D1–D4) and written here then. Every figure names
-  the modelled date, the walk speed and whether gradient is included.
+  *Settled at the P3a stop (2026-10-10):*
+  - **headline: "frequent" = every 15 minutes or better** (the scheme design standard),
+    with every 10 minutes or better shown as "high frequency"; on network v2 (terrain)
+    with the half-minute truncation correction, the uncorrected figure alongside;
+  - an OA is served if a stop cluster at that service level is within the
+    85th-percentile walk for its mode; the decay-weighted count is reported beside it;
+  - decay: a logistic curve per mode class fitted to the mean and 85th percentile of
+    observed walks to stops, from El-Geneidy et al. (2014), Montréal — **not UK data**
+    (bus 296 / 524 m, rail 818 / 1,259 m, metro 565 / 873 m); BRT and tram interpolated
+    between bus and rail `[MODELLED]`. The UK figures first proposed (WYG 2015) could
+    not be opened and are much longer (bus 85th percentile 800 m); sources.md P3;
+  - service-quality classes after the Swiss ARE method (stop category from mode and
+    interval, class from category and distance), with network walking distance in place
+    of ARE's straight line;
+  - service level = departures per hour in one direction: all departures at the
+    cluster halved, except at termini and one-way stops (the ARE convention);
+  - stop clusters: same name within 150 m or any name within 40 m, never joined across
+    more than a 4-minute walk.
+  Every figure names the modelled date, the walk speed and whether gradient is included.
 - Change maps as GeoParquet
 
 ### 8.3 Cost
@@ -943,6 +981,14 @@ matter for the scenario being reported.
     limit. Its base usage is passenger and empty-stock paths from Darwin, which holds
     **no freight**: freight is a `[MODELLED]` allowance per section where it is known
     to run, not a count. Every capacity table says so.
+
+21. **Gradient is crude.** One slope function (Tobler) serves walking and cycling; it
+    likely under-penalises cycling uphill, and R5 gives no downhill gain. The terrain
+    grid is 50 m with 4 m RMSE, too coarse for a short steep street. Revisit the cycle
+    skims in P5; a finer model (EA LIDAR composite, NRW LIDAR) is a lead.
+22. **How far people walk to a stop comes from Montréal (2003 survey), not the UK.**
+    No UK primary source could be opened. The British figures in circulation are
+    longer, which would raise coverage. A UK lead: NTS stage-level microdata.
 
 ---
 

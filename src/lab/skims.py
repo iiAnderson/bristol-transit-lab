@@ -68,7 +68,7 @@ def reset_stale_network(net_dir: Path, feed_hashes: list[str], log) -> bool:
 
 
 def run_pt(script: Path, cfg: dict, cfg_path: Path, log, inputs: list[str]) -> None:
-    reset_stale_network(Path(cfg["net_dir"]), inputs[:3], log)
+    reset_stale_network(Path(cfg["net_dir"]), [*inputs[:3], *inputs[4:]], log)   # all but the script hash
     reset_stale_chunks(Path(cfg["out_dir"]), chunk_key(cfg, inputs), log)
     cfg_path.write_text(json.dumps(cfg))
     p = subprocess.Popen([str(R_ENV / "bin" / "Rscript"), str(script), str(cfg_path)],

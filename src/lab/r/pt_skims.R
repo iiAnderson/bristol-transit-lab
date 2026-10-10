@@ -5,6 +5,7 @@
 #         departure ("YYYY-mm-dd HH:MM", Europe/London), window_min, max_rides,
 #         walk_speed_kmh, max_walk_min (null = none), max_trip_min, reach_share_min,
 #         chunk, sample_ids (csv id; full per-minute output kept for these origins),
+#         elevation (null = flat; else the slope cost function, with a .tif in net_dir),
 #         out_dir, java_mem
 #
 # Per origin chunk, one row per (OA, destination) pair:
@@ -27,7 +28,8 @@ dep <- as.POSIXct(cfg$departure, format = "%Y-%m-%d %H:%M", tz = "Europe/London"
 o <- fread(cfg$origins); d <- fread(cfg$destinations)
 sample_ids <- if (!is.null(cfg$sample_ids)) fread(cfg$sample_ids)$id else character(0)
 dir.create(cfg$out_dir, recursive = TRUE, showWarnings = FALSE)
-net <- build_network(cfg$net_dir, verbose = FALSE)
+net <- build_network(cfg$net_dir, verbose = FALSE,
+                     elevation = if (is.null(cfg$elevation)) "NONE" else cfg$elevation)
 W <- cfg$window_min
 max_walk <- if (is.null(cfg$max_walk_min)) Inf else cfg$max_walk_min
 
