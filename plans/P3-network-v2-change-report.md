@@ -77,6 +77,17 @@ Service-quality classes: A 73,249, B 148,073, C 281,394, D 415,825, none 300,963
 residents with a frequent service, England, most to least deprived tenth: 82% … 38%; Wales
 (separate index, never pooled): 41% … 38%.
 
+**Where the truncation correction is exact.** R5 floors walking times to the minute, so a
+stored value k means a true time in [k, k + 1). Adding half a minute and testing against a
+whole-minute cut-off (the headline's 8 and 12 minutes) keeps exactly the pairs with k ≤ 7
+and k ≤ 11, that is every pair truly under the cut-off and none over it: for the
+**headline variant the corrected count is exact**. At the non-integer cut-offs — strict
+(6.55 and 15.74 min) and loose (10.0 for bus, which is integer and exact, and 20.12 for
+rail) — a pair stored in the minute that contains the cut-off may fall either side, and
+the half minute only places it at the middle of its minute: for the **strict variant and
+the rail part of the loose variant the corrected count is an approximation**. The
+decay-weighted figures are approximate under every variant.
+
 The cut-off matters far more than terrain: strict to loose is 150,000 residents; terrain is
 10,000. The truncation correction is worth 58,000 at the headline cut-off, because 8
 minutes falls exactly on a minute boundary.
