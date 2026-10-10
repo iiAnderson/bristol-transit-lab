@@ -115,7 +115,7 @@ unless the spot checks give a reason sooner.
   is this class; each needs its own look at how the entrance or the stands are mapped. Not
   investigated further.
 - **The 40 OAs** within 400 m of a stop but a disproportionate walk from it: 5 are explained
-  by this class (4 at the stop, 1 at the centroid, 1 at both ends counted once). At least 6
+  by this class (3 at the stop only, 1 at the centroid only, 1 at both). At least 6
   of the others have a Floating Harbour stop or ferry landing as their nearest stop (a real
   water barrier). The remaining 29 are **still unclassified**: divided roads, railways and
   rivers are likely, but none has been looked at.

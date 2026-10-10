@@ -1121,6 +1121,119 @@ Full tables: `plans/P3-network-v2-change-report.md`.
 - **The Mac slept for five hours mid-rebuild** (09:27–14:54): a long chain needs
   `caffeinate`, as P2's live collection did.
 
+### P3b datasets and sources (2026-10-10)
+
+| Dataset / document | URL | Accessed | Licence | Version / notes |
+|---|---|---|---|---|
+| Network Rail, "The Portishead line" | https://www.networkrail.co.uk/our-work/our-routes/western/the-portishead-line/ | 2026-10-10 | — (cited) | "The restored railway will provide an hourly direct train from Portishead to Bristol Temple Meads in around 25 minutes"; reopening in 2028; new stations at Portishead and Pill. No calling pattern beyond Pill and no line speed on the page |
+| TravelWest, MetroWest | https://travelwest.info/projects/metrowest/ | 2026-10-10 | — (cited) | "an hourly service between Portishead and Bristol Temple Meads with new stations at Pill and Portishead"; nothing further |
+| OpenStreetMap, the 26 Sep 2026 extract (already registered as `osm_clip`) | — | — | ODbL 1.0 | **New uses:** (1) rail alignments for scenarios, routed along `railway` ways (`lab scenario draw-rail`; the Portishead end is `railway=construction`); (2) station points OSM node 11845402921 (Portishead) and 11845402922 (Pill), both `proposed:railway=station`, and 6353014942 (Henbury, `historic:railway=station`: the old station's site, used as a `[MODELLED]` position). Bristol Brabazon's point is NaPTAN's (`9100NRHFILT`) |
+| Darwin Push Port timetable and reference of 23 Sep 2026 (already registered) | — | — | NRE OGL | **New uses:** passing points and working times (`lab supply rail-infrastructure`); the reference data's station codes for Portishead (PRTSHD / POH), Pill (PILL / PIA), Henbury (HENBURY / HBR) and Bristol Brabazon (NRHFILT / BBZ) |
+
+**Not opened, and standing as `[MODELLED]`:** the Portishead branch's track layout (taken
+as single track) and its junction with the main line (taken at Parson Street, which the OSM
+geometry supports: the ways named "Portishead Branch Line" meet the main line just west of
+that station); the calling pattern of Portishead trains beyond Pill (taken as Parson Street
+and Bedminster); any line speed for either reopened line; Network Rail's Sectional Appendix
+and Timetable Planning Rules (every capacity limit); the new Henbury station's position.
+
+### P3b findings (2026-10-10)
+
+**Darwin carries the timing data the plan needed.** On 23 Sep 2026, 907 journeys have a
+station in the clip box, with 26,875 timing points: 17,160 passing points, 9,224 calls and
+491 operational stops (run `20261010T163353-supply-rail-infrastructure-bc24b8`; table
+`rail_timing_point`). 707 are in the passenger timetable; 133 are not passenger services
+(mostly empty stock), 63 are road vehicles in the rail timetable, 4 charters. They define
+190 directed sections between consecutive timing points
+(`scenarios/infrastructure/darwin_sections.yaml`); the busiest, at the east end of Temple
+Meads, carries 277 trains a day. Working times are to the half minute.
+
+**Today's trains already run timed over the Henbury line.** 14 trains a day each way are
+timed Filton Abbey Wood – Filton West Junction – Hallen Moor (the Filton Abbey Wood
+terminators running on empty to turn round), so the line is in Darwin although its two
+stations are not. The Portishead branch has no timed train at all.
+
+**B2028, built from B2026 by ops** (`scenarios/B2028.yaml`; build run
+`20261010T164434-scenario-build-cbc50a`; feeds pass the GTFS validator with no errors):
+
+| | modelled | published | difference |
+|---|---|---|---|
+| Portishead → Temple Meads | 21.5 min | "around 25 minutes" (Network Rail) | −3.5 min (−14%) |
+| Temple Meads → Portishead | 20.0 min | the same | −5.0 min (−20%) |
+| Temple Meads → North Filton | 17.5 min (median of 13 trains; 17.5–19.5) | 23 min (WECA business case) | −5.5 min (−24%) |
+| Temple Meads → Henbury | 21.6 min | "26 minutes between Henbury and North Filton" as printed, read as 26 min from Temple Meads | −4.4 min (−17%) |
+
+The model is too fast on both reopened lines. The cause is the `[MODELLED]` speed profile
+(80 km/h, 0.5 m/s², 60 s dwell) on the legs no train is timed over today: Portishead – Pill
+– Parson Street (14.8 km in 12.5 min plus dwell) and Filton Abbey Wood – North Filton –
+Henbury (5.5 km in 5.6 min plus dwell). Parson Street – Bedminster – Temple Meads uses
+working times (medians of 23–24 trains: 2.0 and 4.0 min inbound, 2.0 and 2.5 outbound).
+**Not tuned.** A line speed from a primary source would settle it. The Henbury-line service
+is today's 13–14 Filton Abbey Wood terminators a day each way, extended; the business case
+has 22 return services.
+
+**B2028 against B2026** (run `20261010T183947-B2028-f6d9bf`, clean tree; three offsets,
+networks `tobler-5e8bdb5f27`, `tobler-63fc65bb83`, `tobler-7d5d079b41`; PT times are the mean
+over the offsets):
+
+- AM: 116,053 OA → LSOA pairs at least 2 minutes faster and 55,786 at least 5; none 2 minutes
+  slower; 12,098 pairs become reachable and 7 are lost; mean change −0.33 min. Inter-peak:
+  104,972 pairs 2 minutes faster, 8,099 gained, mean −0.27 min.
+- Jobs within 45 min by PT, median core OA: 79,055 → 79,193 (AM), 113,368 → 114,230
+  (inter-peak); resident-weighted mean +191 (AM), +174 (inter-peak).
+- **Frequent-service coverage does not move:** 644,764 residents frequent, 426,199 high
+  frequency, as B2026. Two hourly lines are not "frequent". Residents in no service-quality
+  class fall by 549.
+- **The offsets matter little here:** a pair's median varies across the three offsets by
+  0.25 min on average, 1.7 min at the 95th percentile (largest 32 min, where an hourly
+  train is the only option).
+- Capacity: 16 sections used, none over its limit at any offset.
+
+**Round trip on the real feed.** One bus route with 504 restriction copies, timed exactly
+every 15 minutes in the inter-peak, set to every 10 minutes and back to 15
+(`scenarios/T001-…`, `T001r-…`; `tests/test_round_trip.py`): its 1,008 stop times and 126
+journeys come back identical (trip ids aside) and every other route is untouched. Two bugs
+were found by it and fixed: a route re-timed twice reused trip ids, and a journey's stop
+pattern depended on how same-minute calls and the copies' own `stop_sequence` happened to be
+ordered. **What the round trip does not show:** a real, uneven timetable cannot be recovered
+from a headway, so "revert" is exact only for evenly timed service.
+
+**Track-capacity check** (`src/lab/capacity.py`; `scenarios/infrastructure/capacity.yaml`).
+Base use is every train in Darwin that uses track, by section and clock hour; the scenario's
+generated and extended trains are added at each offset, with a freight allowance of one
+train an hour each way on the Portishead branch, the Henbury line and Filton Bank. Limits:
+12 trains an hour per direction on double track, 60 ÷ (2 × run time + 2 × 3 min) on single
+track, never below the busiest hour observed today. **Every one of these numbers is
+`[MODELLED]`.** On B2028 the tightest section is Pill – Parson Street (single track assumed):
+1 passenger + 1 freight against a limit of 2. Known gaps: trains re-timed by a scenario
+are counted at today's paths; an extended train is counted twice over the stretch it already
+runs empty; junction conflicts are not assessed; new track with no timing points (a
+tunnel) is not checked at all.
+
+**`bus_speed_ratio`** (run `20261010T175431-congestion-bus-speed-ratio-edf54a`; values in
+`params/base.yaml`, `scenario.bus_speed_ratio`). 292,864 link × direction × period cells on
+2,650 km, links with bus-lane tags left out. Overall bus moving speed ÷ car speed: 0.58 AM,
+0.54 in the 08–09 hour, 0.65 inter-peak, 0.75 PM (three live days only); by class and area
+0.50–0.98. Links with bus-lane tags, not used: 0.83–0.91.
+
+| spatial hold-out, 1,074 one-km blocks, 5 folds | fitted ratio | ratio of 1 |
+|---|---|---|
+| total running time | +2.8% | −37% |
+| a block's running time, median absolute error | 31% | 23% |
+| a block's running time, median signed error | +24% | −19% |
+| one link's speed, median absolute error | 34% | 29% |
+
+For comparison P2's held-out bus speed error was 27% per cell. **The ratio is unbiased in
+total and poor locally**: bus delay is concentrated in a minority of links, so a class × area
+average makes the typical street too slow and the worst streets too fast. It is also not
+independent of the car speeds, whose period shape P2 took from these same bus speeds. The
+generator's on-street run-time rule that would use it is not built.
+
+**Walk-network fault class:** `plans/P3-walk-faults.md`. 530 of 5,812 stops (9.1%) and 135 of
+3,799 OA centroids (3.6%) stand on a separately mapped path with no link to the carriageway
+within 20 m; linking the stops would add 378 residents (0.06%) to the frequent-service
+headline.
+
 ## Phase status
 
 | phase | status |
