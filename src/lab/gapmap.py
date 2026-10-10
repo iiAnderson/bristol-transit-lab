@@ -36,7 +36,7 @@ LABEL = ("Provisional. Commute only (daily HBW flows, AM peak-hour times; intern
          "time, real minutes; GC in generalised minutes (walk and wait weighted, interchange "
          "penalty). Car parking/access times are a modelled range "
          "(low = none; high = centre {centre:g}, urban {urban:g}, rural {rural:g} min). Car "
-         "AM peak hour is still ~10% too fast in central Bristol on held-out ANPR "
+         "AM peak hour is still ~10% too fast in {anpr_area} on held-out ANPR "
          "(validation half {anpr:.2f}), so PT's disadvantage is slightly understated.")
 
 BANDS = [("intrazonal", None, None), ("< 1 km", 0, 1), ("1–2 km", 1, 2), ("2–5 km", 2, 5),

@@ -1,18 +1,17 @@
-# Rule 6 findings in P2 code, found when the test was written (2026-10-09).
-# Reported at the P3a stop; fix or accept each, then delete its line. path|term
-src/lab/cli.py|Bristol
-src/lab/congestion/annotate.py|Bristol
-src/lab/congestion/annotate.py|Clevedon
-src/lab/congestion/annotate.py|Newport
-src/lab/congestion/annotate.py|Portishead
-src/lab/congestion/annotate.py|Thornbury
-src/lab/congestion/annotate.py|Weston-super-Mare
-src/lab/congestion/annotate.py|Yate
-src/lab/congestion/anpr.py|Bristol
-src/lab/congestion/avl_speeds.py|Metrobus
-src/lab/congestion/calibrate.py|Bristol
-src/lab/congestion/road_class.py|Newport
-src/lab/congestion/validate.py|Bristol
-src/lab/congestion/webtris.py|Almondsbury
-src/lab/gapmap.py|Bristol
-src/lab/supply/bus_variants.py|Bristol
+# Rule 6 allowlist (Robbie, 2026-10-10): place names accepted in comments and docstrings
+# of P2 code, one justified entry each. path|term|justification. Anything else in src/
+# fails the test; an entry that no longer occurs must be removed.
+src/lab/congestion/annotate.py|Bristol|comment recording the measured finding that contiguity of urban LSOAs chains the towns together (why the scope uses built-up areas)
+src/lab/congestion/annotate.py|Clevedon|same comment: one of the towns the contiguity rule wrongly chained in
+src/lab/congestion/annotate.py|Portishead|same comment
+src/lab/congestion/annotate.py|Thornbury|same comment
+src/lab/congestion/annotate.py|Weston-super-Mare|same comment
+src/lab/congestion/annotate.py|Yate|same comment
+src/lab/congestion/annotate.py|Newport|docstring example of a road that changes class part-way, the case the propagation rule exists for
+src/lab/congestion/road_class.py|Newport|docstring: the same worked example of a road changing hands
+src/lab/congestion/anpr.py|Bristol|docstring naming the dataset's publisher (a council), not a place the code acts on
+src/lab/congestion/validate.py|Bristol|docstring naming the validation dataset
+src/lab/congestion/calibrate.py|Bristol|comment stating where the ANPR layer is calibrated and where it is a modelled transfer
+src/lab/congestion/avl_speeds.py|Metrobus|docstring: the service whose vehicles are excluded; the route ids themselves are in config
+src/lab/congestion/webtris.py|Almondsbury|docstring: the measured example showing WebTRIS direction labels are nominal
+src/lab/supply/bus_variants.py|Bristol|docstring naming the operator whose variants the module resolves

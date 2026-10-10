@@ -3,9 +3,9 @@ coordinates inside ``src/``. They live in ``scenarios/``, ``landuse/`` and confi
 
 The scan covers code, comments and docstrings of every ``.py`` and ``.R`` file under
 ``src/lab``. The project's own name is exempt. Findings that predate the test (P2 code)
-are listed in ``tests/rule6_known.txt``, one ``path|term`` per line, each awaiting a
-decision; the test fails on anything not listed, and on any listed entry that no longer
-occurs, so the list can only shrink.
+are allowed only through ``tests/rule6_known.txt``: one ``path|term|justification`` per
+line, comments and docstrings only (Robbie, 2026-10-10). The test fails on anything not
+listed, on an entry without a justification, and on any entry that no longer occurs.
 """
 from __future__ import annotations
 
@@ -59,7 +59,13 @@ def _src_files() -> list[Path]:
 
 def _known() -> set[tuple[str, str]]:
     rows = (ROOT / "tests" / "rule6_known.txt").read_text().splitlines()
-    return {tuple(r.split("|", 1)) for r in rows if r and not r.startswith("#")}
+    out = set()
+    for r in rows:
+        if r and not r.startswith("#"):
+            path, term, why = r.split("|", 2)
+            assert why.strip(), f"rule 6 allowlist entry without a justification: {path}|{term}"
+            out.add((path, term))
+    return out
 
 
 def test_no_new_place_data_in_src():

@@ -971,7 +971,7 @@ def congestion_anpr_prep(block_km: float) -> None:
             legend_kwds={"loc": "lower left", "fontsize": 8})
     lk = gpd.read_file(an / "journey_links.geojson")
     lk.plot(ax=ax, color="black", linewidth=0.8)
-    ax.set_title("ANPR layer scope: Bristol built-up area (black: ANPR links)")
+    ax.set_title(raw["anpr"]["labels"]["scope_plot_title"])
     ax.set_axis_off()
     fig.savefig(cfg.runs_dir / rec["run_id"] / "anpr_layer_scope.png", dpi=150, bbox_inches="tight")
     paths.to_parquet(d / "anpr_paths.parquet")
@@ -1449,7 +1449,7 @@ def skims() -> None:
 @click.option("--period", type=click.Choice(["AM", "IP"]), required=True)
 @click.option("--chunk", default=100, show_default=True)
 @click.option("--provisional/--final", default=True, show_default=True,
-              help="Provisional until the First Bristol 5/77 variants are resolved.")
+              help="Provisional until the unresolved same-start trip variants are settled.")
 def skims_pt(period: str, chunk: int, provisional: bool) -> None:
     """PT skims OA -> clip-box LSOAs from r5r's expanded matrix (per-pair summary)."""
     import datetime as dt
@@ -1816,7 +1816,7 @@ def gapmap_cmd(car_period: str, pt_period: str) -> None:
     # the caveat on the label comes from the latest calibration's held-out ANPR figure
     cals = sorted(cfg.runs_dir.glob("*-congestion-calibrate-*/calibration.json"))
     anpr_val = json.loads(cals[-1].read_text())["anpr"][f"hybrid|{car_period}|validation"]["median_ratio"]
-    label = gm.LABEL.format(min_km=min_km, anpr=anpr_val,
+    label = gm.LABEL.format(min_km=min_km, anpr=anpr_val, anpr_area=raw["anpr"]["labels"]["validation_area"],
                             **{k: park[k] + walk[k] for k in park})
     rec = runrecord.build(cfg, command="gapmap", inputs=[
         {"name": str(f), "sha256": params.file_hash(f)} for f in (pt, car, ruc)]

@@ -66,6 +66,10 @@ paths:
 # (Robbie, 2026-10-09, on the profile evidence in sources.md "P2b round 2 findings";
 # not confirmed by Bristol City Council).
 anpr:
+  # Place names for output labels (rule 6: none in src/).
+  labels:
+    scope_plot_title: "ANPR layer scope: Bristol built-up area (black: ANPR links)"
+    validation_area: central Bristol
   hour_stamp: end                      # "start" | "end"
   # Where the ANPR layer applies (Robbie, 2026-10-09): centre and urban segments of the
   # Bristol built-up area — Bristol's centre/urban LSOAs, plus the centre/urban LSOAs of
