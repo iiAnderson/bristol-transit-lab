@@ -1072,6 +1072,7 @@ ONS (`Output_Areas_2021_EW_BGC_V2`, accessed 2026-10-09, OGL v3).
 | TAG unit A1.2, Scheme Costs (May 2025) | https://assets.publishing.service.gov.uk/media/681b53303f1c73824ee3e501/tag-unit-a1-2-cost-estimation.pdf | 2026-10-10 | OGL v3 | SHA-256 `0613691c…`. Table 7, recommended optimism-bias uplifts at stages 1 / 2 / 3: roads 46 / 23 / 20%; rail (metro, light rail, guided buses on tracks, line upgrades, high-speed rail) 56 / 33 / 30%; fixed links 55 / 32 / 28%; stations and terminal buildings 70 / 48 / 44%; IT 69 / 50 / 42%; land and property 33 / 14 / 0%; rolling stock 61 / 38 / 35%. Table 6: stage 1 = SOBC, 2 = OBC, 3 = FBC for local authority and public transport schemes |
 | Network Rail open data feeds: licence | https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/open-data-feeds/ and `…/network-rail-infrastructure-limited-data-feeds-licence/` | 2026-10-10 | Open Government Licence (as stated on the licence page) | **Not used.** Access by account, "currently restricted to 1,000 users"; no brand or "official" use. Whether the schedule feed carries freight paths was not confirmed on a Network Rail page |
 | OpenStreetMap API 0.6 (`/map`) | https://api.openstreetmap.org/api/0.6/map | 2026-10-10 | ODbL 1.0 | 20 small boxes round the stop pairs in `plans/P3-walk-faults.md`, to compare current OSM with the 26 Sep extract; nothing stored beyond the comparison |
+| DfT, Inclusive Mobility: a guide to best practice on access to pedestrian and transport infrastructure (December 2021) | https://assets.publishing.service.gov.uk/media/61d32bb7d3bf7f1f72b5ffd2/inclusive-mobility-a-guide-to-best-practice-on-access-to-pedestrian-and-transport-infrastructure.pdf | 2026-10-10 | OGL v3 | SHA-256 `37bf5cc9…`. §3.4 recommended distance limit without a rest: wheelchair users 150 m, vision impaired people 150 m, walking stick and cane users 50 m, mobility impaired people without a stick 100 m; of people with an impairment able to walk at all, about 30% manage no more than 50 m and a further 20% 50–200 m. §9.1: in residential areas nobody should have to walk more than 400 m to a bus stop, less 10 m per metre of rise or fall. **Not used as a parameter**: these are limits without a rest, not trip distances. The 400 m siting standard is 0.63 of TfL's 640 m, inside the 0.5–0.85 sensitivity range of `coverage.reduced_mobility_scale` |
 
 **The WYG paper is still unopened** (host timing out on 9 and 10 Oct). Decay now rests
 on El-Geneidy et al. (2014) by Robbie's decision: bus mean 296 m (this repo's n-weighted
@@ -1085,6 +1086,41 @@ shortens observed walks; so coverage on these curves is likely conservative for 
 Bristol area's suburbs. UK lead not pursued: National Travel Survey stage-level
 microdata (UK Data Service; access conditions not checked).
 
+### P3b-0 findings (2026-10-10)
+
+Full tables: `plans/P3-network-v2-change-report.md`.
+
+- **Network v2 adopted.** PT spot checks on v2: AM 15, inter-peak 18, evening 16 of 20,
+  the same as v1, so no extra failures under Robbie's rule. The r5r-against-r5py
+  regression passes on the terrain network.
+- **Walk speed factor 1.0318** (4.953 km/h on the terrain network): the flattest fifth of
+  OAs were 3.18% slower with terrain; after rescaling their ratio to the flat network is
+  0.9994. All OAs then walk 3.3% slower than flat, the steepest fifth 7.2%.
+- **PT journeys barely change:** a pair's median moves by −0.09 min on average in the AM
+  (5th to 95th percentile −1.3 to +1.5 min); DfT ρ stays 0.947 / 0.952; the gap map's
+  time difference moves from 29.4 / 36.6 to 29.3 / 36.5 min. Walk skims +3.5%, cycle +7.2%.
+- **Observed walk distances partly reflect stop spacing.** People are recorded walking
+  to the stop they used, and where stops are close together nobody needs to walk far.
+  Montréal's 2003 bus network has closely spaced stops on a grid, so its distances (bus
+  85th percentile 524 m) are likely short for the Bristol area, where stops are sparser
+  outside the centre. That is the reason for separating the "served" cut-off (TfL's PTAL
+  limits, 640 m and 960 m) from the decay weights, and for reporting strict and loose
+  variants: frequent-service coverage on v2 is 598,321 / **644,764** / 748,477 residents
+  (strict / headline / loose).
+- **Frequent-service coverage, B2026, network v2, headline:** 644,764 residents (52.9%)
+  have a service every 15 minutes or better within 8 minutes' walk of a bus or 12 of a
+  train, in both the AM and inter-peak; 426,199 (34.9%) every 10 minutes or better; jobs
+  66.3% and 49.9%. This supersedes the provisional P3a figures above, which used the
+  unverified WYG distances as cut-offs and no terrain.
+- **TAG on optimism bias and contingency** (A1.2 §3.2.24): contingency "should be
+  restricted to financial or accounting purposes. Optimism bias uplifts are only required
+  for the economic case." So a quoted cost takes one or the other, not both; the WECA
+  appraisal does exactly that ("using Optimism Bias instead of Contingency").
+- **Walk-network faults:** `plans/P3-walk-faults.md` and `.png`; 20 connectors drafted in
+  `data/patches/walk_links.draft.geojson`, none applied.
+- **The Mac slept for five hours mid-rebuild** (09:27–14:54): a long chain needs
+  `caffeinate`, as P2's live collection did.
+
 ## Phase status
 
 | phase | status |
@@ -1092,4 +1128,4 @@ microdata (UK Data Service; access conditions not checked).
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
 | P1 | approved 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); external-factor fallback added after approval |
 | P2 | **complete 2026-10-09** (plans/P2.md §9). Delivered: bus and rail GTFS for Wed 23 Sep 2026 (pick-up / set-down restrictions enforced), nine archive and three live AVL days, car speeds (DfT fit + WebTRIS + ANPR layer in the Bristol built-up area), PT / walk / cycle / car skims, accessibility (DfT Connectivity ρ 0.947 OA, 0.952 LSOA), the gap map (door-to-door time difference PT − car: mean 29 min with high car terminal times, 37 with none). **Documented fails:** (1) PT spot checks, AM peak 15 of 20 against ≥ 16 (IP 18 of 20 passes) — 4 comparison artefacts, 1 model error; (2) car spot checks on held-out ANPR links, 8 of 20 (AM peak hour) and 6 of 20 (IP) within ±15% against ≥ 16. **Accepted deviations:** held-out bus speed error 27% per cell / 20% per corridor against ≤ 15%; DfT ±5% given up inside the ANPR layer's scope (Bristol roads −9.6%) in favour of ANPR, met outside it (33 of 35 roads). Leave-one-road-out 11.2% (≤ 15% ✓). Open [PLACEHOLDER]s: 4 in `params/base.yaml` (none used by P2 outputs), 8 in `params/costs.yaml` (P6). Awaiting: Robbie's review of the ANPR-layer scope map |
-| P3 | **in progress** (plans/P3.md, approved 2026-10-09). P3a at its stop: SPEC amendments, rule 6 test, terrain spike, frequent-service coverage on B2026 (provisional: walk-to-stop distances are `[PLACEHOLDER]`), D7 measurement. Open [PLACEHOLDER]s: 8 in `params/base.yaml` (the 4 from P2 plus the 4 walk-to-stop distances), 8 in `params/costs.yaml` (**P3c**, not P6 as the P2 row says) |
+| P3 | **in progress** (plans/P3.md). P3a done: SPEC amendments, rule 6 test, terrain spike, D7 measurement, frequent-service coverage on B2026. P3b-0 done: network v2 (terrain) adopted, skims in the SPEC layout, change report. P3b-1 done: scenario schema and validator. Next: generator, capacity check, B2028. Open [PLACEHOLDER]s: 5 in `params/base.yaml` (the 4 from P2 plus the loose coverage cut-off, an unverified variant), 8 in `params/costs.yaml` (**P3c**, not P6 as the P2 row says). WIMD licence to confirm before anything Welsh is published |
