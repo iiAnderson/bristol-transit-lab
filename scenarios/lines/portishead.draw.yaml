@@ -1,0 +1,12 @@
+# Drawing spec for `lab scenario draw-rail`: the Portishead line, track geometry routed
+# along OSM railway ways (the 26 Sep 2026 extract; © OpenStreetMap contributors, ODbL).
+# Each leg becomes one `existing_rail` feature with the Darwin timing points it runs between.
+# Station points: Portishead and Pill from OSM's `proposed:railway=station` nodes
+# 11845402921 and 11845402922 (no NaPTAN entry yet); the others from the rail GTFS (NaPTAN).
+out: portishead.geojson
+kinds: [rail, construction, disused]     # the Portishead end is `railway=construction` in OSM
+legs:
+  - {via: [[-2.75615, 51.48347], [-2.68691, 51.48127]], alignment_type: existing_rail, timing_points: [PRTSHD, PILL]}
+  - {via: [[-2.68691, 51.48127], [-2.607742, 51.433319]], alignment_type: existing_rail, timing_points: [PILL, PARSNST]}
+  - {via: [[-2.607742, 51.433319], [-2.594149, 51.440088]], alignment_type: existing_rail, timing_points: [PARSNST, BDMNSTR]}
+  - {via: [[-2.594149, 51.440088], [-2.581315, 51.449144]], alignment_type: existing_rail, timing_points: [BDMNSTR, BRSTLWJ, BRSTLTM]}

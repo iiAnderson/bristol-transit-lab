@@ -191,6 +191,24 @@ scenario:
     unit: m; a stop must be this close to its line's alignment, and a reroute must end this close to its stops
     tag: MODELLED
     reasoning: SPEC §5 validation rule ("stops within 50 m of the alignment"); about a platform's length, so a drawn line may pass beside a station rather than through its point.
+  headway_periods:
+    value: [AM, IP, PM]
+    unit: periods a scenario may give a headway for; OP is the rest of the service span
+    tag: MODELLED
+    reasoning: the demand periods (SPEC §6.3); the coverage-only bands (EVE, AMPH) overlap them and are not timetable periods
+  working_time_min_trains:
+    value: 5
+    unit: trains a median working time between two stations must rest on
+    tag: MODELLED
+    reasoning: >-
+      Below this the run time falls back to the speed-profile rule. Measured on 23 Sep
+      2026: sections with five or more trains of one operator have a median inter-quartile
+      range of 0 min, so five is enough for a stable median (plans/P3.md D8).
+  draw_snap_m:
+    value: 45
+    unit: m; when drawing a rail alignment, a station may be met at any track within this of its point
+    tag: MODELLED
+    reasoning: inside the 50 m stop tolerance, and wide enough to reach every platform track of the stations in the extent
   offset_count:
     value: 3
     unit: timetable offsets per scenario, evenly spread as fractions of the headway

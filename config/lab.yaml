@@ -288,6 +288,8 @@ calendar_2025_26:
 baseline:
   scenario: B2026
   scenarios_dir: scenarios
+  built_dir: data/interim/scenarios      # generated feeds: <id>/<chain hash>/offset_<k>/
+  generated_agency_url: https://github.com/iiAnderson/bristol-transit-lab   # agency_url of generated services
   infrastructure_dir: scenarios/infrastructure
   skims: data/interim/skims
   r5r: data/interim/r5r

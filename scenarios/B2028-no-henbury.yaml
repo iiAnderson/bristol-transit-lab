@@ -1,0 +1,50 @@
+# Sensitivity on the 2028 baseline (Robbie, 2026-10-10): B2028 without Henbury station,
+# which opens in March 2028. The alignment is drawn to Henbury; trains call only as far as
+# North Filton. A sibling of B2028, not its child.
+#
+# Sources (sources.md P3b):
+# - Portishead line: Network Rail, "The Portishead line" (opened 2026-10-10): "an hourly
+#   direct train from Portishead to Bristol Temple Meads in around 25 minutes", reopening in
+#   2028, new stations at Portishead and Pill.
+# - Henbury line: West of England Combined Authority, MetroWest Phase 2 FBC Stage 2 Update
+#   (October 2025): the hourly Filton Abbey Wood service extended to North Filton (Bristol
+#   Brabazon; November 2026) and Henbury (March 2028); 23 minutes Temple Meads to North Filton.
+#
+# [MODELLED] in this file, each to be read as an assumption:
+# - Portishead trains call at Parson Street and Bedminster (no source for the calling pattern
+#   beyond Pill has been opened).
+# - Speed profiles on the two reopened lines: 80 km/h maximum, 0.5 m/s² (a diesel unit), 60 s
+#   dwell (the operator's median dwell in the 23 Sep 2026 timetable). No line speed has been
+#   sourced; the resulting journey times are checked against the two figures above and the
+#   difference is reported, not tuned away.
+# - Service 06:00–23:00 at one train an hour all day.
+# - Henbury's position is the old station's site.
+id: B2028-no-henbury
+parent: B2026
+description: Sensitivity on B2028 — as B2028 but the Henbury-line service stops at North Filton (Henbury not open)
+landuse: L2026
+ops:
+  - add_line:
+      route_id: GEN-PORTISHEAD
+      name: Portishead – Bristol Temple Meads
+      mode: heavy_rail
+      operator: GW
+      alignment: lines/portishead.geojson
+      stops: stops/portishead.geojson
+      speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+      headways_min: {AM: 60, IP: 60, PM: 60, OP: 60}
+      span: "06:00-23:00"
+  - modify_route:
+      route_id: "GW:BRI-FIT"
+      extend_to:
+        from_stop: FIT
+        alignment: lines/henbury_extension.geojson
+        stops: stops/north_filton_only.geojson
+        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+  - modify_route:
+      route_id: "GW:FIT-BRI"
+      extend_to:
+        from_stop: FIT
+        alignment: lines/henbury_extension.geojson
+        stops: stops/north_filton_only.geojson
+        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}

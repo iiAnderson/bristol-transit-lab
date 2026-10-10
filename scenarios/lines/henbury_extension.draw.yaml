@@ -1,0 +1,10 @@
+# Drawing spec for `lab scenario draw-rail`: the Henbury-line extension beyond Filton Abbey
+# Wood, routed along OSM railway ways (26 Sep 2026 extract; © OpenStreetMap contributors).
+# Station points: Bristol Brabazon (North Filton) from NaPTAN (9100NRHFILT); Henbury from
+# OSM's `historic:railway=station` node 6353014942 — the old station's site, used because no
+# source for the new station's position has been opened [MODELLED].
+out: henbury_extension.geojson
+kinds: [rail]
+legs:
+  - {via: [[-2.562431, 51.504939], [-2.580371, 51.517582]], alignment_type: existing_rail, timing_points: [FILTNEW, FILTNWJ, NRHFILT]}
+  - {via: [[-2.580371, 51.517582], [-2.62527, 51.51497]], alignment_type: existing_rail, timing_points: [NRHFILT, HENBURY]}

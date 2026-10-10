@@ -233,9 +233,9 @@ def stop_offsets(leg_list: list[dict], dwell_s: float, reverse: bool = False) ->
 
 # ------------------------------------------------------------------ feed helpers
 
-def empty_feed(date: str, agency_name: str) -> dict[str, pd.DataFrame]:
+def empty_feed(date: str, agency_name: str, agency_url: str) -> dict[str, pd.DataFrame]:
     return {"agency": pd.DataFrame([{"agency_id": "GEN", "agency_name": agency_name,
-                                     "agency_url": "https://example.invalid/", "agency_timezone": "Europe/London"}]),
+                                     "agency_url": agency_url, "agency_timezone": "Europe/London"}]),
             "stops": pd.DataFrame(columns=["stop_id", "stop_name", "stop_lat", "stop_lon"]),
             "routes": pd.DataFrame(columns=["route_id", "agency_id", "route_short_name", "route_long_name",
                                             "route_type", "route_desc"]),
@@ -497,7 +497,8 @@ def apply(feeds: dict[str, dict], ops: list[tuple[str, dict]], base: Path, ctx: 
 
     def gen() -> dict:
         if "generated" not in feeds:
-            feeds["generated"] = empty_feed(ctx["service_date"], "Scenario services")
+            feeds["generated"] = empty_feed(ctx["service_date"], "Scenario services",
+                                            ctx.get("agency_url", "https://example.org/"))
         return feeds["generated"]
 
     for i, (kind, op) in enumerate(ops):

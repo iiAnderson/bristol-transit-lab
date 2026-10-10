@@ -59,7 +59,7 @@ def _scenario_ctx():
         for sec in (yaml.safe_load(f.read_text()) or {}).get("sections", []):
             sections.add((sec["from"], sec["to"]))
     feeds_ = [cov.read_gtfs(cfg.root / raw[k]["out"]) for k in ("bus", "rail")]
-    periods = {k.split(".", 1)[1] for k in ps if k.startswith("periods.")} | {"OP"}
+    periods = set(ps["scenario.headway_periods"]) | {"OP"}
     cat = scn.catalogue_from_gtfs(feeds_, sections, periods, cfg.extent)
     return cfg, raw, ps, sdir, cat, scn
 
@@ -128,6 +128,129 @@ def scenario_validate(scenario_id: str, register: bool) -> None:
                 for i, (kind, body) in enumerate(x.ops):
                     con.execute("INSERT INTO scenario_op VALUES (?, ?, ?, ?)", [x.id, i + 1, kind, json.dumps(body)])
         click.echo(f"  registered {[x.id for x in chain]} in lab.duckdb")
+
+
+def _build_scenario(scenario_id: str, log=click.echo) -> dict:
+    """Generate a scenario's GTFS for every offset (cached by chain hash + offset +
+    nothing else: the generator does not depend on the network version). Returns the
+    scenario, its chain hash, the output directory and the per-offset reports."""
+    import hashlib
+    import json
+    import shutil
+    import datetime as dt
+    import duckdb
+    from . import coverage as cov, generator as gen
+    from .supply import validate
+    cfg, raw, ps, sdir, cat, scn = _scenario_ctx()
+    try:
+        chain = _load_chain(scenario_id, sdir, cat, ps, scn)
+    except scn.ScenarioError as e:
+        raise click.ClickException(str(e))
+    s = chain[-1]
+    src = {"bus": cfg.root / raw["bus"]["out"], "rail": cfg.root / raw["rail"]["out"]}
+    chain_hash = hashlib.sha256("|".join([x.spec_hash for x in chain]
+                                         + [params.file_hash(p) for p in src.values()]
+                                         + [params.file_hash(cfg.root / "src" / "lab" / "generator.py")]).encode()
+                                ).hexdigest()[:12]
+    out = cfg.root / raw["baseline"]["built_dir"] / s.id / chain_hash
+    done = out / "report.json"
+    if done.is_file():
+        log(f"  {s.id}: feeds already built for chain {chain_hash}")
+        return {"scenario": s, "chain": chain, "chain_hash": chain_hash, "dir": out,
+                "report": json.loads(done.read_text())}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+        tp = con.execute("SELECT * FROM rail_timing_point").df()
+    runs, dwell = gen.working_times(tp)
+    ctx = {"periods": cov.parse_periods({k: ps[f"periods.{k}"] for k in ps["scenario.headway_periods"]}),
+           "service_date": day.strftime("%Y%m%d"), "runs": runs, "dwell": dwell,
+           "min_trains": ps["scenario.working_time_min_trains"],
+           "agency_url": raw["baseline"]["generated_agency_url"]}
+    parent = {k: gen.read_feed(p) for k, p in src.items()}
+    ops = [op for x in chain for op in x.ops]
+    report = {"scenario": s.id, "chain": [x.id for x in chain], "chain_hash": chain_hash,
+              "spec_hash": s.spec_hash, "offsets": s.offsets, "not_yet_modelled": s.not_yet_modelled,
+              "by_offset": {}}
+    for k, frac in enumerate(s.offsets if ops else [0.0]):
+        try:
+            feeds_k, reps = gen.apply(parent, ops, sdir, ctx, frac)
+        except gen.GeneratorError as e:
+            raise click.ClickException(f"{s.id}: {e}")
+        d = out / f"offset_{k}"
+        d.mkdir(parents=True, exist_ok=True)
+        files = {}
+        for name, f in feeds_k.items():
+            dst = d / f"{name}.zip"
+            if name in parent and all(f[t].equals(parent[name][t]) for t in f):
+                shutil.copyfile(src[name], dst)                 # untouched: the parent's file, same hash
+                files[name] = {"changed": False}
+            else:
+                gen.write_feed(f, dst)
+                val = validate.run(cfg.root / raw["rail"]["validator"], dst, d / f"{name}.validator", day, "gb")
+                if val["errors"]:
+                    raise click.ClickException(f"{s.id} offset {k}: {name}.zip fails the GTFS validator: {val['codes']}")
+                files[name] = {"changed": True, "validator_errors": val["errors"],
+                               "validator_warnings": val["warnings"]}
+            files[name]["sha256"] = params.file_hash(dst)
+        report["by_offset"][str(k)] = {"fraction": frac, "files": files, "ops": reps}
+        log(f"  {s.id} offset {k} ({frac:.3f}): {', '.join(n + (' (changed)' if v['changed'] else '') for n, v in files.items())}")
+    done.write_text(json.dumps(report, indent=1, default=str))
+    return {"scenario": s, "chain": chain, "chain_hash": chain_hash, "dir": out, "report": report}
+
+
+@scenario.command("build")
+@click.argument("scenario_id")
+def scenario_build(scenario_id: str) -> None:
+    """Generate a scenario's GTFS feeds, one set per timetable offset; validate them."""
+    import json
+    cfg = LabConfig.load()
+    rec = runrecord.build(cfg, command="scenario-build")
+    runrecord.write(cfg, rec)
+    try:
+        b = _build_scenario(scenario_id)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["scenario"] = {"id": b["scenario"].id, "spec_hash": b["scenario"].spec_hash}
+    rec["result"] = {"chain_hash": b["chain_hash"], "dir": str(b["dir"]), "report": b["report"]}
+    r0 = b["report"]["by_offset"]["0"]
+    for op in r0["ops"]:
+        click.echo("  " + json.dumps({k: v for k, v in op.items() if k not in ("legs",)}, default=str)[:600])
+        for holder in (op, op.get("extend_to", {})):
+            for lg in holder.get("legs", []):
+                click.echo(f"    {lg['from']} → {lg['to']}: {lg['dist_m'] / 1000:.2f} km; {lg['fwd_s'] / 60:.1f} min "
+                           f"({lg['fwd_rule']}); back {lg['rev_s'] / 60:.1f} min ({lg['rev_rule']})")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@scenario.command("draw-rail")
+@click.argument("spec", type=click.Path(exists=True))
+def scenario_draw_rail(spec: str) -> None:
+    """Write a rail alignment GeoJSON from a drawing spec (waypoints routed along OSM track)."""
+    import json
+    import yaml
+    from .supply import rail_geometry as rg
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    sp = Path(spec)
+    doc = yaml.safe_load(sp.read_text())
+    g = rg.rail_graph(str(cfg.root / raw["osm"]["clip"]), set(doc["kinds"]))
+    feats = []
+    for i, leg in enumerate(doc["legs"]):
+        r = rg.path(g, [tuple(p) for p in leg["via"]], 2 * ps["scenario.draw_snap_m"], ps["scenario.draw_snap_m"])
+        if feats and feats[-1]["geometry"]["coordinates"][-1] != r["coords"][0]:
+            # successive legs may meet a station on different tracks: join them
+            r["coords"] = [feats[-1]["geometry"]["coordinates"][-1]] + r["coords"]
+        feats.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": r["coords"]},
+                      "properties": {"alignment_type": leg["alignment_type"], "timing_points": leg.get("timing_points"),
+                                     "length_m": r["length_m"], "osm_railway_m": r["kinds_m"],
+                                     "source": f"OSM ways via `lab scenario draw-rail {sp.name}`; extract {raw['osm']['extract_date']}"}})
+        click.echo(f"  leg {i + 1}: {r['length_m'] / 1000:.2f} km, waypoints {r['snap_m']} m from the track used, {r['kinds_m']}")
+    out = sp.parent / doc["out"]
+    out.write_text(json.dumps({"type": "FeatureCollection", "features": feats}))
+    click.echo(f"wrote {out}")
 
 
 @scenario.command("new")
