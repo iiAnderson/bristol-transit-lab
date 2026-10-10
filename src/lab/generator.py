@@ -187,8 +187,8 @@ def legs(stops: pd.DataFrame, parts, mode: str, profile: dict | None, ctx: dict,
         # a stop sits a few metres off a feature's end: slivers of the neighbouring type do not count
         types = {t: m for t, m in types.items() if m > 0.05 * dist} or types
         if mode in ("bus", "brt") and any(t in STREET_TYPES for t in types):
-            raise GeneratorError(f"{where}: an on-street {mode} leg needs `bus_speed_ratio`, which is not fitted "
-                                 "yet (plans/P3.md P3b-7)")
+            raise GeneratorError(f"{where}: an on-street {mode} leg needs the bus_speed_ratio run-time rule, which "
+                                 "is not built yet (the ratio is fitted: params scenario.bus_speed_ratio)")
         tps: list[str] = []
         for s0, e0, _, tp in sorted(parts, key=lambda q: q[0]):
             # a feature belongs to the leg if it covers most of the leg or the leg covers most

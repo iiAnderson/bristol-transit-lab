@@ -204,6 +204,35 @@ scenario:
       Below this the run time falls back to the speed-profile rule. Measured on 23 Sep
       2026: sections with five or more trains of one operator have a median inter-quartile
       range of 0 min, so five is enough for a stable median (plans/P3.md D8).
+  bus_speed_ratio:
+    value:
+      AM: {"b_road|buffer": 0.575, "b_road|centre": 0.562, "b_road|rural": 0.706, "b_road|urban": 0.627, "local_a|buffer": 0.479, "local_a|centre": 0.728, "local_a|rural": 0.71, "local_a|urban": 0.683, "minor|buffer": 0.396, "minor|centre": 0.764, "minor|rural": 0.593, "minor|urban": 0.556, "srn|buffer": 0.708, "srn|rural": 0.693, "srn|urban": 0.654, "all": 0.581}
+      AMPH: {"b_road|buffer": 0.56, "b_road|centre": 0.804, "b_road|rural": 0.658, "b_road|urban": 0.521, "local_a|buffer": 0.357, "local_a|centre": 0.655, "local_a|rural": 0.599, "local_a|urban": 0.639, "minor|buffer": 0.315, "minor|centre": 0.67, "minor|rural": 0.497, "minor|urban": 0.544, "srn|buffer": 0.656, "srn|rural": 0.808, "srn|urban": 0.58, "all": 0.539}
+      IP: {"b_road|buffer": 0.635, "b_road|centre": 0.656, "b_road|rural": 0.848, "b_road|urban": 0.644, "local_a|buffer": 0.752, "local_a|centre": 0.644, "local_a|rural": 0.748, "local_a|urban": 0.735, "minor|buffer": 0.57, "minor|centre": 0.678, "minor|rural": 0.657, "minor|urban": 0.602, "srn|buffer": 0.838, "srn|rural": 0.806, "srn|urban": 0.727, "all": 0.654}
+      PM: {"b_road|buffer": 0.877, "b_road|centre": 0.814, "b_road|rural": 0.915, "b_road|urban": 0.704, "local_a|buffer": 0.734, "local_a|centre": 0.682, "local_a|rural": 0.786, "local_a|urban": 0.773, "minor|buffer": 0.692, "minor|centre": 0.797, "minor|rural": 0.983, "minor|urban": 0.727, "srn|rural": 0.641, "srn|urban": 0.55, "all": 0.747}
+    unit: bus moving speed ÷ calibrated car speed, by period and "road class|area type" ("all" = the period's overall ratio, used where a group has under 30 cells)
+    tag: CALIBRATED
+    target: >-
+      P2's bus moving speeds (nine archive days for AM, the 08–09 hour and IP; three live
+      days for PM; dwell legs near stops already dropped; links with bus-lane tags left
+      out) against the calibrated car speed on the same link, direction and period.
+      k = Σ car time ÷ Σ bus time per group, so car speed × k reproduces the group's bus
+      running time. 292,864 cells on 2,650 km of link-direction; run
+      20261010T175431-congestion-bus-speed-ratio-edf54a. Spatial hold-out (1,074 one-km blocks, 5 folds): total
+      running time +2.8%; median error of a block's running time 31%
+      (90th percentile 92%); median error of a single link's speed 34%, against
+      27% for P2's held-out bus speeds. A plain ratio of 1 is closer for the typical
+      block (23%) but -37% out in total: bus delay sits in a minority of
+      links, which a class × area average cannot place. Not independent of the car
+      speeds, whose period shape P2 took from these same bus speeds. sources.md P3b.
+    note: >-
+      For NEW on-street bus and BRT sections and for road_speed_factor only (SPEC §5);
+      excludes dwell. Not yet used: the generator's on-street run-time rule is not built.
+  bus_speed_ratio_min_cells:
+    value: 30
+    unit: link × direction × period cells a road class × area type × period group needs for its own ratio
+    tag: MODELLED
+    reasoning: below this the group takes its period's overall ratio; 30 cells is a few kilometres of observed road, enough that one street does not set the value
   draw_snap_m:
     value: 45
     unit: m; when drawing a rail alignment, a station may be met at any track within this of its point

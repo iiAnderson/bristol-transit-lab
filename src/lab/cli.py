@@ -1600,6 +1600,56 @@ def congestion_validate(days: str | None, trav_tag: str | None, overrides: tuple
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@congestion.command("bus-speed-ratio")
+@click.option("--block-km", default=1.0, show_default=True)
+@click.option("--folds", default=5, show_default=True)
+def congestion_bus_speed_ratio(block_km: float, folds: int) -> None:
+    """Fit bus moving speed ÷ calibrated car speed by road class × area type × period."""
+    import json
+    import pandas as pd
+    from .congestion import bus_ratio as br
+    cfg = LabConfig.load()
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    d = cfg.root / "data" / "interim" / "congestion"
+    arch = sorted((d / "avl").glob("traversals_archive_*.parquet"))
+    live = sorted((d / "avl").glob("traversals_live_*.parquet"))
+    inputs = [*arch, *live, d / "link_speed.parquet", d / "segments_annotated.parquet"]
+    rec = runrecord.build(cfg, command="congestion-bus-speed-ratio",
+                          inputs=[{"name": f.name, "sha256": params.file_hash(f)} for f in inputs])
+    run_dir = runrecord.write(cfg, rec).parent
+    try:
+        a = pd.concat([pd.read_parquet(f, columns=["u", "v", "kmh", "period", "hour"]) for f in arch], ignore_index=True)
+        lv = pd.concat([pd.read_parquet(f, columns=["u", "v", "kmh", "period", "hour"]) for f in live], ignore_index=True)
+        # AM and IP from the nine archive days (07:00–16:00); the 08:00–09:00 skim hour from
+        # the same; PM from the three live days, the only ones that run past 16:00
+        trav = pd.concat([a[a.period.isin(["AM", "IP"])], a[a.hour == 8].assign(period="AMPH"),
+                          lv[lv.period == "PM"]], ignore_index=True)
+        cell = br.cells(trav, ps["congestion.min_obs_per_link"])
+        car = pd.read_parquet(d / "link_speed.parquet", columns=["period", "u", "v", "speed_kmh"])
+        seg = pd.read_parquet(d / "segments_annotated.parquet")
+        c = br.join(cell, car, seg)
+        lanes = br.fit(c[c.bus_flag], ("period",)).set_index("period").ratio.round(3).to_dict()
+        c = c[~c.bus_flag]
+        k = br.fit(c)
+        k.to_csv(run_dir / "bus_speed_ratio.csv", index=False)
+        ho = br.hold_out(c, block_km, folds, ps["scenario.bus_speed_ratio_min_cells"])
+        res = {"archive_days": len(arch), "live_days": len(live), "cells": int(len(c)),
+               "km_of_link_direction": round(float(c.drop_duplicates(["u", "v"]).length_m.sum() / 1000), 1),
+               "ratio_by_period": br.fit(c, ("period",)).set_index("period").ratio.round(3).to_dict(),
+               "ratio_by_area_period": {f"{r.area_type}|{r.period}": round(r.ratio, 3)
+                                        for r in br.fit(c, ("area_type", "period")).itertuples()},
+               "ratio_on_links_with_bus_lane_tags_not_used": lanes,
+               "table": k.assign(ratio=k.ratio.round(3), km=k.km.round(1)).to_dict("records"),
+               "hold_out": ho, "p2_held_out_bus_speed_error_per_cell": 0.27}
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(k.assign(ratio=k.ratio.round(3), km=k.km.round(1)).to_string(index=False))
+    click.echo(json.dumps({x: res[x] for x in res if x != "table"}, indent=1))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @congestion.command("spacing-bias")
 def congestion_spacing_bias() -> None:
     """Bias test: bus speeds from the live days at full resolution vs thinned to 30 s
