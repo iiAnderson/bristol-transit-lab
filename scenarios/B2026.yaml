@@ -1,0 +1,7 @@
+# The 2026 baseline: the network on the modelled date, built by `lab supply …` from the
+# registered feeds (sources.md P2), not by ops. A root scenario has no parent and no ops;
+# its identity beyond this file is the network_version in every run record.
+id: B2026
+parent: null
+description: Current network on the modelled date (Wed 23 Sep 2026), from the registered bus and rail feeds
+landuse: L2026

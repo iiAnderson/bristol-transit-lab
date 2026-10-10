@@ -184,6 +184,24 @@ periods:
     tag: MODELLED
     reasoning: the AM skim hour (skims.window_start.AM plus the 60-minute window), reported beside the periods for consistency with the skims
 
+# Scenario files (SPEC §5; plans/P3.md P3b).
+scenario:
+  stop_alignment_tolerance_m:
+    value: 50
+    unit: m; a stop must be this close to its line's alignment, and a reroute must end this close to its stops
+    tag: MODELLED
+    reasoning: SPEC §5 validation rule ("stops within 50 m of the alignment"); about a platform's length, so a drawn line may pass beside a station rather than through its point.
+  offset_count:
+    value: 3
+    unit: timetable offsets per scenario, evenly spread as fractions of the headway
+    tag: MODELLED
+    reasoning: >-
+      Generated services are explicit trips, and their phase against connecting services
+      moves results as much as frequency-based routing does (D7 measurement, sources.md
+      P3a). Each scenario is run at these offsets — the same fraction of its own headway
+      for every generated service, so 3 networks, not 3 to the power of the services —
+      and the mean and range are reported (Robbie, 2026-10-10).
+
 # Frequent-service coverage (plans/P3.md P3a; SPEC §8.2 as amended at P3).
 coverage:
   headline_periods:

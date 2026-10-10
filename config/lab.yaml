@@ -287,6 +287,8 @@ calendar_2025_26:
 # the R5 network (OSRM on calibrated speeds), so they sit at <skims>/<scenario>/car/.
 baseline:
   scenario: B2026
+  scenarios_dir: scenarios
+  infrastructure_dir: scenarios/infrastructure
   skims: data/interim/skims
   r5r: data/interim/r5r
 

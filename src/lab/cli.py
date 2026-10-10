@@ -47,12 +47,116 @@ def scenario() -> None:
     """Create and manage scenarios."""
 
 
+def _scenario_ctx():
+    import yaml
+    from . import coverage as cov, scenario as scn
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    sdir = cfg.root / raw["baseline"]["scenarios_dir"]
+    sections = set()
+    for f in sorted((cfg.root / raw["baseline"]["infrastructure_dir"]).glob("*.yaml")):
+        for sec in (yaml.safe_load(f.read_text()) or {}).get("sections", []):
+            sections.add((sec["from"], sec["to"]))
+    feeds_ = [cov.read_gtfs(cfg.root / raw[k]["out"]) for k in ("bus", "rail")]
+    periods = {k.split(".", 1)[1] for k in ps if k.startswith("periods.")} | {"OP"}
+    cat = scn.catalogue_from_gtfs(feeds_, sections, periods, cfg.extent)
+    return cfg, raw, ps, sdir, cat, scn
+
+
+def _load_chain(scenario_id: str, sdir, cat, ps, scn):
+    """Validate a scenario and its ancestors, root first; each child is checked against
+    the network its parent's ops leave behind. Returns the list, root first."""
+    chain, sid, seen = [], scenario_id, set()
+    while sid is not None:
+        if sid in seen:
+            raise click.ClickException(f"scenario parents form a loop at {sid}")
+        seen.add(sid)
+        f = sdir / f"{sid}.yaml"
+        if not f.is_file():
+            raise click.ClickException(f"no scenario file {f}")
+        import yaml
+        chain.append(f)
+        sid = (yaml.safe_load(f.read_text()) or {}).get("parent")
+    out = []
+    for f in reversed(chain):
+        s = scn.load(f, cat, stop_tolerance_m=ps["scenario.stop_alignment_tolerance_m"],
+                     offset_count=ps["scenario.offset_count"])
+        out.append(s)
+        # carry the network forward: re-apply this scenario's ops to the catalogue
+        work = cat.copy()
+        files: list = []
+        for i, (kind, body) in enumerate(s.ops):
+            scn._check_op(kind, body, f.parent, work, ps["scenario.stop_alignment_tolerance_m"],
+                          f"{s.id} op {i + 1} ({kind})", files)
+        cat = work
+    return out
+
+
+@scenario.command("validate")
+@click.argument("scenario_id")
+@click.option("--register/--no-register", default=True, show_default=True,
+              help="Record the scenario and its ops in lab.duckdb.")
+def scenario_validate(scenario_id: str, register: bool) -> None:
+    """Check a scenario file and its ancestors against every rule; print its spec_hash."""
+    import datetime as dt
+    import json
+    import duckdb
+    cfg, raw, ps, sdir, cat, scn = _scenario_ctx()
+    try:
+        chain = _load_chain(scenario_id, sdir, cat, ps, scn)
+    except scn.ScenarioError as e:
+        raise click.ClickException(str(e))
+    s = chain[-1]
+    click.echo(f"{s.id}: valid. parent {s.parent}; {len(s.ops)} ops; offsets "
+               f"{[round(x, 3) for x in s.offsets]}; {len(s.files)} referenced files")
+    for line in s.not_yet_modelled:
+        click.echo(f"  {line}")
+    click.echo(f"  spec_hash {s.spec_hash}")
+    if register:
+        with duckdb.connect(str(cfg.lab_db)) as con:
+            con.execute("""CREATE TABLE IF NOT EXISTS scenario (scenario_id VARCHAR PRIMARY KEY,
+                parent_id VARCHAR, description VARCHAR, landuse_version VARCHAR, created_at TIMESTAMPTZ,
+                spec_hash VARCHAR)""")
+            con.execute("""CREATE TABLE IF NOT EXISTS scenario_op (scenario_id VARCHAR, seq INTEGER,
+                op_type VARCHAR, params JSON)""")
+            for x in chain:
+                con.execute("INSERT OR REPLACE INTO scenario VALUES (?, ?, ?, ?, ?, ?)",
+                            [x.id, x.parent, x.description, json.dumps(x.landuse),
+                             dt.datetime.now(dt.timezone.utc), x.spec_hash])
+                con.execute("DELETE FROM scenario_op WHERE scenario_id = ?", [x.id])
+                for i, (kind, body) in enumerate(x.ops):
+                    con.execute("INSERT INTO scenario_op VALUES (?, ?, ?, ?)", [x.id, i + 1, kind, json.dumps(body)])
+        click.echo(f"  registered {[x.id for x in chain]} in lab.duckdb")
+
+
 @scenario.command("new")
 @click.argument("scenario_id")
 @click.option("--from", "parent", default="B2028", show_default=True)
-def scenario_new(scenario_id: str, parent: str) -> None:
-    """Create a scenario YAML from a parent."""
-    _not_yet("P3")
+@click.option("--description", default=None)
+def scenario_new(scenario_id: str, parent: str, description: str | None) -> None:
+    """Create a scenario YAML from a parent: a valid file with no ops yet."""
+    cfg, raw, ps, sdir, cat, scn = _scenario_ctx()
+    out = sdir / f"{scenario_id}.yaml"
+    if out.exists():
+        raise click.ClickException(f"{out} already exists")
+    if not (sdir / f"{parent}.yaml").is_file():
+        raise click.ClickException(f"parent {parent} has no scenario file in {sdir}")
+    import yaml
+    pdoc = yaml.safe_load((sdir / f"{parent}.yaml").read_text())
+    out.write_text(
+        f"# Scenario {scenario_id}, from {parent}. Ops are applied in order to the parent's network\n"
+        "# (SPEC §5). Alignments go in lines/, stops in stops/; validate with\n"
+        f"# `lab scenario validate {scenario_id}`.\n"
+        + yaml.safe_dump({"id": scenario_id, "parent": parent,
+                          "description": description or f"(describe {scenario_id})",
+                          "landuse": pdoc.get("landuse"), "ops": []}, sort_keys=False))
+    try:
+        _load_chain(scenario_id, sdir, cat, ps, scn)
+    except scn.ScenarioError as e:
+        out.unlink()
+        raise click.ClickException(str(e))
+    click.echo(f"wrote {out}")
 
 
 @cli.command()

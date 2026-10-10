@@ -82,7 +82,15 @@ def skim_change(a_dir, b_dir) -> dict:
         j = pd.read_parquet(fa).merge(pd.read_parquet(fb), on=["from_id", "to_id"], suffixes=("_a", "_b"))
         both = j[j.travel_time_a.notna() & j.travel_time_b.notna()]
         d = both.travel_time_b - both.travel_time_a
-        out[mode] = {"reachable_a": int(j.travel_time_a.notna().sum()),
+        corr = {}
+        if "travel_time_corrected_b" in j or "travel_time_corrected" in j:
+            c = j.get("travel_time_corrected_b", j.get("travel_time_corrected"))
+            raw_b = j.travel_time_b
+            corr = {"truncation_correction": {
+                f"pairs_within_{t}_min": {"raw": int((raw_b <= t).sum()), "corrected": int((c <= t).sum()),
+                                          "change_pct": round(float(100 * ((c <= t).sum() / (raw_b <= t).sum() - 1)), 1)}
+                for t in (15, 30, 45)}}
+        out[mode] = corr | {"reachable_a": int(j.travel_time_a.notna().sum()),
                      "reachable_b": int(j.travel_time_b.notna().sum()),
                      "mean_a": round(float(both.travel_time_a.mean()), 2),
                      "mean_change_min": round(float(d.mean()), 2),
