@@ -420,6 +420,14 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
         if s.parent is None:
             raise click.ClickException(f"{s.id} is a root baseline: its skims come from `lab skims`, not `lab run`")
         out_dir = _scenario_skim_dir(cfg, raw, b, base["version"])
+        # the capacity check first: it is cheap, and an overloaded section should be seen
+        # before two hours of skims
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            tp = con.execute("SELECT * FROM rail_timing_point").df()
+        capc = _capacity(cfg, raw, ps, b, tp)
+        capc["table"].to_csv(run_dir / "capacity.csv", index=False)
+        for k, v in capc["summary"].items():
+            click.echo(f"  capacity, offset {k}: {v['sections_used']} sections used, {len(v['over'])} over their limit")
         nets, combined = {}, {}
         for per in periods:
             frames = []
@@ -480,6 +488,7 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
             c_s, c_p = cov_sum(s.id), cov_sum(s.parent)
         card["coverage"] = {"scenario": c_s, "parent": c_p, "difference": rn.diff(c_p, c_s),
                             "walk_speed_kmh_flat": ps["routing.walk_speed_kmh"], "gradient": base["elevation"]}
+        card["capacity"] = {"summary": capc["summary"], "caveat": capc["caveat"], "table": "capacity.csv"}
         card["build"] = b["report"]["by_offset"]["0"]["ops"]
         card["notes"] = ["Accessibility: jobs within 30 / 45 min by PT on the pair's median time, walking at "
                          f"{ps['routing.walk_speed_kmh']:g} km/h on flat ground with gradient; PT times are the mean "
@@ -2029,6 +2038,99 @@ def spike_walk_faults(stops_run: str | None) -> None:
                                      "walk_min": r["walk_min"],
                                      "links_m": [ln["length_m"] for ln in r.get("links", [])]} for r in recs]}
     click.echo(json.dumps(rec["result"], indent=1))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@spike.command("walk-fault-class")
+@click.option("--reach-m", default=400.0, show_default=True, help="How far to search the network for a carriageway.")
+def spike_walk_fault_class(reach_m: float) -> None:
+    """Every stop (and OA centroid) that snaps to a separately mapped path with no link to
+    the carriageway beside it; and what linking the stops would do to coverage."""
+    import datetime as dt
+    import json
+    import duckdb
+    import numpy as np
+    import pandas as pd
+    import yaml
+    from pyproj import Transformer
+    from . import coverage as cov, network
+    from .coverage_cli import _obs, _walk_matrix
+    from .spikes import walk_faults as wf
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    nw = network.settings(cfg, raw, ps)
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    near = ps["coverage.walk_fault_link_m"]
+    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+        stops = con.execute("SELECT stop_id, stop_name, lon, lat, cluster_id, feed FROM stop_cluster").df()
+        cs = con.execute("SELECT * FROM cluster_service WHERE period = 'HEADLINE'").df()
+        oa = con.execute("SELECT OA21CD, residents, jobs FROM coverage_oa ORDER BY 1").df()
+        pwc = con.execute("SELECT OA21CD stop_id, OA21CD stop_name, lon, lat FROM int_oa_pwc ORDER BY 1").df()
+    rec = runrecord.build(cfg, command="spike-walk-fault-class",
+                          inputs=[{"name": k, "sha256": v} for k, v in nw["hashes"].items()])
+    run_dir = runrecord.write(cfg, rec).parent
+    try:
+        g, edges = wf.walk_graph(str(cfg.root / raw["osm"]["clip"]))
+        sc = wf.snap_class(stops, g, edges, near, reach_m)
+        oc = wf.snap_class(pwc, g, edges, near, reach_m)
+        sc.drop(columns=["road_x", "road_y"]).to_csv(run_dir / "stops_snap_class.csv", index=False)
+        oc.drop(columns=["road_x", "road_y"]).to_csv(run_dir / "oa_centroids_snap_class.csv", index=False)
+
+        def tally(o):
+            f = o[o.fault_class]
+            n = f.road_network_m
+            return {"points": int(len(o)), "snap_to_a_path": int(o.snaps_to_path.sum()),
+                    "of_those_with_a_carriageway_within_link_m": int((o.snaps_to_path & (o.road_straight_m <= near)).sum()),
+                    "fault_class": int(len(f)), "share": round(len(f) / len(o), 4),
+                    "by_network_distance_to_the_carriageway_m": {f"over_{c}": int(((n > c) | n.isna()).sum())
+                                                                 for c in (20, 50, 100, 200)},
+                    "further_than_50_m_from_any_walkable_way": int((o.snap_m > 50).sum())}
+        res = {"link_m": near, "stops": tally(sc), "oa_centroids": tally(oc)}
+        f = sc[sc.fault_class]
+        # (b) what linking the stops would do: the fault-class stops moved onto the
+        # carriageway beside them, walking times to them recomputed, the shorter time kept
+        back = Transformer.from_crs(27700, 4326, always_xy=True).transform
+        lon, lat = back(f.road_x.to_numpy(), f.road_y.to_numpy())
+        moved = pd.DataFrame({"id": f.stop_id.to_numpy(), "lon": lon, "lat": lat})
+        o_pts = pwc.rename(columns={"stop_id": "id"})[["id", "lon", "lat"]]
+        m = _walk_matrix(str(cfg.root / raw["osm"]["clip"]), nw, o_pts, moved, ps, ps["coverage.max_walk_min"], day)
+        m = m.rename(columns={"from_id": "OA21CD", "to_id": "stop_id", "travel_time": "walk_min"})
+        m["walk_min"] = m.walk_min.astype(float)
+        base = pd.read_parquet(cfg.root / raw["coverage"]["dir"] / nw["version"] / "oa_stop_walk.parquet")[
+            ["OA21CD", "stop_id", "walk_min"]]
+        both = pd.concat([base, m], ignore_index=True).groupby(["OA21CD", "stop_id"], as_index=False).walk_min.min()
+        j = base.merge(m, on=["OA21CD", "stop_id"], suffixes=("", "_linked"))
+        res["effect_on_walking_times"] = {
+            "pairs_with_a_fault_class_stop": int(len(j)),
+            "pairs_shorter_once_linked": int((j.walk_min_linked < j.walk_min).sum()),
+            "mean_saving_min_where_shorter": round(float((j.walk_min - j.walk_min_linked)[j.walk_min_linked < j.walk_min].mean()), 2),
+            "pairs_newly_within_the_walk_cap": int(len(m) - len(j))}
+        obs, between = _obs(ps)
+        curves = cov.decay_curves(obs, between)
+        scfg = {"walk_kmh": ps["routing.walk_speed_kmh"], **{k.split(".", 1)[1]: ps[k] for k in (
+            "coverage.frequent_headway_min", "coverage.score_cap_dph", "coverage.are_interval_bands_min",
+            "coverage.are_stop_category", "coverage.are_distance_bands_m", "coverage.are_class",
+            "coverage.rail_node_min_directions")}, "served_cut_min": dict(ps["coverage.served_walk_min"])}
+        cl = stops.set_index("stop_id").cluster_id
+
+        def served(w):
+            w = w.assign(cluster_id=w.stop_id.map(cl)).groupby(["OA21CD", "cluster_id"], as_index=False).walk_min.min()
+            w["walk_min"] += ps["coverage.walk_truncation_correction_min"]
+            s_ = cov.score(w, cs, curves, scfg).set_index("OA21CD").reindex(oa.OA21CD)
+            return {f"frequent_{h}": int(oa.residents[s_[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
+                    for h in ps["coverage.frequent_headway_min"]}
+        a, b = served(base), served(both)
+        res["effect_on_headline_coverage"] = {"residents_served_now": a, "residents_served_with_stops_linked": b,
+                                              "difference": {k: b[k] - a[k] for k in a},
+                                              "note": "stops only: the same fault at OA centroids and at "
+                                                      "stops met mid-journey is not corrected here"}
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(json.dumps(res, indent=1))
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 

@@ -175,3 +175,96 @@ def plot(recs: list[dict], out: Path) -> None:
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(out, dpi=120)
     plt.close(fig)
+
+
+# ------------------------------------------------------------------ the whole class
+
+def walk_graph(pbf: str):
+    """Every walkable way in the extract as a graph (edges in metres, with way id and
+    whether the way is a path or a carriageway), plus the edge geometries for snapping."""
+    import math
+    import networkx as nx
+    import osmium
+
+    class H(osmium.SimpleHandler):
+        def __init__(self):
+            super().__init__()
+            self.g = nx.Graph()
+            self.edges = []                      # (lon0, lat0, lon1, lat1, u, v, is_path, way)
+
+        def way(self, w):
+            t = dict(w.tags)
+            hw = t.get("highway")
+            if hw is None or hw in ("motorway", "motorway_link", "construction", "proposed", "platform", "bus_stop",
+                                    "raceway", "corridor", "elevator") or not walkable(t):
+                return
+            if t.get("area") == "yes":
+                return
+            try:
+                pts = [(n.ref, n.lon, n.lat) for n in w.nodes]
+            except Exception:
+                return
+            is_path = hw in PATHS
+            for (a, x0, y0), (b, x1, y1) in zip(pts, pts[1:]):
+                d = math.hypot((x1 - x0) * 111_320 * math.cos(math.radians(y0)), (y1 - y0) * 111_320)
+                self.g.add_edge(a, b, m=d)
+                if not is_path:
+                    self.g.nodes[a]["road"] = self.g.nodes[b]["road"] = True
+                self.edges.append((x0, y0, x1, y1, a, b, is_path, w.id))
+
+    h = H()
+    h.apply_file(pbf, locations=True)
+    return h.g, h.edges
+
+
+def snap_class(stops, g, edges, near_m: float, reach_m: float):
+    """For each stop: the nearest walkable way (taken as where R5 links the stop), whether
+    it is a separately mapped path, the straight-line distance to the nearest carriageway,
+    and the walking distance on the network from the snap point to the nearest carriageway
+    node (searched up to ``reach_m``). A stop is in the fault class when it snaps to a path,
+    a walkable carriageway lies within ``near_m`` in a straight line, and the network needs
+    more than ``near_m`` to reach one."""
+    import networkx as nx
+    import numpy as np
+    import pandas as pd
+    from pyproj import Transformer
+    from shapely import STRtree
+    from shapely.geometry import LineString, Point
+    fwd = Transformer.from_crs(4326, 27700, always_xy=True).transform
+    e = np.array([(x0, y0, x1, y1) for x0, y0, x1, y1, *_ in edges])
+    ax, ay = fwd(e[:, 0], e[:, 1])
+    bx, by = fwd(e[:, 2], e[:, 3])
+    lines = [LineString([(ax[i], ay[i]), (bx[i], by[i])]) for i in range(len(edges))]
+    is_path = np.array([x[6] for x in edges])
+    tree_all = STRtree(lines)
+    road_idx = np.flatnonzero(~is_path)
+    tree_road = STRtree([lines[i] for i in road_idx])
+    sx, sy = fwd(stops.lon.to_numpy(), stops.lat.to_numpy())
+    rows = []
+    for k, (x, y) in enumerate(zip(sx, sy)):
+        p = Point(x, y)
+        i = int(tree_all.nearest(p))
+        d_snap = lines[i].distance(p)
+        j = int(road_idx[tree_road.nearest(p)])
+        d_road = lines[j].distance(p)
+        net = 0.0
+        if is_path[i] and d_road <= near_m:
+            _, _, _, _, u, v, _, _ = edges[i]
+            along = lines[i].project(p)
+            start = {u: along, v: lines[i].length - along}
+            best = float("inf")
+            for n0, d0 in start.items():
+                dist = nx.single_source_dijkstra_path_length(g, n0, cutoff=reach_m, weight="m")
+                hit = [d0 + dd for n, dd in dist.items() if g.nodes[n].get("road")]
+                if hit:
+                    best = min(best, min(hit))
+            net = best
+        rows.append({"snap_way": edges[i][7], "snap_m": round(d_snap, 1), "snaps_to_path": bool(is_path[i]),
+                     "road_way": edges[j][7], "road_straight_m": round(d_road, 1),
+                     "road_network_m": None if not np.isfinite(net) else round(net, 1),
+                     "road_x": float(lines[j].interpolate(lines[j].project(p)).x),
+                     "road_y": float(lines[j].interpolate(lines[j].project(p)).y)})
+    out = pd.concat([stops.reset_index(drop=True), pd.DataFrame(rows)], axis=1)
+    far = out.road_network_m.isna() | (out.road_network_m > near_m)
+    out["fault_class"] = out.snaps_to_path & (out.road_straight_m <= near_m) & far
+    return out

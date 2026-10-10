@@ -346,6 +346,14 @@ coverage:
     unit: alternative values of reduced_mobility_scale, each reported
     tag: MODELLED
     reasoning: Robbie, 2026-10-10 — a range either side of 0.7, which has no observed basis yet.
+  walk_fault_link_m:
+    value: 20
+    unit: m; a stop standing on a separately mapped path is in the walk-fault class if a walkable carriageway is this close in a straight line but further than this on the network
+    tag: MODELLED
+    reasoning: >-
+      Robbie, 2026-10-10 (plans/P3.md P3b-8). About the width of a road and its verges:
+      a person at the stop can step onto the carriageway side within this distance, so a
+      network that needs more is missing a link, not describing a barrier.
   reduced_mobility_scale:
     value: 0.7
     unit: multiplier on every distance the decay curves are defined on, in the reduced-mobility variant
