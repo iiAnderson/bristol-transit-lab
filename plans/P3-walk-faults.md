@@ -46,7 +46,7 @@ paths, and they affect every origin that reaches such a stop, not only the clust
 | Gipsy Patch Lane | 0170SGP90775 / 0170SGP90777 | 51.52169, -2.57074 | 37 m | 5 min | divided road | A38 Gloucester Road North; primary_link | way 148725405 (cycleway), way 1467831126 (footway) | no highway way changed | None: a real barrier. Check only that the nearest mapped crossing is where R5 crosses |
 | The Grove | 0170SGP90771 / 0170SGP90770 | 51.53136, -2.56982 | 77 m | 9 min | divided road | A38 Gloucester Road; primary_link | way 1467831108 (footway), way 1467831107 (footway) | 3 way(s) edited since (4754001, 4755911, 145246809), none a new link between the stops | None: a real barrier. Check only that the nearest mapped crossing is where R5 crosses |
 
-## Review plot and drafted patch (2026-10-10, nothing applied)
+## Review plot and drafted patch (2026-10-10, nothing applied; superseded by the class analysis below)
 
 `plans/P3-walk-faults.png` (run `20261010T150133-spike-walk-faults-81cfd5`, `lab spike
 walk-faults`) shows the ten artefact candidates: stops in red, roads grey, separately
@@ -65,6 +65,60 @@ makes.
 
 Still from tags and the plot only: not checked against imagery or on the ground. The
 remaining ten pairs (nine divided roads, one unclear) have nothing drafted.
+
+## The whole class (2026-10-10; Robbie's decision 6 on the P3b-0 / P3b-1 stop)
+
+The connectors above are **not approved**: the ten pairs are only what a narrow clustering
+test happened to catch. The class was counted instead (`lab spike walk-fault-class`, run
+`20261010T184524-spike-walk-fault-class-370e29`; CSVs of every stop and OA centroid in the run).
+
+**Definition** (`coverage.walk_fault_link_m` = 20 m `[MODELLED]`): a point is in the class
+when the nearest walkable way to it — taken as where R5 links it — is a separately mapped
+footway, cycleway, path or pedestrian way; a walkable carriageway lies within 20 m in a
+straight line; and the walking network needs more than 20 m to get from the snap point to
+any carriageway. "Nearest walkable way" is computed from OSM geometry and tags, not read out
+of R5, so it approximates R5's own linking.
+
+**(a) Count.**
+
+| | points | snap to a path | with a carriageway within 20 m | in the class | network distance to the carriageway over 50 / 100 / 200 m |
+|---|---|---|---|---|---|
+| Stops with service | 5,812 | 986 | 918 | **530 (9.1%)** | 211 / 62 / 7 |
+| OA population-weighted centroids | 3,799 | 630 | 282 | **135 (3.6%)** | 58 / 22 / 4 |
+
+So the fault is common but mostly shallow: 319 of the 530 stops reach the carriageway within
+50 m, and only 62 need more than 100 m. 18 of the 40 stops in the 20 cut pairs are in the
+class. Separately, 55 OA centroids are more than 50 m from any walkable way.
+
+**(b) Effect on the headline.** Each of the 530 stops was moved onto the carriageway beside
+it and the walking times from every OA recomputed, keeping the shorter of the old and new
+time (a link can only help). Of 44,262 OA–stop pairs with such a stop, 7,492 get shorter,
+by 1.15 minutes on average; 579 pairs come inside the 30-minute cap. Residents with a
+frequent service (15 min): 644,764 → 645,142, **+378 (0.06%)**; high frequency (10 min):
+426,199 → 427,671, +1,472 (0.3%). This corrects the stop end only: the same fault at OA
+centroids, and at stops met in the middle of a PT journey (interchange walks in the skims),
+is not corrected and its effect is not estimated.
+
+**(c) Proposal.** Do not patch for coverage: the headline moves by less than a tenth of a
+per cent, well inside the difference between the strict and loose cut-offs (150,000
+residents). If the class is to be fixed at all, a hand patch is the wrong tool for 530
+stops: use one general rule, as data-driven preprocessing of the OSM extract with nothing
+place-specific in `src/` — *for every stop whose nearest walkable way is a path with a
+walkable carriageway within `walk_fault_link_m`, add a footway connector from the path to
+that carriageway at the stop* — hashed into the network version, and judged by re-running
+the PT spot checks and the skims, where interchange walks may matter more than coverage
+does. Recommend deferring that to P5, when walk legs start to carry behavioural weight,
+unless the spot checks give a reason sooner.
+
+**The rest of the list.**
+- **Bath Spa rear entrance** and **Newport bus station** (the two P2 model errors): neither
+  is this class; each needs its own look at how the entrance or the stands are mapped. Not
+  investigated further.
+- **The 40 OAs** within 400 m of a stop but a disproportionate walk from it: 5 are explained
+  by this class (4 at the stop, 1 at the centroid, 1 at both ends counted once). At least 6
+  of the others have a Floating Harbour stop or ferry landing as their nearest stop (a real
+  water barrier). The remaining 29 are **still unclassified**: divided roads, railways and
+  rivers are likely, but none has been looked at.
 
 ## Known from P2 (PT spot checks), not yet in a patch list
 
