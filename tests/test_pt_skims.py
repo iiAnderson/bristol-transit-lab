@@ -11,12 +11,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from lab import params, skims
+import yaml
+
+from lab import network, params, skims
 from lab.config import LabConfig
 
 CFG = LabConfig.load()
-WORK = CFG.root / "data" / "interim" / "skims" / "pt_AM"
 PS = {p.path: p.value for p in params.load(CFG.root / "params" / "base.yaml")}
+try:        # the baseline network in force (terrain per params; LAB_NETWORK=flat for v1)
+    NW = network.settings(CFG, yaml.safe_load((CFG.root / "config" / "lab.yaml").read_text()), PS)
+    WORK = NW["skims"] / "_work" / "pt_AM"
+except Exception:                       # no feed registry on a clean clone
+    NW, WORK = None, CFG.root / "missing"
 W = {k: PS[f"generalised_cost.{k}"] for k in ("w_walk", "w_wait", "p_interchange")}
 have = (WORK / "chunks").is_dir() and any((WORK / "chunks").glob("minutes_*.parquet"))
 pytestmark = pytest.mark.skipif(not have, reason="AM PT skims not built")
@@ -67,15 +73,20 @@ def test_r5r_matches_r5py_on_the_one_percent_sample(monkeypatch):
     d = pd.read_csv(WORK / "destinations.csv")
     g = lambda df: gpd.GeoDataFrame({"id": df["id"]}, crs="EPSG:4326",  # noqa: E731
                                     geometry=[Point(x, y) for x, y in zip(df.lon, df.lat)])
-    net = TransportNetwork(str(CFG.root / "data/interim/osm/b2026_clip.osm.pbf"),
-                           [str(CFG.root / "data/interim/gtfs/bus_bods.zip"),
-                            str(CFG.root / "data/interim/gtfs/rail_darwin.zip")])
+    from r5py import ElevationCostFunction
+    from lab.supply import dem
+    osm = str(CFG.root / "data/interim/osm/b2026_clip.osm.pbf")
+    gtfs = [str(CFG.root / "data/interim/gtfs/bus_bods.zip"),
+            str(CFG.root / "data/interim/gtfs/rail_darwin.zip")]
+    net = (TransportNetwork(osm, gtfs) if not NW["elevation"] else
+           TransportNetwork(osm, gtfs, elevation_model=[dem.for_function(NW["tif"], NW["elevation"])],
+                            elevation_cost_function=ElevationCostFunction(NW["elevation"])))
     dep = dt.datetime.combine(dt.date(2026, 9, 23), dt.time.fromisoformat(PS["skims.window_start.AM"]))
     t = TravelTimeMatrix(net, origins=g(o), destinations=g(d), departure=dep,
                          departure_time_window=dt.timedelta(minutes=PS["skims.departure_window_min"]),
                          percentiles=[50], transport_modes=[TransportMode.TRANSIT, TransportMode.WALK],
                          max_time=dt.timedelta(minutes=PS["routing.max_trip_min"]),
-                         speed_walking=PS["routing.walk_speed_kmh"],
+                         speed_walking=NW["walk_kmh"],
                          max_public_transport_rides=PS["routing.max_rides"])
     r5py_ok = t.dropna(subset=["travel_time"])
     r5r_ok = summary.dropna(subset=["p50"])

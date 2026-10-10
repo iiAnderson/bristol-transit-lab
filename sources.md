@@ -1060,6 +1060,31 @@ in P1). Population is read from upstream's raw national TS001 file instead (chec
 equal to the table on all 3,905 OAs it holds), and OA boundaries from
 ONS (`Output_Areas_2021_EW_BGC_V2`, accessed 2026-10-09, OGL v3).
 
+### P3b-0 and the P3b opening stop: datasets and sources (2026-10-10)
+
+| Dataset / document | URL | Accessed | Licence | Version / notes |
+|---|---|---|---|---|
+| El-Geneidy, Grimsrud, Wasfi, Tétreault and Surprenant-Legault (2014), "New evidence on walking distances to transit stops: identifying redundancies and gaps using variable service areas", Transportation 41:193–210 | authors' version https://www.tram.mcgill.ca/Research/Publications/Transit_service_area.pdf | 2026-10-10 | © the authors (cited, not redistributed) | SHA-256 `28f7b67b…`. Montréal 2003 origin–destination survey, 16,014 home-based transit trips, network walking distance from home to the first stop (distances stop near 1.5 km). Table 2 — mean / 85th percentile: commuter train 818.0 / 1,259.4 m (n 493), metro 564.8 / 873.4 (n 3,723), buses by operator 276.0 / 484.1 (n 8,745), 314.5 / 556.4 (1,628), 347.0 / 601.1 (887), 488.7 / 897.0 (538). Abstract: bus 85th percentile "around 524 meters". **The published journal version was not opened**; the figures are from the authors' version |
+| TfL, Assessing transport connectivity in London | https://content.tfl.gov.uk/connectivity-assessment-guide.pdf | 2026-10-10 | © TfL (cited) | SHA-256 `aafbbe1c…`. PTAL: "A walking speed of 4.8 kph is assumed"; "people will walk up to 640 metres (approximately eight minutes) to a bus service and up to 960 metres (12 minutes) to a rail or Tube service". Cross-check only: these are cut-offs, not a distribution |
+| Burke and Brown (2007), "Distances people walk for transport", Road & Transport Research 16(3) | not opened (repository returned 403; search summaries only) | 2026-10-10 | — | **Not used.** Search summaries give a mean walk to public transport of 573 m in Brisbane with 75% under 824 m; unverified |
+| West of England Mayoral Combined Authority, MetroWest Phase 2 Full Business Case Stage 2 Update (WSP, October 2025) | https://www.westofengland-ca.gov.uk/wp-content/uploads/2025/10/MetroWest-Phase-2-FBC-Update-Final-For-publication.pdf | 2026-10-10 | © the Combined Authority (cited) | SHA-256 `8f9fd4d4…`. Table 5-1: the hourly Filton Abbey Wood service extended to North Filton and Henbury; Table 7-1: North Filton stage 1 November 2026 (unstaffed), stage 2 March 2028; Henbury March 2028; §6.6.2: hourly, turning at Hallen Moor until Henbury's turn-back exists. Costs: £72.0m forward-looking capital (nominal), stage 2 capital cost £86.8m, 20% contingency, optimism bias 33% (Henbury) and 30% (North Filton) citing TAG A1.2 Table 7, renewals 29% of capital; operating costs by item in 2025 prices (Table 7-20) |
+| Network Rail, Bristol Brabazon station | https://www.networkrail.co.uk/our-work/our-routes/western/metrowest-rail-upgrades/bristol-brabazon-station/ | 2026-10-10 | — | "When complete, in Autumn 2026, it will bring the first regular passenger services to the Henbury line since 1964." No service pattern on the page |
+| TAG unit A1.2, Scheme Costs (May 2025) | https://assets.publishing.service.gov.uk/media/681b53303f1c73824ee3e501/tag-unit-a1-2-cost-estimation.pdf | 2026-10-10 | OGL v3 | SHA-256 `0613691c…`. Table 7, recommended optimism-bias uplifts at stages 1 / 2 / 3: roads 46 / 23 / 20%; rail (metro, light rail, guided buses on tracks, line upgrades, high-speed rail) 56 / 33 / 30%; fixed links 55 / 32 / 28%; stations and terminal buildings 70 / 48 / 44%; IT 69 / 50 / 42%; land and property 33 / 14 / 0%; rolling stock 61 / 38 / 35%. Table 6: stage 1 = SOBC, 2 = OBC, 3 = FBC for local authority and public transport schemes |
+| Network Rail open data feeds: licence | https://www.networkrail.co.uk/who-we-are/transparency-and-ethics/transparency/open-data-feeds/ and `…/network-rail-infrastructure-limited-data-feeds-licence/` | 2026-10-10 | Open Government Licence (as stated on the licence page) | **Not used.** Access by account, "currently restricted to 1,000 users"; no brand or "official" use. Whether the schedule feed carries freight paths was not confirmed on a Network Rail page |
+| OpenStreetMap API 0.6 (`/map`) | https://api.openstreetmap.org/api/0.6/map | 2026-10-10 | ODbL 1.0 | 20 small boxes round the stop pairs in `plans/P3-walk-faults.md`, to compare current OSM with the 26 Sep extract; nothing stored beyond the comparison |
+
+**The WYG paper is still unopened** (host timing out on 9 and 10 Oct). Decay now rests
+on El-Geneidy et al. (2014) by Robbie's decision: bus mean 296 m (this repo's n-weighted
+mean of the four operators in Table 2) and 85th percentile 524 m (the paper's stated
+figure; the table's operator values run from 484 m for the city operator to 897 m for
+the outer-suburban one); rail 818 / 1,259 m; metro 565 / 873 m. **The disagreement with
+the British figures in circulation is large**: WYG's bus 85th percentile is quoted as
+800 m and rail 1,610 m, half as long again. TfL's cut-offs (640 m bus, 960 m rail) sit
+between. Montréal in 2003 is a denser, gridded city with closely spaced stops, which
+shortens observed walks; so coverage on these curves is likely conservative for the
+Bristol area's suburbs. UK lead not pursued: National Travel Survey stage-level
+microdata (UK Data Service; access conditions not checked).
+
 ## Phase status
 
 | phase | status |

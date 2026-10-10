@@ -2210,6 +2210,29 @@ def params_cmd() -> None:
             click.echo(f"  [{p.tag:<11}] {p.path} = {p.value}{unit}")
 
 
+@cli.command("network-change")
+@click.argument("version_a")
+@click.argument("version_b")
+def network_change(version_a: str, version_b: str) -> None:
+    """Change report between two network versions of the baseline: skims pair by pair."""
+    import json
+    import yaml
+    from . import network
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    root = cfg.root / raw["baseline"]["skims"] / raw["baseline"]["scenario"]
+    for v in (version_a, version_b):
+        if not (root / v).is_dir():
+            raise click.ClickException(f"no skims for network version {v} under {root}")
+    rec = runrecord.build(cfg, command="network-change", inputs=[
+        {"name": "network_version_a", "version": version_a},
+        {"name": "network_version_b", "version": version_b}])
+    runrecord.write(cfg, rec)
+    rec["result"] = network.skim_change(root / version_a, root / version_b)
+    click.echo(json.dumps(rec["result"], indent=1))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 from .coverage_cli import coverage as _coverage  # noqa: E402
 
 cli.add_command(_coverage)

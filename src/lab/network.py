@@ -42,3 +42,50 @@ def skim(net: dict, mode: str, period: str = "DAY"):
     d = net["car_skims"] if mode == "car" else net["skims"] / mode
     d.mkdir(parents=True, exist_ok=True)
     return d / f"{period}.parquet"
+
+
+def skim_change(a_dir, b_dir) -> dict:
+    """Pair-by-pair change between two network versions' skims (b − a), for the change
+    report: PT median and mean components, walk and cycle times."""
+    import pandas as pd
+    out = {}
+    for per in ("AM", "IP"):
+        fa, fb = a_dir / "pt" / f"{per}.parquet", b_dir / "pt" / f"{per}.parquet"
+        if not (fa.is_file() and fb.is_file()):
+            continue
+        cols = ["from_id", "to_id", "p50", "unreachable", "access_min", "egress_min", "transfer_min",
+                "wait_min", "ride_min", "gc_min", "ride_share"]
+        j = pd.read_parquet(fa, columns=cols).merge(pd.read_parquet(fb, columns=cols),
+                                                    on=["from_id", "to_id"], suffixes=("_a", "_b"))
+        both = j[~j.unreachable_a & ~j.unreachable_b]
+        d = both.p50_b - both.p50_a
+        walk = lambda x, s: x[f"access_min_{s}"] + x[f"egress_min_{s}"] + x[f"transfer_min_{s}"]  # noqa: E731
+        out[f"pt_{per}"] = {
+            "pairs": int(len(j)), "reachable_a": int((~j.unreachable_a).sum()),
+            "reachable_b": int((~j.unreachable_b).sum()),
+            "lost": int((~j.unreachable_a & j.unreachable_b).sum()),
+            "gained": int((j.unreachable_a & ~j.unreachable_b).sum()),
+            "median_p50_a": float(both.p50_a.median()), "median_p50_b": float(both.p50_b.median()),
+            "p50_change_min": {"mean": round(float(d.mean()), 2), "p5": float(d.quantile(.05)),
+                               "median": float(d.median()), "p95": float(d.quantile(.95))},
+            "share_p50_2min_slower": round(float((d >= 2).mean()), 3),
+            "share_p50_2min_faster": round(float((d <= -2).mean()), 3),
+            "mean_walk_min_a": round(float(walk(both, "a").mean()), 2),
+            "mean_walk_min_b": round(float(walk(both, "b").mean()), 2),
+            "mean_wait_change_min": round(float((both.wait_min_b - both.wait_min_a).mean()), 2),
+            "mean_ride_change_min": round(float((both.ride_min_b - both.ride_min_a).mean()), 2),
+            "median_gc_a": float(both.gc_min_a.median()), "median_gc_b": float(both.gc_min_b.median())}
+    for mode in ("walk", "cycle"):
+        fa, fb = a_dir / mode / "DAY.parquet", b_dir / mode / "DAY.parquet"
+        if not (fa.is_file() and fb.is_file()):
+            continue
+        j = pd.read_parquet(fa).merge(pd.read_parquet(fb), on=["from_id", "to_id"], suffixes=("_a", "_b"))
+        both = j[j.travel_time_a.notna() & j.travel_time_b.notna()]
+        d = both.travel_time_b - both.travel_time_a
+        out[mode] = {"reachable_a": int(j.travel_time_a.notna().sum()),
+                     "reachable_b": int(j.travel_time_b.notna().sum()),
+                     "mean_a": round(float(both.travel_time_a.mean()), 2),
+                     "mean_change_min": round(float(d.mean()), 2),
+                     "mean_change_pct": round(float(100 * d.sum() / both.travel_time_a.sum()), 1),
+                     "p5_p50_p95": [float(x) for x in d.quantile([.05, .5, .95])]}
+    return out
