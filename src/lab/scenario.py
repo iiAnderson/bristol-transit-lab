@@ -243,7 +243,7 @@ def _fare(f: dict, where: str) -> None:
 
 
 SERVICE_KEYS = {"route_id", "name", "mode", "alignment", "stops", "speed_profile", "headways_min", "span",
-                "vehicle", "fare", "traction"}
+                "vehicle", "fare", "traction", "operator"}
 
 
 def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, where: str,
