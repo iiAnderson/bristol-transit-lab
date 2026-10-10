@@ -1189,6 +1189,12 @@ over the offsets):
   train is the only option).
 - Capacity: 16 sections used, none over its limit at any offset.
 
+**Without Henbury** (`B2028-no-henbury`, run `20261010T201127-B2028-no-henbury-c1981e`, clean
+tree): AM 81,803 pairs at least 2 minutes faster than B2026 and 42,657 at least 5; 9,104
+gained; inter-peak 79,642 and 5,465. Jobs within 45 min, median core OA: 79,055 (AM, as
+B2026) and 114,050 (inter-peak). So Henbury station carries about a third of B2028's
+improved pairs. Coverage as B2028; 14 sections used, none over.
+
 **Round trip on the real feed.** One bus route with 504 restriction copies, timed exactly
 every 15 minutes in the inter-peak, set to every 10 minutes and back to 15
 (`scenarios/T001-…`, `T001r-…`; `tests/test_round_trip.py`): its 1,008 stop times and 126
@@ -1241,4 +1247,4 @@ headline.
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
 | P1 | approved 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); external-factor fallback added after approval |
 | P2 | **complete 2026-10-09** (plans/P2.md §9). Delivered: bus and rail GTFS for Wed 23 Sep 2026 (pick-up / set-down restrictions enforced), nine archive and three live AVL days, car speeds (DfT fit + WebTRIS + ANPR layer in the Bristol built-up area), PT / walk / cycle / car skims, accessibility (DfT Connectivity ρ 0.947 OA, 0.952 LSOA), the gap map (door-to-door time difference PT − car: mean 29 min with high car terminal times, 37 with none). **Documented fails:** (1) PT spot checks, AM peak 15 of 20 against ≥ 16 (IP 18 of 20 passes) — 4 comparison artefacts, 1 model error; (2) car spot checks on held-out ANPR links, 8 of 20 (AM peak hour) and 6 of 20 (IP) within ±15% against ≥ 16. **Accepted deviations:** held-out bus speed error 27% per cell / 20% per corridor against ≤ 15%; DfT ±5% given up inside the ANPR layer's scope (Bristol roads −9.6%) in favour of ANPR, met outside it (33 of 35 roads). Leave-one-road-out 11.2% (≤ 15% ✓). Open [PLACEHOLDER]s: 4 in `params/base.yaml` (none used by P2 outputs), 8 in `params/costs.yaml` (P6). Awaiting: Robbie's review of the ANPR-layer scope map |
-| P3 | **in progress** (plans/P3.md). P3a done: SPEC amendments, rule 6 test, terrain spike, D7 measurement, frequent-service coverage on B2026. P3b-0 done: network v2 (terrain) adopted, skims in the SPEC layout, change report. P3b-1 done: scenario schema and validator. Next: generator, capacity check, B2028. Open [PLACEHOLDER]s: 5 in `params/base.yaml` (the 4 from P2 plus the loose coverage cut-off, an unverified variant), 8 in `params/costs.yaml` (**P3c**, not P6 as the P2 row says). WIMD licence to confirm before anything Welsh is published |
+| P3 | **in progress** (plans/P3.md). P3a done (frequent-service coverage on B2026). P3b at its stop: network v2 (terrain) adopted; scenario schema, validator and generator; Darwin timing points and sections; capacity check; **B2028 built from B2026 by ops** and run, with a no-Henbury sensitivity; `bus_speed_ratio` fitted; minimal `L2026`. **Flagged:** B2028's reopened lines are 14–24% faster than published (modelled speed profile, not tuned); every capacity limit is modelled; several ops are not built (`reroute`, `add_stop`, `truncate_at`, on-street legs). Open [PLACEHOLDER]s: 5 in `params/base.yaml` (the 4 from P2 plus the loose coverage cut-off), 8 in `params/costs.yaml` (**P3c**, not P6 as the P2 row says). WIMD licence to confirm before anything Welsh is published. Next: P3c |
