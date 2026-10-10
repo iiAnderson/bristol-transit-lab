@@ -265,7 +265,7 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
         feeds_k = {f.stem: gen.read_feed(f) for f in sorted((b["dir"] / f"offset_{k}").glob("*.zip"))}
         # today's trains no longer in the scenario's rail feed have been removed or re-timed
         gone = set(parent_rail["trips"].trip_id) - set(feeds_k["rail"]["trips"].trip_id)
-        retimed = sorted({r for r in feeds_k["rail"]["trips"].route_id[feeds_k["rail"]["trips"].trip_id.str.startswith("gen:")]})
+        retimed = sorted({r for r in feeds_k["rail"]["trips"].route_id[feeds_k["rail"]["trips"].trip_id.str.startswith("gen")]})
         base = cp.base_use(tp, gone if not retimed else set())
         run_min = {}
         for op in off["ops"]:
@@ -337,7 +337,16 @@ def scenario_draw_rail(spec: str) -> None:
     g = rg.rail_graph(str(cfg.root / raw["osm"]["clip"]), set(doc["kinds"]))
     feats = []
     for i, leg in enumerate(doc["legs"]):
-        r = rg.path(g, [tuple(p) for p in leg["via"]], 2 * ps["scenario.draw_snap_m"], ps["scenario.draw_snap_m"])
+        if leg.get("straight"):
+            # not along existing track (a tunnel, a new chord): the drawn points themselves,
+            # starting where the previous leg ended
+            import math
+            pts = ([feats[-1]["geometry"]["coordinates"][-1]] if feats else []) + [list(p) for p in leg["via"]]
+            m = sum(math.hypot((b[0] - a[0]) * 111_320 * math.cos(math.radians(a[1])), (b[1] - a[1]) * 111_320)
+                    for a, b in zip(pts, pts[1:]))
+            r = {"coords": pts, "length_m": round(m, 1), "snap_m": [], "kinds_m": {"drawn": round(m, 1)}}
+        else:
+            r = rg.path(g, [tuple(p) for p in leg["via"]], 2 * ps["scenario.draw_snap_m"], ps["scenario.draw_snap_m"])
         if feats and feats[-1]["geometry"]["coordinates"][-1] != r["coords"][0]:
             # successive legs may meet a station on different tracks: join them
             r["coords"] = [feats[-1]["geometry"]["coordinates"][-1]] + r["coords"]

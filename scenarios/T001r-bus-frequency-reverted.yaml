@@ -1,0 +1,9 @@
+# ENGINE TEST (plans/P3.md P3b-6): the round trip. T001 set this route to every 10 minutes
+# in the inter-peak; this child sets it back to 15. Its bus timetable should equal B2026's.
+id: T001r-bus-frequency-reverted
+parent: T001-bus-frequency
+description: Engine test — T001's frequency change reverted
+landuse: L2026
+offsets: [0.0]
+ops:
+  - modify_route: {route_id: "south_west:120585", headways_min: {IP: 15}}

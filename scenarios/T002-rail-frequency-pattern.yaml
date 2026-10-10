@@ -1,0 +1,12 @@
+# ENGINE TEST (plans/P3.md P3b-6): a frequency and stopping-pattern change on an existing
+# rail route (hourly today): every 30 minutes in the inter-peak, and one intermediate call
+# dropped all day.
+id: T002-rail-frequency-pattern
+parent: B2026
+description: Engine test — one rail route to every 30 minutes in the inter-peak, with one call removed
+landuse: L2026
+ops:
+  - modify_route:
+      route_id: "GW:SVB-BRI"
+      stopping_pattern: {remove: [SAR]}
+      headways_min: {IP: 30}

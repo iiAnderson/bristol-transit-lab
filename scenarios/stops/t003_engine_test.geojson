@@ -1,0 +1,65 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.607742,
+     51.433319
+    ]
+   },
+   "properties": {
+    "stop_id": "PSN",
+    "name": "Parson Street",
+    "tiploc": "PARSNST",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.594149,
+     51.440088
+    ]
+   },
+   "properties": {
+    "stop_id": "BMT",
+    "name": "Bedminster",
+    "tiploc": "BDMNSTR",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.582149,
+     51.446088
+    ]
+   },
+   "properties": {
+    "stop_id": "T3A",
+    "name": "Engine test stop A"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.570149,
+     51.452088
+    ]
+   },
+   "properties": {
+    "stop_id": "T3B",
+    "name": "Engine test stop B"
+   }
+  }
+ ]
+}

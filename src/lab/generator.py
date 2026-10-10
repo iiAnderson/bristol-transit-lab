@@ -184,6 +184,8 @@ def legs(stops: pd.DataFrame, parts, mode: str, profile: dict | None, ctx: dict,
         if dist <= 0:
             raise GeneratorError(f"{where}: stops {a.stop_id} and {b.stop_id} are at the same place on the line")
         types = leg_types(parts, a.chainage_m, b.chainage_m)
+        # a stop sits a few metres off a feature's end: slivers of the neighbouring type do not count
+        types = {t: m for t, m in types.items() if m > 0.05 * dist} or types
         if mode in ("bus", "brt") and any(t in STREET_TYPES for t in types):
             raise GeneratorError(f"{where}: an on-street {mode} leg needs `bus_speed_ratio`, which is not fitted "
                                  "yet (plans/P3.md P3b-7)")
@@ -328,9 +330,11 @@ def _journeys(feed: dict, route_id: str) -> pd.DataFrame:
     st["t"] = mins(st.departure_time)
     st = st.sort_values(["trip_id", "seq"]).merge(tr[["trip_id", "journey"]], on="trip_id")
     # a journey's full pattern is the union of its copies' calls, in time order
-    full = st.drop_duplicates(["journey", "stop_id", "t"]).sort_values(["journey", "t", "seq"])
-    g = full.groupby("journey")
-    j = pd.DataFrame({"start": g.t.first(), "pattern": g.stop_id.agg("|".join)}).reset_index()
+    # a journey's pattern is the set of stops it calls at across its copies: a grouping key
+    # that does not depend on how calls in the same minute, or the copies' own
+    # stop_sequence numbering, happen to be ordered
+    g = st.groupby("journey")
+    j = pd.DataFrame({"start": g.t.min(), "pattern": g.stop_id.agg(lambda x: "|".join(sorted(set(x))))}).reset_index()
     d = tr.drop_duplicates("journey").set_index("journey")
     j["direction"] = j.journey.map(d.direction_id if "direction_id" in d else pd.Series("0", index=d.index)).fillna("0")
     j["trip_ids"] = j.journey.map(tr.groupby("journey").trip_id.agg(list))
@@ -350,6 +354,10 @@ def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, of
     report = {"route_id": route_id, "periods": {}, "journeys_removed": 0, "journeys_added": 0}
     new_trips, new_st, drop = [], [], set()
     base_trips = feed["trips"].set_index("trip_id")
+    taken = set(feed["trips"].trip_id) | set(journey_key(feed["trips"]))
+    tag = "gen"
+    while any(str(t).startswith(f"{tag}:{route_id}:") for t in taken):
+        tag += "+"                                  # a route re-timed again: ids never collide
     for direction, g in j.groupby("direction"):
         main = g[g.pattern == g.pattern.mode().iloc[0]].sort_values("start")
         for per, hw in headways.items():
@@ -370,7 +378,7 @@ def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, of
             for n, (t0, _) in enumerate(deps):
                 tmpl = old.iloc[(old.start - t0).abs().argsort().iloc[0]]
                 shift = t0 - tmpl.start
-                jid = f"gen:{route_id}:{direction}:{per}:{n}"
+                jid = f"{tag}:{route_id}:{direction}:{per}:{n}"
                 for k, tid in enumerate(tmpl.trip_ids):
                     new_id = jid if len(tmpl.trip_ids) == 1 else f"{jid}#{k}"
                     row = base_trips.loc[tid].to_dict() | {"trip_id": new_id}

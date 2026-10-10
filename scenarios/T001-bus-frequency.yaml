@@ -1,0 +1,9 @@
+# ENGINE TEST (plans/P3.md P3b-6): a frequency change on one bus route that has pick-up /
+# set-down restriction copies (504 of them), so journeys must be handled by original_trip_id.
+# The route runs exactly every 15 minutes in the inter-peak today.
+id: T001-bus-frequency
+parent: B2026
+description: Engine test — one bus route from every 15 to every 10 minutes in the inter-peak
+landuse: L2026
+ops:
+  - modify_route: {route_id: "south_west:120585", headways_min: {IP: 10}}

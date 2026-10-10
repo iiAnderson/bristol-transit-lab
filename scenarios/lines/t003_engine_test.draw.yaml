@@ -1,0 +1,8 @@
+# ENGINE TEST ONLY — not a proposal and not anyone's alignment. One leg on existing track
+# (timed today) and one straight "tunnel" leg to two invented stops, to exercise working-time
+# and speed-profile run times, the capacity check and the cost types together (P3b-6).
+out: t003_engine_test.geojson
+kinds: [rail]
+legs:
+  - {via: [[-2.607742, 51.433319], [-2.594149, 51.440088]], alignment_type: existing_rail, timing_points: [PARSNST, BDMNSTR]}
+  - {via: [[-2.582149, 51.446088], [-2.570149, 51.452088]], alignment_type: tunnel, straight: true}

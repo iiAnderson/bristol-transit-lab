@@ -1,0 +1,18 @@
+# ENGINE TEST ONLY (plans/P3.md P3b-6) — not a proposal and not anyone's alignment. A new
+# heavy-rail route on one leg of existing track and a straight tunnel to two invented stops,
+# to exercise the run-time rules, the capacity check and (in P3c) costs by alignment type.
+id: T003-engine-test-tunnel
+parent: B2026
+description: Engine test — a new heavy-rail route on existing track plus a tunnel leg to two invented stops
+landuse: L2026
+ops:
+  - add_line:
+      route_id: GEN-T003
+      name: Engine test line
+      mode: heavy_rail
+      operator: GW
+      alignment: lines/t003_engine_test.geojson
+      stops: stops/t003_engine_test.geojson
+      speed_profile: {max_kmh: 80, accel_ms2: 1.0, dwell_s: 30}
+      headways_min: {AM: 15, IP: 15, PM: 15, OP: 30}
+      span: "06:00-23:00"
