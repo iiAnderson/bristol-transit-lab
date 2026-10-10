@@ -418,10 +418,10 @@ def coverage_score(scenario: str | None) -> None:
             sens[f"served_cut_{name}"] = {"cut_min": {m: round(v, 2) for m, v in cut.items()}} | {
                 f"residents_frequent_{h}": int(head.residents[sv[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
                 for h in hs}
-        for sc_ in ps["coverage.reduced_mobility_scale_sensitivity"]:
-            sv = cov.score(walk, cs[cs.period == "HEADLINE"], curves, scfg | {"scale": sc_}) \
+        for rm_alt in ps["coverage.reduced_mobility_scale_sensitivity"]:
+            sv = cov.score(walk, cs[cs.period == "HEADLINE"], curves, scfg | {"scale": rm_alt}) \
                 .set_index("OA21CD").reindex(oa.OA21CD)
-            sens[f"reduced_mobility_scale_{sc_:g}"] = {
+            sens[f"reduced_mobility_scale_{rm_alt:g}"] = {
                 f"residents_frequent_{h}": int(head.residents[sv[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
                 for h in hs}
         # alongside: the same score on R5's plain (truncated) walking times
