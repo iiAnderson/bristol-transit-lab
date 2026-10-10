@@ -359,6 +359,31 @@ ops:
   every scenario op must treat a source trip and its copies as one vehicle journey:
   modify, remove and re-time by `original_trip_id`, and never derive frequencies or
   headways from `trip_id` counts.
+- **As built at P3b (2026-10-10)** — where this differs from the bullets above, this is
+  what the code does (`src/lab/generator.py`, `capacity.py`, `run.py`; plans/P3.md §9):
+  - *Built:* `add_line`, `remove_route`, `replace_route`, `modify_route` with
+    `headways_min`, `stopping_pattern.remove` and `extend_to`; `fare_change` and
+    `landuse_delta` are recorded only. *Not built, each failing loudly:* `reroute`,
+    `add_stop`, `truncate_at` (which side of the stop is kept is undefined),
+    `stopping_pattern.add`, `road_speed_factor`, and any on-street bus or BRT leg (the
+    `bus_speed_ratio` is fitted but its run-time rule is not written).
+  - *Re-timing* (`headways_min` on an existing route) replaces the journeys of the
+    route's dominant stop pattern, period by period, anchored on the first existing
+    departure; each new journey takes the stop times of the existing journey nearest in
+    time, restriction copies and all. The same headway on evenly timed service
+    reproduces it exactly; an uneven timetable cannot be recovered from a headway.
+  - *Removing a call* gives back only the dwell timetabled there.
+  - *Rail alignments* are drawn from OSM track by `lab scenario draw-rail`; each
+    `existing_rail` feature names the Darwin timing points it runs between, which must
+    form sections known in `scenarios/infrastructure/`.
+  - *Generated feeds* are cached by the scenario chain's `spec_hash`es and the parent
+    feeds' hashes; a file whose tables are unchanged keeps its bytes, and skims are keyed
+    to each feed's hash through `network_version`.
+  - *`lab run`* gives a scenario PT skims at each offset and their mean, the capacity
+    table, and accessibility and frequent-service coverage for the scenario, its parent
+    and the difference. Nothing demand-dependent yet (P5–P6).
+  - *Capacity check:* trains per hour per section from Darwin (no freight) plus a
+    modelled freight allowance, against modelled limits (§11 item 20).
 - Validate every op: stops within 50 m of the alignment, alignment within the extent,
   headways positive, `route_id` exists for modify/remove. Fail loudly.
 - `spec_hash` = hash of the YAML plus referenced files, stored on `scenario`.
