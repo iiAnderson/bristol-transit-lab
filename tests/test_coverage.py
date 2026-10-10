@@ -190,3 +190,16 @@ def test_oa_jobs_split_and_summary():
     s = cov.summarise(oa, "dec").iloc[0]
     assert s.residents_frequent_10 == 100 and s.residents_not_frequent_10 == 300
     assert s.weighted_residents_frequent_10 == 50 and s.mean_score_resident_weighted == 1.5
+
+
+def test_baseline_landuse_has_one_row_per_oa_and_conserves_jobs():
+    from lab import landuse as lu
+    oa = pd.DataFrame({"OA21CD": ["a", "b", "c"], "LSOA21CD": ["L1", "L1", "L2"]})
+    t, info = lu.build(oa, pd.DataFrame({"OA21CD": ["a", "b", "c"], "residents": [10, 20, 30]}),
+                       pd.DataFrame({"LSOA21CD": ["L1", "L2"], "jobs": [100, 40]}),
+                       pd.DataFrame({"OA21CD": ["a", "b"], "workers": [3, 1]}), "L0")
+    assert list(t.zone_id) == ["a", "b", "c"] and t.residents.sum() == 60 and t.jobs.sum() == 140
+    assert t.set_index("zone_id").jobs.to_dict() == {"a": 75, "b": 25, "c": 40} and info["zones"] == 3
+    with pytest.raises(ValueError):
+        lu.build(oa, pd.DataFrame({"OA21CD": ["a"], "residents": [10]}), pd.DataFrame({"LSOA21CD": [], "jobs": []}),
+                 pd.DataFrame({"OA21CD": [], "workers": []}), "L0")
