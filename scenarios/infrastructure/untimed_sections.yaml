@@ -1,0 +1,31 @@
+# HAND-AUTHORED. Sections of line that no train in the Darwin timetable is timed over
+# today, so `darwin_sections.yaml` cannot supply them: the freight-only Portishead branch,
+# and the stations to be built on the Henbury line. A scenario's `existing_rail` segment may
+# name them; their run times come from the speed-profile rule, not from working times
+# (plans/P3.md D8), which is what `timed: false` means.
+#
+# What is sourced and what is not:
+# - The station timing points exist in the Darwin reference data of 23 Sep 2026 with these
+#   codes and CRS codes: PRTSHD (POH), PILL (PIA), HENBURY (HBR), NRHFILT (BBZ, "Bristol
+#   Brabazon"). None has a service on that date.
+# - Order on the Henbury line: the West of England Combined Authority's MetroWest Phase 2
+#   business case update (October 2025; sources.md P3b-0) has the Filton Abbey Wood service
+#   extended to North Filton and then Henbury, turning at Hallen Moor until Henbury's
+#   turn-back exists. Darwin already times 14 trains a day each way FILTNEW – FILTNWJ –
+#   HLNMOOR (in `darwin_sections.yaml`), so the two new stations lie between FILTNWJ and
+#   HLNMOOR.
+# - NOT YET SOURCED [MODELLED]: that the Portishead branch joins the main line at Parson
+#   Street (PARSNST is the nearest station timing point; the junction itself, PARSNSJ, is in
+#   the reference data but no train is timed at it). To be confirmed against a Network Rail
+#   or MetroWest Phase 1 document when the B2028 alignment is drawn (P3b-4, rule 3).
+sections:
+  - {from: PARSNST, to: PILL, timed: false}
+  - {from: PILL, to: PARSNST, timed: false}
+  - {from: PILL, to: PRTSHD, timed: false}
+  - {from: PRTSHD, to: PILL, timed: false}
+  - {from: FILTNWJ, to: NRHFILT, timed: false}
+  - {from: NRHFILT, to: FILTNWJ, timed: false}
+  - {from: NRHFILT, to: HENBURY, timed: false}
+  - {from: HENBURY, to: NRHFILT, timed: false}
+  - {from: HENBURY, to: HLNMOOR, timed: false}
+  - {from: HLNMOOR, to: HENBURY, timed: false}

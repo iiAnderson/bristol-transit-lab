@@ -5,5 +5,10 @@ D8): sections between Darwin timing points, with track count, a `[MODELLED]` lim
 trains per hour per direction, any freight allowance, and junction type. One YAML file per
 area; every file is hashed into `spec_hash` of the scenarios that use it.
 
-Empty until P3b-3. Until then the validator knows no sections, so a scenario with an
-`existing_rail` segment fails loudly.
+- `darwin_sections.yaml` — generated from the Darwin timetable by `lab supply
+  rail-infrastructure`: every pair of consecutive timing points in use on the modelled date.
+- `untimed_sections.yaml` — hand-authored: line with no timed train today (freight-only or
+  stations not yet built), each entry with its source or its `[MODELLED]` flag.
+
+Limits, track counts, junction types and freight allowances are added in P3b-3 with the
+capacity check. The validator reads `from` / `to` from every `*.yaml` here.

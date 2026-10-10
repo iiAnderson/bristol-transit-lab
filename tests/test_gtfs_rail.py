@@ -150,3 +150,24 @@ def test_feed_registry_round_trip_and_calendar_check(tmp_cfg, tmp_path):
     f.write_bytes(b"abcd")
     with pytest.raises(feeds.FeedError, match="changed"):
         feeds.check_file_unchanged(row)
+
+
+def test_timing_points_keep_passing_points_and_unfiltered_journeys(tmp_path):
+    empty = std("r2", isPassengerSvc="false")
+    bus = std("r3", trainCat="BS")
+    away = journey("r4", [OR.format("CCC", "10:00", "10:00"), DT.format("CCC", "10:30", "10:30")])
+    f = feed(tmp_path, std(), empty, bus, away, std("r5", ssd="2026-09-24"))
+    rows = g.timing_points(f, REF, NAPTAN, dt.date(2026, 9, 23), BOX)
+    assert {r["rid"] for r in rows} == {"r1", "r2", "r3"}            # r4 has no station in the box
+    r1 = [r for r in rows if r["rid"] == "r1"]
+    assert [(r["tpl"], r["kind"]) for r in r1] == [("AAA", "OR"), ("ZZZ", "PP"), ("EEE", "IP"), ("BBB", "DT")]
+    pp = r1[1]
+    assert pp["arr_s"] == pp["dep_s"] == 23 * 3600 + 55 * 60 and not pp["public"]
+    assert r1[2]["dep_s"] == 86400 + 120 and r1[3]["arr_s"] == 86400 + 600     # rolled past midnight
+    assert {r["exclusion"] for r in rows if r["rid"] == "r2"} == {"not_passenger"}
+    secs = g.sections_from_points(rows, REF, NAPTAN, BOX)
+    got = {(s["from"], s["to"]): s["trains"] for s in secs}
+    # the empty-stock journey counts; the bus does not use track
+    assert got == {("AAA", "ZZZ"): 2, ("ZZZ", "EEE"): 2, ("EEE", "BBB"): 2}
+    z = next(s for s in secs if s["to"] == "ZZZ")
+    assert z["from_station"] and not z["to_station"] and z["timed"]

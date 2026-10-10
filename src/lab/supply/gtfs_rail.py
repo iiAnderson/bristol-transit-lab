@@ -292,6 +292,100 @@ def cancellations(timetable: Path, ref: Ref, naptan: dict, service_date: dt.date
     return dict(out)
 
 
+POINT_KINDS = PUBLIC | OPERATIONAL
+
+
+def _secs(hms: str | None) -> int | None:
+    if not hms:
+        return None
+    p = hms.split(":")
+    return int(p[0]) * 3600 + int(p[1]) * 60 + (int(p[2]) if len(p) > 2 else 0)
+
+
+def timing_points(timetable: Path, ref: Ref, naptan: dict, service_date: dt.date,
+                  box: tuple[float, float, float, float]) -> list[dict]:
+    """Every timing point — calls **and passing points** — of every journey on the date
+    that has a station inside ``box``, with its working times (plans/P3.md D6, D8).
+
+    Unlike ``convert`` nothing is filtered out: empty stock, charters, run-as-required
+    and cancelled journeys all use (or were planned to use) track, and each row says
+    what its journey is so the caller can choose. Darwin holds no freight. Times are
+    seconds after midnight on the service date, rolled past midnight; a passing point
+    has the same arrival and departure. ``exclusion`` is ``convert``'s reason for
+    leaving the journey out of the passenger GTFS, or None.
+    """
+    x0, y0, x1, y1 = box
+
+    def inside(tpl: str) -> bool:
+        q = naptan.get(tpl)
+        return tpl in ref.crs and q is not None and x0 <= q[0] <= x1 and y0 <= q[1] <= y1
+
+    day = service_date.isoformat()
+    rows: list[dict] = []
+    for _, el in ET.iterparse(_open(timetable), events=("end",)):
+        if _local(el.tag) != "Journey":
+            continue
+        a = el.attrib
+        if a.get("ssd") == day:
+            pts = [c for c in el if _local(c.tag) in POINT_KINDS]
+            if any(inside(c.get("tpl")) for c in pts):
+                excl = _exclusion(el)
+                last, offset = None, 0
+                for seq, c in enumerate(pts):
+                    arr = _secs(c.get("wta") or c.get("wtp"))
+                    dep = _secs(c.get("wtd") or c.get("wtp"))
+                    vals = []
+                    for v in (arr, dep):
+                        if v is None:
+                            vals.append(None)
+                            continue
+                        v += offset
+                        if last is not None and v < last - 43200:      # crossed midnight
+                            offset += 86400
+                            v += 86400
+                        last = v
+                        vals.append(v)
+                    rows.append({
+                        "rid": a.get("rid"), "uid": a.get("uid"), "train_id": a.get("trainId"),
+                        "toc": a.get("toc"), "train_cat": a.get("trainCat"), "exclusion": excl,
+                        "journey_cancelled": a.get("can") == "true", "seq": seq, "tpl": c.get("tpl"),
+                        "kind": _local(c.tag), "arr_s": vals[0], "dep_s": vals[1],
+                        "public": bool(c.get("pta") or c.get("ptd")),
+                        "cancelled": c.get("can") == "true", "plat": c.get("plat"), "act": c.get("act")})
+        el.clear()
+    return rows
+
+
+def sections_from_points(rows: list[dict], ref: Ref, naptan: dict,
+                         box: tuple[float, float, float, float]) -> list[dict]:
+    """Directed sections between consecutive timing points, for the stretch of each
+    journey from one point before its first station inside ``box`` to one point after
+    its last. ``trains`` counts the day's journeys over the section (all kinds), which is
+    only there to show the section is real: base use is counted in the capacity check."""
+    x0, y0, x1, y1 = box
+
+    def inside(tpl: str) -> bool:
+        q = naptan.get(tpl)
+        return tpl in ref.crs and q is not None and x0 <= q[0] <= x1 and y0 <= q[1] <= y1
+
+    by: dict[str, list[dict]] = {}
+    for r in rows:
+        if r["exclusion"] and r["exclusion"].startswith(("road", "water")):
+            continue                               # buses and ships in the timetable use no track
+        by.setdefault(r["rid"], []).append(r)
+    count: Counter = Counter()
+    for pts in by.values():
+        pts.sort(key=lambda r: r["seq"])
+        idx = [i for i, r in enumerate(pts) if inside(r["tpl"])]
+        lo, hi = max(idx[0] - 1, 0), min(idx[-1] + 1, len(pts) - 1)
+        for p, q in zip(pts[lo:hi], pts[lo + 1:hi + 1]):
+            if p["tpl"] != q["tpl"]:
+                count[(p["tpl"], q["tpl"])] += 1
+    return [{"from": a, "to": b, "from_name": ref.name.get(a, a), "to_name": ref.name.get(b, b),
+             "from_station": a in ref.crs, "to_station": b in ref.crs, "timed": True, "trains": n}
+            for (a, b), n in sorted(count.items())]
+
+
 def _stops(res: Result, ref: Ref, naptan: dict) -> None:
     """One stop per CRS (per TIPLOC if it has none); merge repeated consecutive stops."""
     for trip in res.trips:
