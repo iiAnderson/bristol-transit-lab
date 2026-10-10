@@ -148,3 +148,95 @@ def skim_diff(parent: pd.DataFrame, scen: pd.DataFrame) -> dict:
                                  "max": float(rng.max())},
             "largest_gains": both.assign(d=d).nsmallest(8, "d")[["from_id", "to_id", "p50_parent", "p50", "d"]]
             .round(1).to_dict("records")}
+
+
+def offset_spread(frames: list[pd.DataFrame], route_ids: list[str]) -> dict:
+    """How much the timetable offset moves results **where it can**: over pairs whose
+    usual routes (at any offset) include one of the scenario's generated services, the
+    range of the pair's median time across the offsets."""
+    if len(frames) < 2 or not route_ids:
+        return {"offsets": len(frames), "pairs_using_a_generated_service": 0}
+    key = ["from_id", "to_id"]
+    pat = "|".join(map(_re_escape, route_ids))
+    uses = None
+    j = None
+    for i, f in enumerate(frames):
+        u = f.top_routes.fillna("").str.contains(pat, regex=True)
+        x = f[key + ["p50", "unreachable"]].assign(**{f"u{i}": u}).rename(columns={"p50": f"p{i}", "unreachable": f"x{i}"})
+        j = x if j is None else j.merge(x, on=key)
+    n = len(frames)
+    used = j[[f"u{i}" for i in range(n)]].any(axis=1)
+    ok = ~j[[f"x{i}" for i in range(n)]].any(axis=1)
+    g = j[used & ok]
+    p = g[[f"p{i}" for i in range(n)]]
+    rng = p.max(axis=1) - p.min(axis=1)
+    rest = j[~used & ok]
+    pr = rest[[f"p{i}" for i in range(n)]]
+    rr = pr.max(axis=1) - pr.min(axis=1)
+    return {"offsets": n, "pairs_using_a_generated_service": int(len(g)),
+            "range_min": {"mean": round(float(rng.mean()), 2), "median": round(float(rng.median()), 2),
+                          "p90": round(float(rng.quantile(.9)), 2), "p95": round(float(rng.quantile(.95)), 2),
+                          "max": round(float(rng.max()), 1)},
+            "share_range_2min_plus": round(float((rng >= 2).mean()), 3),
+            "share_range_5min_plus": round(float((rng >= 5).mean()), 3),
+            "other_pairs": int(len(rest)), "other_pairs_range_mean_min": round(float(rr.mean()), 3)}
+
+
+def _re_escape(s: str) -> str:
+    import re
+    return re.escape(s)
+
+
+def people_summary(parent: pd.DataFrame, scen: pd.DataFrame, residents: pd.Series, jobs: pd.Series,
+                   centre: str, by_min: float = 2.0) -> tuple[dict, pd.DataFrame]:
+    """Pairs are not people: who gains. Per origin OA, against the parent: the change in
+    median PT time to the centre zone; the change in the jobs-weighted mean time to the
+    jobs reachable in both; and the destinations (and their jobs) at least ``by_min``
+    faster. Summed over OAs by residents."""
+    key = ["from_id", "to_id"]
+    j = parent[key + ["p50", "unreachable"]].merge(scen[key + ["p50", "unreachable"]], on=key, suffixes=("_p", "_s"))
+    j["jobs"] = j.to_id.map(jobs).fillna(0.0)
+    both = j[~j.unreachable_p & ~j.unreachable_s].copy()
+    both["d"] = both.p50_s - both.p50_p
+    c = j[j.to_id == centre].set_index("from_id")
+    o = pd.DataFrame(index=residents.index)
+    o["residents"] = residents
+    cd = (c.p50_s - c.p50_p).where(~c.unreachable_p & ~c.unreachable_s)
+    o["centre_change_min"] = cd.reindex(o.index)
+    o["centre_newly_reachable"] = (c.unreachable_p & ~c.unreachable_s).reindex(o.index).fillna(False)
+    g = both.groupby("from_id")
+    wj = both.jobs.clip(lower=0)
+    o["jobs_time_parent"] = (both.p50_p * wj).groupby(both.from_id).sum() / wj.groupby(both.from_id).sum()
+    o["jobs_time_scenario"] = (both.p50_s * wj).groupby(both.from_id).sum() / wj.groupby(both.from_id).sum()
+    o["jobs_time_change_min"] = o.jobs_time_scenario - o.jobs_time_parent
+    fast = both[both.d <= -by_min]
+    o["destinations_faster"] = fast.groupby("from_id").size().reindex(o.index).fillna(0).astype(int)
+    o["jobs_faster"] = fast.groupby("from_id").jobs.sum().reindex(o.index).fillna(0.0)
+    gain = j[j.unreachable_p & ~j.unreachable_s]
+    o["destinations_gained"] = gain.groupby("from_id").size().reindex(o.index).fillna(0).astype(int)
+    R = o.residents
+    tot_jobs = float(jobs.sum())
+    res = {
+        "threshold_min": by_min, "residents": int(R.sum()), "centre_zone": centre,
+        "to_the_centre": {
+            "residents_faster_by_threshold": int(R[o.centre_change_min <= -by_min].sum()),
+            "residents_faster_by_5_min": int(R[o.centre_change_min <= -5].sum()),
+            "residents_slower_by_threshold": int(R[o.centre_change_min >= by_min].sum()),
+            "residents_newly_reachable": int(R[o.centre_newly_reachable].sum()),
+            "mean_change_min_all_residents": round(float((o.centre_change_min.fillna(0) * R).sum() / R.sum()), 3)},
+        "to_jobs_weighted_mean_time": {
+            "residents_faster_by_threshold": int(R[o.jobs_time_change_min <= -by_min].sum()),
+            "residents_faster_by_1_min": int(R[o.jobs_time_change_min <= -1].sum()),
+            "residents_slower_by_1_min": int(R[o.jobs_time_change_min >= 1].sum()),
+            "mean_change_min_all_residents": round(float((o.jobs_time_change_min.fillna(0) * R).sum() / R.sum()), 3)},
+        "pairs_faster_by_threshold": {
+            "pairs": int(len(fast)),
+            "residents_with_at_least_one": int(R[o.destinations_faster > 0].sum()),
+            "residents_with_a_tenth_of_all_jobs_faster": int(R[o.jobs_faster >= 0.1 * tot_jobs].sum()),
+            "resident_weighted_pairs": int((o.destinations_faster * R).sum()),
+            "resident_x_job_weighted": round(float((o.jobs_faster * R).sum())),
+            "share_of_all_resident_x_job": round(float((o.jobs_faster * R).sum() / (R.sum() * tot_jobs)), 5),
+            "half_of_resident_weighted_pairs_come_from_oas": int((
+                (o.destinations_faster * R).sort_values(ascending=False).cumsum()
+                <= 0.5 * (o.destinations_faster * R).sum()).sum() + 1)}}
+    return res, o.reset_index(names="OA21CD")

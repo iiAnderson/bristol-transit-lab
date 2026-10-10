@@ -16,8 +16,17 @@
 #   dwell (the operator's median dwell in the 23 Sep 2026 timetable). No line speed has been
 #   sourced; the resulting journey times are checked against the two figures above and the
 #   difference is reported, not tuned away.
-# - Service 06:00–23:00 at one train an hour all day.
+# - Portishead service 06:00–23:00 at one train an hour all day.
+# - The Henbury-line service is a generated hourly service Temple Meads – Lawrence Hill –
+#   Stapleton Road – Ashley Down – Filton Abbey Wood – North Filton – Henbury, replacing
+#   today's 13–14 Filton Abbey Wood terminators each way. The business case says "22 return
+#   services will call at the new stations" (§5.2.3, p. 7) and that the hourly Filton Abbey
+#   Wood service is extended (Table 5-1, p. 8). 22 hourly departures need a 22-hour day:
+#   they are placed from 05:00 to 02:00, which is not a published timetable. The AM and
+#   inter-peak skims see one train an hour either way.
 # - Henbury's position is the old station's site.
+# Run times on legs with no timed train today are the speed profile plus the allowance
+# calibrated against Darwin (params scenario.profile_allowance).
 id: B2028
 parent: B2026
 description: B2026 plus the Portishead line (Portishead, Pill; hourly) and the Henbury-line extension (North Filton, Henbury; hourly)
@@ -33,17 +42,15 @@ ops:
       speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
       headways_min: {AM: 60, IP: 60, PM: 60, OP: 60}
       span: "06:00-23:00"
-  - modify_route:
+  - replace_route:
       route_id: "GW:BRI-FIT"
-      extend_to:
-        from_stop: FIT
-        alignment: lines/henbury_extension.geojson
-        stops: stops/henbury_extension.geojson
-        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
-  - modify_route:
-      route_id: "GW:FIT-BRI"
-      extend_to:
-        from_stop: FIT
-        alignment: lines/henbury_extension.geojson
-        stops: stops/henbury_extension.geojson
-        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+      new_route_id: GEN-HENBURY
+      name: Bristol Temple Meads – Henbury
+      mode: heavy_rail
+      operator: GW
+      alignment: lines/henbury_line.geojson
+      stops: stops/henbury_line.geojson
+      speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+      headways_min: {AM: 60, IP: 60, PM: 60, OP: 60}
+      span: "05:00-03:00"
+  - remove_route: {route_id: "GW:FIT-BRI"}

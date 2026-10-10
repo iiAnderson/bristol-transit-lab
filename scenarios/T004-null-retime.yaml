@@ -1,0 +1,13 @@
+# ENGINE TEST (plans/P3.md, P3b stop decision 5): the null re-timing. One bus route with
+# uneven headways in the AM period (7 journeys each way; gaps of 11 to 48 minutes one way
+# and 14 to 32 the other) is re-timed to an even headway that keeps the same number of
+# journeys. Nothing useful changes: whatever the AM skim does against B2026 is the artefact
+# of turning a real timetable into an even one, which every frequency change carries.
+# 26 minutes is the mean of the two directions' mean headways (28.3 and 23.7).
+id: T004-null-retime
+parent: B2026
+description: Engine test — one unevenly timed bus route re-timed to an even headway with the same number of journeys
+landuse: L2026
+offsets: [0.0]
+ops:
+  - modify_route: {route_id: "south_west:120547", headways_min: {AM: 26}}

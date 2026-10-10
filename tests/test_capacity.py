@@ -40,6 +40,7 @@ def test_limits_default_single_track_and_floor_at_today():
     assert lim.loc[("A", "J"), "limit_tph"] == 7 and "busiest hour" in lim.loc[("A", "J"), "limit_basis"]
     assert lim.loc[("B", "C"), "limit_tph"] == 3 and lim.loc[("B", "C"), "tracks"] == 1       # 60 / (10 + 6)
     assert lim.loc[("J", "B"), "freight_allowance_tph"] == 1 and lim.loc[("A", "J"), "freight_allowance_tph"] == 0
+    assert lim.loc[("J", "B"), "limit_tph"] == 8                 # today's 7 plus the freight allowance
     assert not lim.loc[("B", "C"), "timed_today"]
 
 
@@ -65,8 +66,11 @@ def test_scenario_use_and_the_check_flags_only_the_overloaded_section():
     c = cap.check(lim, base, s, PERIODS).set_index(["from", "to", "period"])
     assert set(c.index.get_level_values(0)) == {"J", "B"}                  # only sections the scenario uses
     jb = c.loc[("J", "B", "AM")]
-    assert (jb.base_tph, jb.freight_allowance_tph, jb.scenario_tph, jb.total_tph, jb.limit_tph) == (7, 1, 2, 10, 7)
-    assert jb.over and not c.loc[("J", "B", "IP")].over                    # 2 + 1 + 0 against 7
+    assert (jb.base_tph, jb.freight_allowance_tph, jb.scenario_tph, jb.total_tph, jb.limit_tph) == (7, 1, 2, 10, 8)
+    assert jb.over and jb.hour == 8 and not c.loc[("J", "B", "IP")].over   # 2 + 1 + 0 against 8
+    # a scenario that removes two of today's trains in that hour and adds two is back at today's level
+    c2 = cap.check(lim, cap.base_use(table(), {"p0", "p1"}), s, PERIODS).set_index(["from", "to", "period"])
+    assert c2.loc[("J", "B", "AM")].total_tph == 8 and not c2.loc[("J", "B", "AM")].over
     bc = c.loc[("B", "C", "AM")]
     assert bc.total_tph == 3 and bc.limit_tph == 3 and not bc.over         # 2 + 1 freight on single track
     s4 = cap.scenario_use(feeds(15), REPORT)

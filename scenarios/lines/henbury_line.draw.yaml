@@ -1,0 +1,16 @@
+# Drawing spec for `lab scenario draw-rail`: Temple Meads to Henbury along the slow lines of
+# Filton Bank and the Henbury line, routed along OSM railway ways (26 Sep 2026 extract;
+# © OpenStreetMap contributors). Timing points per leg are the sequence today's Filton Abbey
+# Wood terminators are timed at in Darwin (23 Sep 2026), then the two new stations.
+# Station points: existing stations from the rail GTFS (NaPTAN); Bristol Brabazon from NaPTAN
+# (9100NRHFILT); Henbury from OSM's `historic:railway=station` node 6353014942, the old
+# station's site [MODELLED position].
+out: henbury_line.geojson
+kinds: [rail]
+legs:
+  - {via: [[-2.581315, 51.449144], [-2.56443, 51.458011]], alignment_type: existing_rail, timing_points: [BRSTLTM, BRSTLEJ, DRDAYSJ, LAWRNCH]}
+  - {via: [[-2.56443, 51.458011], [-2.566217, 51.467507]], alignment_type: existing_rail, timing_points: [LAWRNCH, STPLTNR]}
+  - {via: [[-2.566217, 51.467507], [-2.5767, 51.47875]], alignment_type: existing_rail, timing_points: [STPLTNR, STPLNAR, ASHYDN]}
+  - {via: [[-2.5767, 51.47875], [-2.562431, 51.504939]], alignment_type: existing_rail, timing_points: [ASHYDN, HORFDJN, FILTNEW]}
+  - {via: [[-2.562431, 51.504939], [-2.580371, 51.517582]], alignment_type: existing_rail, timing_points: [FILTNEW, FILTNWJ, NRHFILT]}
+  - {via: [[-2.580371, 51.517582], [-2.62527, 51.51497]], alignment_type: existing_rail, timing_points: [NRHFILT, HENBURY]}

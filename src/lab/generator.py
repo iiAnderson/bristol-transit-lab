@@ -11,7 +11,9 @@ Rules it follows:
   (``original_trip_id``). Journeys are removed, replaced and re-timed whole.
 * **Run times are not guessed** (D8). A leg on existing track between two stations that
   trains serve today takes the median working time of those trains; anything else takes
-  the speed-profile rule on the drawn geometry. The rule used for each leg is recorded.
+  the speed-profile rule on the drawn geometry, plus the allowance calibrated against the
+  timetable (``ctx["allowance"]``: the plain profile runs about 15% faster than today's
+  trains where both can be measured). The rule used for each leg is recorded.
 * **Fail loudly.** An op, or a case of one, that is not built raises ``GeneratorError``
   naming it; nothing is silently skipped.
 
@@ -169,6 +171,9 @@ def working_times(tp: pd.DataFrame) -> tuple[dict, dict]:
     mid = t[(t.kind == "IP") & t.arr_s.notna() & t.dep_s.notna()]
     dwell = {toc: float((g.dep_s - g.arr_s).median()) for toc, g in mid.groupby("toc")}
     dwell[None] = float((mid.dep_s - mid.arr_s).median()) if len(mid) else float("nan")
+    # and at each station: (timing point, operator) → (median dwell, trains)
+    for (tpl, toc), g in mid.groupby(["tpl", "toc"]):
+        dwell[("at", tpl, toc)] = (float((g.dep_s - g.arr_s).median()), int(len(g)))
     return runs, dwell
 
 
@@ -208,8 +213,12 @@ def legs(stops: pd.DataFrame, parts, mode: str, profile: dict | None, ctx: dict,
                 if not profile:
                     raise GeneratorError(f"{where}: no train is timed {x.stop_id} → {y.stop_id} today and the op "
                                          "has no speed_profile to fall back on")
-                run = leg_time_s(dist, profile["max_kmh"], profile["accel_ms2"])
-                rec[f"{d}_rule"] = "speed profile"
+                al = ctx.get("allowance") or {"pct": 0.0, "per_junction_s": 0.0}
+                nj = sum(t.endswith(("J", "JN", "JCN")) for t in tps[1:-1])
+                plain = leg_time_s(dist, profile["max_kmh"], profile["accel_ms2"])
+                run = (1 + al["pct"]) * plain + al["per_junction_s"] * nj
+                rec[f"{d}_rule"] = "speed profile" + (f" + {al['pct']:.0%} allowance" if al["pct"] else "")
+                rec[f"{d}_profile_s"] = round(plain, 1)
             rec[f"{d}_s"] = round(run, 1)
         out.append(rec)
     return out
@@ -224,9 +233,19 @@ def _dwell(profile: dict | None, ctx: dict, operator: str | None) -> float:
     return d
 
 
-def stop_offsets(leg_list: list[dict], dwell_s: float, reverse: bool = False) -> list[tuple[str, float, float]]:
+def station_dwells(stops: pd.DataFrame, default_s: float, ctx: dict, operator: str | None) -> dict[str, float]:
+    """Dwell per stop: at a station the operator's trains call at today (at least
+    ``min_trains`` of them), the median dwell timetabled there; elsewhere the default."""
+    out = {}
+    for r in stops.itertuples():
+        hit = ctx["dwell"].get(("at", r.tiploc, operator)) if r.tiploc else None
+        out[r.stop_id] = hit[0] if hit and hit[1] >= ctx["min_trains"] else default_s
+    return out
+
+
+def stop_offsets(leg_list: list[dict], dwell_s, reverse: bool = False) -> list[tuple[str, float, float]]:
     """(stop_id, arrival, departure) in minutes from the first departure, along the legs
-    in one direction; dwell at every intermediate stop."""
+    in one direction; dwell at every intermediate stop (one number, or a dict by stop)."""
     seq = [(lg["to"], lg["from"], lg["rev_s"]) for lg in reversed(leg_list)] if reverse else \
         [(lg["from"], lg["to"], lg["fwd_s"]) for lg in leg_list]
     out, t = [(seq[0][0], 0.0, 0.0)], 0.0
@@ -234,7 +253,7 @@ def stop_offsets(leg_list: list[dict], dwell_s: float, reverse: bool = False) ->
         t += run / 60
         arr = t
         if i < len(seq) - 1:
-            t += dwell_s / 60
+            t += (dwell_s[to] if isinstance(dwell_s, dict) else dwell_s) / 60
         out.append((to, arr, t))
     return out
 
@@ -300,7 +319,7 @@ def _service(gen: dict, route_id: str, op: dict, base: Path, ctx: dict, offset: 
     stops = read_stops(base / op["stops"], line)
     operator = op.get("operator")
     lg = legs(stops, parts, op["mode"], op.get("speed_profile"), ctx, operator, where)
-    dwell = _dwell(op.get("speed_profile"), ctx, operator)
+    dwell = station_dwells(stops, _dwell(op.get("speed_profile"), ctx, operator), ctx, operator)
     _add_stops(gen, stops)
     gen["routes"] = pd.concat([gen["routes"], pd.DataFrame([{
         "route_id": route_id, "agency_id": "GEN", "route_short_name": route_id,
@@ -315,6 +334,8 @@ def _service(gen: dict, route_id: str, op: dict, base: Path, ctx: dict, offset: 
     rev = stop_offsets(lg, dwell, True)[-1][1]
     return {"route_id": route_id, "stops": len(stops), "length_km": round(float(stops.chainage_m.iloc[-1]
             - stops.chainage_m.iloc[0]) / 1000, 2), "legs": lg, "dwell_s": dwell,
+            "dwell_rule": "the operator's median timetabled dwell at stations it serves today; the speed "
+                          "profile's dwell elsewhere",
             "end_to_end_min": {"fwd": round(fwd, 1), "rev": round(rev, 1)}, "trips": n,
             "periods_without_service": sorted(set(win) - set(op["headways_min"])),
             "departures_per_period": pd.Series([p for _, p in deps]).value_counts().to_dict() if deps else {}}

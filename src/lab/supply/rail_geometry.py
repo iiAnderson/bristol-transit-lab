@@ -6,6 +6,20 @@ from __future__ import annotations
 import math
 
 
+def parse_speed(v: str | None) -> float | None:
+    """An OSM ``maxspeed`` value in km/h ("50 mph", "80", "40 mph;60 mph" → the lowest)."""
+    if not v:
+        return None
+    out = []
+    for part in str(v).replace(",", ";").split(";"):
+        part = part.strip().lower()
+        try:
+            out.append(float(part.split()[0]) * (1.609344 if "mph" in part else 1.0))
+        except (ValueError, IndexError):
+            continue
+    return min(out) if out else None
+
+
 def rail_graph(pbf: str, kinds: set[str]):
     """Undirected graph of railway ways whose ``railway`` tag is in ``kinds`` (service
     sidings and yards left out), nodes keyed by OSM id with lon/lat, edges in metres."""
@@ -29,7 +43,7 @@ def rail_graph(pbf: str, kinds: set[str]):
                 d = math.hypot((x1 - x0) * 111_320 * math.cos(math.radians(y0)), (y1 - y0) * 111_320)
                 self.g.add_node(a, lon=x0, lat=y0)
                 self.g.add_node(b, lon=x1, lat=y1)
-                self.g.add_edge(a, b, m=d, way=w.id, kind=t.get("railway"))
+                self.g.add_edge(a, b, m=d, way=w.id, kind=t.get("railway"), kmh=parse_speed(t.get("maxspeed")))
 
     h = H()
     h.apply_file(pbf, locations=True)
@@ -81,7 +95,13 @@ def path(g, waypoints: list[tuple[float, float]], max_snap_m: float, choice_m: f
     for a, b in zip(seq, seq[1:]):
         e = g.edges[a, b]
         kinds[e["kind"]] = kinds.get(e["kind"], 0.0) + e["m"]
+    tagged = [(g.edges[a, b]["m"], g.edges[a, b]["kmh"]) for a, b in zip(seq, seq[1:]) if g.edges[a, b].get("kmh")]
+    tagged_m = sum(m for m, _ in tagged)
     return {"coords": [[round(g.nodes[n]["lon"], 6), round(g.nodes[n]["lat"], 6)] for n in seq],
             "length_m": round(sum(kinds.values()), 1), "snap_m": snaps,
+            # line speed where OSM tags it: metres tagged, and the speed that covers them in the
+            # same time (length-weighted harmonic mean)
+            "maxspeed_tagged_m": round(tagged_m, 1),
+            "maxspeed_kmh": round(tagged_m / sum(m / v for m, v in tagged), 1) if tagged else None,
             "kinds_m": {k: round(v, 1) for k, v in kinds.items()},
             "ways": sorted({g.edges[a, b]["way"] for a, b in zip(seq, seq[1:])})}

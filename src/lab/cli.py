@@ -185,6 +185,7 @@ def _build_scenario(scenario_id: str, log=click.echo) -> dict:
     ctx = {"periods": cov.parse_periods({k: ps[f"periods.{k}"] for k in ps["scenario.headway_periods"]}),
            "service_date": day.strftime("%Y%m%d"), "runs": runs, "dwell": dwell,
            "min_trains": ps["scenario.working_time_min_trains"],
+           "allowance": ps["scenario.profile_allowance"],
            "agency_url": raw["baseline"]["generated_agency_url"]}
     parent = {k: gen.read_feed(p) for k, p in src.items()}
     ops = [op for x in chain for op in x.ops]
@@ -275,7 +276,7 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
                     for a, c in zip(tps, tps[1:]):
                         share = 1 / max(len(tps) - 1, 1)
                         run_min[(a, c)], run_min[(c, a)] = lg["fwd_s"] / 60 * share, lg["rev_s"] / 60 * share
-        lim = cp.limits(sections, capd, base, run_min)
+        lim = cp.limits(sections, capd, cp.base_use(tp), run_min)      # limits from today's timetable, untouched
         chk = cp.check(lim, base, cp.scenario_use(feeds_k, off["ops"]), periods)
         chk.insert(0, "offset", int(k))
         tables.append(chk)
@@ -427,8 +428,9 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
         capc = _capacity(cfg, raw, ps, b, tp)
         capc["table"].to_csv(run_dir / "capacity.csv", index=False)
         for k, v in capc["summary"].items():
-            click.echo(f"  capacity, offset {k}: {v['sections_used']} sections used, {len(v['over'])} over their limit")
-        nets, combined = {}, {}
+            click.echo(f"  capacity, offset {k}: {v['sections_used']} sections used, {len(v['over'])} over, "
+                       "against modelled limits")
+        nets, combined, spread = {}, {}, {}
         for per in periods:
             frames = []
             for k in b["report"]["by_offset"]:
@@ -447,6 +449,9 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
                 frames.append(f)
             combined[per] = rn.combine_offsets(frames)
             combined[per].to_parquet(out_dir / "pt" / f"{per}.parquet", compression="zstd")
+            gen_routes = sorted({op.get("route_id") for op in b["report"]["by_offset"]["0"]["ops"]
+                                 if op["type"] in ("add_line", "replace_route")} - {None})
+            spread[per] = rn.offset_spread(frames, gen_routes)
         # the parent's skims: the baseline's, or a scenario's that has been run
         def parent_skim(per: str) -> pd.DataFrame:
             if s.parent == root_id:
@@ -463,13 +468,18 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
                 .set_index("OA21CD")
         th = [30, 45]
         card: dict = {"scenario": s.id, "parent": s.parent, "offsets": s.offsets, "networks": nets,
-                      "not_yet_modelled": s.not_yet_modelled, "accessibility": {}, "pt_skim_change": {}}
+                      "not_yet_modelled": s.not_yet_modelled, "accessibility": {}, "pt_skim_change": {}, "people": {}}
         for per in periods:
             par = parent_skim(per)
             a_p = rn.access_summary(rn.jobs_within(par, jobs, th), oa.residents, oa.edge, th)
             a_s = rn.access_summary(rn.jobs_within(combined[per], jobs, th), oa.residents, oa.edge, th)
             card["accessibility"][per] = {"scenario": a_s, "parent": a_p, "difference": rn.diff(a_p, a_s)}
             card["pt_skim_change"][per] = rn.skim_diff(par, combined[per])
+            centre = raw["centres"][0]["lsoa"]             # the first centre in config: the main one
+            ppl, by_oa = rn.people_summary(par, combined[per], oa.residents, jobs, centre)
+            card["people"][per] = ppl
+            by_oa.to_csv(run_dir / f"people_by_oa_{per}.csv", index=False)
+        card["offset_spread"] = spread
         # coverage on the scenario's feeds
         ctx = click.get_current_context()
         for cmd in (coverage_stops, coverage_walk, coverage_score):
@@ -502,6 +512,7 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
     rec["result"] = {"scorecard": str(run_dir / "scorecard.json"), "skims": str(out_dir),
                      "networks": nets, "chain_hash": b["chain_hash"],
                      "accessibility_difference": {p: card["accessibility"][p]["difference"] for p in periods},
+                     "people": card["people"], "offset_spread": card["offset_spread"],
                      "coverage_difference": card["coverage"]["difference"]}
     click.echo(json.dumps(rec["result"], indent=1, default=str))
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
@@ -2092,6 +2103,49 @@ def spike_walk_faults(stops_run: str | None) -> None:
                                      "walk_min": r["walk_min"],
                                      "links_m": [ln["length_m"] for ln in r.get("links", [])]} for r in recs]}
     click.echo(json.dumps(rec["result"], indent=1))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@spike.command("profile-allowance")
+@click.option("--accel", default=0.5, show_default=True, help="Acceleration of the profile being tested, m/s².")
+@click.option("--min-tagged", default=0.8, show_default=True, help="Share of a section's track that must carry a line speed.")
+@click.option("--folds", default=5, show_default=True)
+def spike_profile_allowance(accel: float, min_tagged: float, folds: int) -> None:
+    """The speed-profile rule against Darwin's working times on every timed section; fits the allowance."""
+    import json
+    import duckdb
+    import yaml
+    from .spikes import profile_allowance as pa
+    from .supply import feeds, gtfs_rail as g, rail_geometry as rg
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    rec = runrecord.build(cfg, command="spike-profile-allowance", inputs=[
+        {"name": k, "sha256": feeds.get(cfg, k)["sha256"]} for k in ("osm_clip", "darwin_timetable", "naptan_rail")])
+    run_dir = runrecord.write(cfg, rec).parent
+    try:
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            tp = con.execute("SELECT * FROM rail_timing_point").df()
+        nap = g.read_naptan(cfg.root / raw["rail"]["naptan"])
+        coords = {t: (v[0], v[1]) for t, v in nap.items()}
+        sec = pa.sections(tp, ps["scenario.working_time_min_trains"])
+        G = rg.rail_graph(str(cfg.root / raw["osm"]["clip"]), {"rail"})
+        d = pa.with_profile(sec, coords, G, accel, ps["scenario.draw_snap_m"], min_tagged)
+        d["timetable_over_profile"] = d.timetable_s / d.profile_s
+        d.to_csv(run_dir / "sections.csv", index=False)
+        f = pa.fit(d)
+        res = {"accel_ms2": accel, "sections_with_enough_trains": int(len(sec)), "sections_compared": int(len(d)),
+               "why_fewer": "a station outside the clip box (no coordinate), no track path, or a line speed on "
+                            f"under {min_tagged:.0%} of the track",
+               "timetable_over_profile": {k: round(float(v), 3) for k, v in d.timetable_over_profile.describe().items()},
+               "fit": {k: round(v, 4) for k, v in f.items()}, "evaluation": pa.evaluate(d, folds),
+               "by_accel": {str(a): {k: round(v, 4) for k, v in pa.fit(pa.with_profile(
+                   sec, coords, G, a, ps["scenario.draw_snap_m"], min_tagged)).items()} for a in (0.3, 0.5, 0.7, 1.0)}}
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = res
+    click.echo(json.dumps(res, indent=1))
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 

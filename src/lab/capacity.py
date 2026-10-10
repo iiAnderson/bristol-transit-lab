@@ -69,8 +69,9 @@ def limits(sections: list[dict], cap: dict, base: pd.DataFrame, run_min: dict | 
     ``sections`` (overrides keyed "FROM-TO": tracks, limit_tph, freight_tph, note) and
     ``freight`` (lists of sections sharing one allowance). A double-track section takes
     the default limit; a single-track one 60 ÷ (2 × run time + 2 × margin), from
-    ``run_min`` (minutes over the section) where known; and no limit is set below the
-    busiest hour observed today."""
+    ``run_min`` (minutes over the section) where known; and no limit is set below what the
+    section carries today — the busiest hour in ``base``, which must be today's trains
+    before the scenario removes any, plus the freight allowance."""
     d = cap["defaults"]
     over = cap.get("sections") or {}
     freight = {}
@@ -94,20 +95,21 @@ def limits(sections: list[dict], cap: dict, base: pd.DataFrame, run_min: dict | 
                 how = f"single track: 60 ÷ (2 × {rt:.1f} + 2 × {d['single_track_margin_min']:g}) min"
         else:
             lim, how = d["double_track_tph"], "double track, default"
-        seen = int(busiest.get((s["from"], s["to"]), 0))
+        fr = freight.get(key, o.get("freight_tph", 0))
+        seen = int(busiest.get((s["from"], s["to"]), 0)) + fr        # what the section carries today
         if seen > lim:
-            lim, how = seen, f"raised to the busiest hour observed today ({how} gave less)"
+            lim, how = seen, f"raised to today's busiest hour plus the freight allowance ({how} gave less)"
         rows.append({"from": s["from"], "to": s["to"], "tracks": tracks, "limit_tph": lim, "limit_basis": how,
-                     "freight_allowance_tph": freight.get(key, o.get("freight_tph", 0)),
+                     "freight_allowance_tph": fr,
                      "timed_today": bool(s.get("timed", True))})
     return pd.DataFrame(rows)
 
 
 def check(lim: pd.DataFrame, base: pd.DataFrame, scen: pd.DataFrame, periods: dict[str, tuple[float, float]],
           only_used: bool = True) -> pd.DataFrame:
-    """One row per section and period: the busiest hour's trains today, the freight
-    allowance, the scenario's trains in its own busiest hour, their sum against the
-    limit. The sum takes each part's busiest hour, so it errs towards flagging."""
+    """One row per section and period, for the period's busiest hour of the total: the
+    trains still running from today's timetable in that hour, the freight allowance, the
+    scenario's trains in that hour, and their sum against the limit."""
     rows = []
     b = base.set_index(["from", "to", "hour"]).trains
     s = scen.set_index(["from", "to", "hour"]).trains if len(scen) else pd.Series(dtype=float)
@@ -117,10 +119,10 @@ def check(lim: pd.DataFrame, base: pd.DataFrame, scen: pd.DataFrame, periods: di
             continue
         for per, (lo, hi) in periods.items():
             hours = range(int(lo // 60), int(math.ceil(hi / 60)))
-            bb = max((int(b.get((r[1], r.to, h), 0)) for h in hours), default=0)
-            ss = max((int(s.get((r[1], r.to, h), 0)) for h in hours), default=0)
+            h_max = max(hours, key=lambda h: int(b.get((r[1], r.to, h), 0)) + int(s.get((r[1], r.to, h), 0)))
+            bb, ss = int(b.get((r[1], r.to, h_max), 0)), int(s.get((r[1], r.to, h_max), 0))
             tot = bb + ss + r.freight_allowance_tph
-            rows.append({"from": r[1], "to": r.to, "period": per, "tracks": r.tracks, "base_tph": bb,
+            rows.append({"from": r[1], "to": r.to, "period": per, "hour": h_max, "tracks": r.tracks, "base_tph": bb,
                          "freight_allowance_tph": r.freight_allowance_tph, "scenario_tph": ss, "total_tph": tot,
                          "limit_tph": r.limit_tph, "over": bool(tot > r.limit_tph), "limit_basis": r.limit_basis,
                          "timed_today": r.timed_today})

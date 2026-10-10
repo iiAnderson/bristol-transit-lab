@@ -235,3 +235,28 @@ def test_working_times_take_only_trains_calling_at_both_ends():
     runs, dwell = gen.working_times(tp)
     assert runs[("A", "B", "XX")] == (120.0, 5)                 # the non-stop train and the empty stock do not count
     assert runs[("A", "C", None)] == (200.0, 1) and dwell["XX"] == 60
+
+
+def test_speed_profile_legs_take_the_allowance_and_timed_stations_their_own_dwell(geo):
+    runs = {("TA", "TB", None): (120.0, 9), ("TB", "TA", None): (150.0, 9)}
+    c = ctx(runs, {None: 60.0, ("at", "TB", None): (90.0, 9), ("at", "TA", None): (45.0, 2)})
+    c["allowance"] = {"pct": 0.15, "per_junction_s": 0.0}
+    out, rep = gen.apply(bus_feed(), [("add_line", LINE)], geo, c, 0.0)
+    l1, l2 = rep[0]["legs"]
+    assert l1["fwd_s"] == 120 and l1["fwd_rule"].startswith("working times")          # no allowance on timetable times
+    assert l2["fwd_rule"] == "speed profile + 15% allowance"
+    assert l2["fwd_s"] == pytest.approx(1.15 * l2["fwd_profile_s"], abs=0.1)
+    assert rep[0]["dwell_s"] == {"A": 30.0, "B": 90.0, "C": 30.0}                      # B: 9 trains; A: too few
+    first = out["generated"]["stop_times"][out["generated"]["stop_times"].trip_id == "gen:L1:0:0"]
+    assert list(first.arrival_time)[:2] == ["07:00:00", "07:02:00"] and first.departure_time.iloc[1] == "07:03:30"
+
+
+def test_per_junction_margin_counts_junction_timing_points_inside_a_leg(geo):
+    (geo / "lj.geojson").write_text(fc(line([[-2.60, 51.45], [-2.57, 51.45]], alignment_type="existing_rail",
+                                            timing_points=["TA", "XJ", "YJN", "MID", "TC"])))
+    (geo / "sj.geojson").write_text(fc(point(-2.60, 51.45, stop_id="A", tiploc="TA"), point(-2.57, 51.45, stop_id="C", tiploc="TC")))
+    c = ctx()
+    c["allowance"] = {"pct": 0.0, "per_junction_s": 20.0}
+    _, rep = gen.apply(bus_feed(), [("add_line", LINE | {"alignment": "lj.geojson", "stops": "sj.geojson"})], geo, c, 0.0)
+    lg = rep[0]["legs"][0]
+    assert lg["fwd_s"] == pytest.approx(lg["fwd_profile_s"] + 40, abs=0.1)              # two junctions inside
