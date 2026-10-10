@@ -1,0 +1,47 @@
+# HAND-AUTHORED. Limits and freight allowances for the track-capacity check (plans/P3.md
+# D6). EVERY NUMBER HERE IS [MODELLED]: none comes from Network Rail's Sectional Appendix or
+# Timetable Planning Rules, which have not been opened. The check built on them catches
+# gross overloads only and proves nothing about a timetable.
+#
+# This file holds no `from`/`to` section list of its own: sections come from
+# `darwin_sections.yaml` and `untimed_sections.yaml`.
+defaults:
+  tracks: 2
+  # [MODELLED] A plain double-track section signalled for a planning headway of about
+  # 4 minutes carries 15 trains an hour in theory; practical use is taken as 80% of that.
+  double_track_tph: 12
+  # [MODELLED] Single track: one train each way must clear the section before the next
+  # enters, so trains per hour per direction = 60 ÷ (2 × run time + 2 × margin).
+  single_track_margin_min: 3
+  single_track_default_tph: 2
+sections:
+  # [MODELLED] The Portishead branch is taken as single track throughout. No source for its
+  # track layout has been opened; the MetroWest Phase 1 documents would settle it.
+  PRTSHD-PILL: {tracks: 1}
+  PILL-PRTSHD: {tracks: 1}
+  PILL-PARSNST: {tracks: 1}
+  PARSNST-PILL: {tracks: 1}
+freight:
+  # [MODELLED] One freight path an hour each way where freight is known to run (Robbie,
+  # 2026-10-10: Portishead branch, Henbury – Avonmouth, Filton Bank at least). Darwin holds
+  # no freight, so this is an allowance, not a count. Planned source for counted paths:
+  # Network Rail's open data SCHEDULE feed (OGL; access by account; whether it lists freight
+  # paths is unconfirmed until there is access).
+  - name: Portishead branch (dock traffic between the main line and the dock junction)
+    tph: 1
+    sections: [PARSNST-PILL, PILL-PARSNST]
+  - name: Henbury line
+    tph: 1
+    sections: [FILTNWJ-NRHFILT, NRHFILT-FILTNWJ, NRHFILT-HENBURY, HENBURY-NRHFILT, HENBURY-HLNMOOR,
+               HLNMOOR-HENBURY, FILTNWJ-HLNMOOR, HLNMOOR-FILTNWJ, FILTNEW-FILTNWJ, FILTNWJ-FILTNEW]
+  - name: Filton Bank (Temple Meads to Filton Abbey Wood)
+    tph: 1
+    # every Darwin section between the timing points on the bank, fast and slow lines
+    sections: [ASHYDN-HORFDJN, ASHYDN-STPLNAR, BRSTLEJ-BRSTLTM, BRSTLEJ-DRDAYSJ, BRSTLTM-BRSTLEJ,
+               DRDAYSJ-BRSTLEJ, DRDAYSJ-HORFDJN, DRDAYSJ-LAWRNCH, DRDAYSJ-STPLNAR, FILTNEW-HORFDJN,
+               HORFDJN-ASHYDN, HORFDJN-DRDAYSJ, HORFDJN-FILTNEW, HORFDJN-STPLNAR, LAWRNCH-DRDAYSJ,
+               LAWRNCH-STPLTNR, STPLNAR-ASHYDN, STPLNAR-DRDAYSJ, STPLNAR-HORFDJN, STPLNAR-STPLTNR,
+               STPLTNR-LAWRNCH, STPLTNR-STPLNAR]
+# Junction conflicts (flat junctions with crossing moves) are NOT assessed: no junction data
+# has been sourced.
+junctions: []

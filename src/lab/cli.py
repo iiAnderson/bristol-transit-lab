@@ -56,8 +56,10 @@ def _scenario_ctx():
     sdir = cfg.root / raw["baseline"]["scenarios_dir"]
     sections = set()
     for f in sorted((cfg.root / raw["baseline"]["infrastructure_dir"]).glob("*.yaml")):
-        for sec in (yaml.safe_load(f.read_text()) or {}).get("sections", []):
-            sections.add((sec["from"], sec["to"]))
+        secs = (yaml.safe_load(f.read_text()) or {}).get("sections", [])
+        if isinstance(secs, list):                 # capacity.yaml keys its overrides by section instead
+            for sec in secs:
+                sections.add((sec["from"], sec["to"]))
     feeds_ = [cov.read_gtfs(cfg.root / raw[k]["out"]) for k in ("bus", "rail")]
     periods = set(ps["scenario.headway_periods"]) | {"OP"}
     cat = scn.catalogue_from_gtfs(feeds_, sections, periods, cfg.extent)
@@ -130,6 +132,21 @@ def scenario_validate(scenario_id: str, register: bool) -> None:
         click.echo(f"  registered {[x.id for x in chain]} in lab.duckdb")
 
 
+def _same_tables(a: dict, b: dict) -> bool:
+    """Two feeds hold the same GTFS tables (as written and read back: all strings)."""
+    import io
+    import pandas as pd
+    if set(a) != set(b):
+        return False
+    for t in a:
+        buf = io.StringIO()
+        b[t].to_csv(buf, index=False)
+        buf.seek(0)
+        if not a[t].fillna("").equals(pd.read_csv(buf, dtype=str).fillna("")):
+            return False
+    return True
+
+
 def _build_scenario(scenario_id: str, log=click.echo) -> dict:
     """Generate a scenario's GTFS for every offset (cached by chain hash + offset +
     nothing else: the generator does not depend on the network version). Returns the
@@ -149,15 +166,17 @@ def _build_scenario(scenario_id: str, log=click.echo) -> dict:
     s = chain[-1]
     src = {"bus": cfg.root / raw["bus"]["out"], "rail": cfg.root / raw["rail"]["out"]}
     chain_hash = hashlib.sha256("|".join([x.spec_hash for x in chain]
-                                         + [params.file_hash(p) for p in src.values()]
-                                         + [params.file_hash(cfg.root / "src" / "lab" / "generator.py")]).encode()
-                                ).hexdigest()[:12]
+                                         + [params.file_hash(p) for p in src.values()]).encode()).hexdigest()[:12]
+    gen_sha = params.file_hash(cfg.root / "src" / "lab" / "generator.py")
     out = cfg.root / raw["baseline"]["built_dir"] / s.id / chain_hash
     done = out / "report.json"
-    if done.is_file():
+    old = json.loads(done.read_text()) if done.is_file() else None
+    if old and old.get("generator_sha") == gen_sha:
         log(f"  {s.id}: feeds already built for chain {chain_hash}")
-        return {"scenario": s, "chain": chain, "chain_hash": chain_hash, "dir": out,
-                "report": json.loads(done.read_text())}
+        return {"scenario": s, "chain": chain, "chain_hash": chain_hash, "dir": out, "report": old}
+    # Built by other generator code (or not at all): generate again. A file whose tables come
+    # out the same keeps its bytes and hash, so skims keyed to it stay valid; one that
+    # differs is rewritten, and everything downstream is keyed to the new hash.
     day = raw["modelled_date"]
     day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
     with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
@@ -170,7 +189,7 @@ def _build_scenario(scenario_id: str, log=click.echo) -> dict:
     parent = {k: gen.read_feed(p) for k, p in src.items()}
     ops = [op for x in chain for op in x.ops]
     report = {"scenario": s.id, "chain": [x.id for x in chain], "chain_hash": chain_hash,
-              "spec_hash": s.spec_hash, "offsets": s.offsets, "not_yet_modelled": s.not_yet_modelled,
+              "generator_sha": gen_sha, "spec_hash": s.spec_hash, "offsets": s.offsets, "not_yet_modelled": s.not_yet_modelled,
               "by_offset": {}}
     for k, frac in enumerate(s.offsets if ops else [0.0]):
         try:
@@ -185,6 +204,11 @@ def _build_scenario(scenario_id: str, log=click.echo) -> dict:
             if name in parent and all(f[t].equals(parent[name][t]) for t in f):
                 shutil.copyfile(src[name], dst)                 # untouched: the parent's file, same hash
                 files[name] = {"changed": False}
+            elif dst.is_file() and _same_tables(gen.read_feed(dst), f):
+                was = (old or {}).get("by_offset", {}).get(str(k), {}).get("files", {}).get(name, {})
+                files[name] = {"changed": True, "kept_existing_file": True,
+                               "validator_errors": was.get("validator_errors", 0),
+                               "validator_warnings": was.get("validator_warnings")}
             else:
                 gen.write_feed(f, dst)
                 val = validate.run(cfg.root / raw["rail"]["validator"], dst, d / f"{name}.validator", day, "gb")
@@ -221,6 +245,80 @@ def scenario_build(scenario_id: str) -> None:
             for lg in holder.get("legs", []):
                 click.echo(f"    {lg['from']} → {lg['to']}: {lg['dist_m'] / 1000:.2f} km; {lg['fwd_s'] / 60:.1f} min "
                            f"({lg['fwd_rule']}); back {lg['rev_s'] / 60:.1f} min ({lg['rev_rule']})")
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
+    """The capacity table for a built scenario, one check per timetable offset."""
+    import pandas as pd
+    import yaml
+    from . import capacity as cp, coverage as cov, generator as gen
+    idir = cfg.root / raw["baseline"]["infrastructure_dir"]
+    sections = []
+    for f in sorted(idir.glob("*.yaml")):
+        sections += (yaml.safe_load(f.read_text()) or {}).get("sections") or [] if f.name != "capacity.yaml" else []
+    capd = yaml.safe_load((idir / "capacity.yaml").read_text())
+    periods = cov.parse_periods({k: ps[f"periods.{k}"] for k in ps["scenario.headway_periods"]})
+    parent_rail = gen.read_feed(cfg.root / raw["rail"]["out"])
+    tables, summary = [], {}
+    for k, off in b["report"]["by_offset"].items():
+        feeds_k = {f.stem: gen.read_feed(f) for f in sorted((b["dir"] / f"offset_{k}").glob("*.zip"))}
+        # today's trains no longer in the scenario's rail feed have been removed or re-timed
+        gone = set(parent_rail["trips"].trip_id) - set(feeds_k["rail"]["trips"].trip_id)
+        retimed = sorted({r for r in feeds_k["rail"]["trips"].route_id[feeds_k["rail"]["trips"].trip_id.str.startswith("gen:")]})
+        base = cp.base_use(tp, gone if not retimed else set())
+        run_min = {}
+        for op in off["ops"]:
+            for holder in (op, op.get("extend_to", {})):
+                for lg in holder.get("legs", []):
+                    tps = lg.get("timing_points") or []
+                    for a, c in zip(tps, tps[1:]):
+                        share = 1 / max(len(tps) - 1, 1)
+                        run_min[(a, c)], run_min[(c, a)] = lg["fwd_s"] / 60 * share, lg["rev_s"] / 60 * share
+        lim = cp.limits(sections, capd, base, run_min)
+        chk = cp.check(lim, base, cp.scenario_use(feeds_k, off["ops"]), periods)
+        chk.insert(0, "offset", int(k))
+        tables.append(chk)
+        summary[k] = {"sections_used": int(chk[["from", "to"]].drop_duplicates().shape[0]) if len(chk) else 0,
+                      "over": chk[chk.over][["from", "to", "period", "total_tph", "limit_tph"]].to_dict("records") if len(chk) else [],
+                      "rail_routes_retimed_counted_at_todays_paths": retimed}
+    table = pd.concat(tables, ignore_index=True) if tables else pd.DataFrame()
+    return {"table": table, "summary": summary,
+            "caveat": "Catches overloads only; proves nothing about a timetable. Base use is today's trains in the "
+                      "Darwin timetable (no freight); freight is a modelled allowance of trains per hour on the "
+                      "sections named in scenarios/infrastructure/capacity.yaml; every limit is modelled; "
+                      "junction conflicts are not assessed."}
+
+
+@scenario.command("capacity")
+@click.argument("scenario_id")
+def scenario_capacity(scenario_id: str) -> None:
+    """Track-capacity check for a scenario's generated and extended rail services."""
+    import json
+    import duckdb
+    import yaml
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    rec = runrecord.build(cfg, command="scenario-capacity")
+    run_dir = runrecord.write(cfg, rec).parent
+    try:
+        b = _build_scenario(scenario_id)
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            tp = con.execute("SELECT * FROM rail_timing_point").df()
+        c = _capacity(cfg, raw, ps, b, tp)
+        c["table"].to_csv(run_dir / "capacity.csv", index=False)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["scenario"] = {"id": b["scenario"].id, "spec_hash": b["scenario"].spec_hash}
+    rec["result"] = {"summary": c["summary"], "caveat": c["caveat"], "table": str(run_dir / "capacity.csv")}
+    t = c["table"]
+    if len(t):
+        show = t[t.offset == 0].drop(columns=["offset", "limit_basis"])
+        click.echo(show.to_string(index=False))
+    click.echo(json.dumps(c["summary"], indent=1))
+    click.echo(c["caveat"])
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
@@ -320,7 +418,7 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
                 gtfs = {f.stem: f for f in sorted((b["dir"] / f"offset_{k}").glob("*.zip"))}
                 nw = rn.offset_network(cfg, raw, ps, gtfs)
                 nets[k] = {"network_version": nw["version"], "feeds": {n: params.file_hash(p) for n, p in gtfs.items()}}
-                f_k = out_dir / "pt" / f"{per}.offset_{k}.parquet"
+                f_k = out_dir / "pt" / f"{per}.offset_{k}.{nw['version']}.parquet"
                 if f_k.is_file():
                     click.echo(f"  {s.id} {per} offset {k}: skim already built")
                     frames.append(pd.read_parquet(f_k))

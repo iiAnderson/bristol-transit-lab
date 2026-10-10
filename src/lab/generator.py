@@ -187,8 +187,14 @@ def legs(stops: pd.DataFrame, parts, mode: str, profile: dict | None, ctx: dict,
         if mode in ("bus", "brt") and any(t in STREET_TYPES for t in types):
             raise GeneratorError(f"{where}: an on-street {mode} leg needs `bus_speed_ratio`, which is not fitted "
                                  "yet (plans/P3.md P3b-7)")
+        tps: list[str] = []
+        for s0, e0, _, tp in sorted(parts, key=lambda q: q[0]):
+            # a feature belongs to the leg if it covers most of the leg or the leg covers most
+            # of it: stops sit a few metres off the feature ends, which must not count
+            if tp and min(b.chainage_m, e0) - max(a.chainage_m, s0) > 0.5 * min(dist, e0 - s0):
+                tps += [t for t in tp if not tps or t != tps[-1]]
         rec = {"from": a.stop_id, "to": b.stop_id, "dist_m": round(dist, 1),
-               "types_m": {k: round(v, 1) for k, v in types.items()}}
+               "types_m": {k: round(v, 1) for k, v in types.items()}, "timing_points": tps}
         for d, (x, y) in (("fwd", (a, b)), ("rev", (b, a))):
             run = None
             if set(types) == {"existing_rail"} and x.tiploc and y.tiploc:
@@ -563,10 +569,13 @@ def write_feed(feed: dict, path: Path) -> None:
     import zipfile
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
-        for name, df in feed.items():
+        for name in sorted(feed):
             b = io.StringIO()
-            df.to_csv(b, index=False)
-            z.writestr(f"{name}.txt", b.getvalue())
+            feed[name].to_csv(b, index=False)
+            # a fixed timestamp: the same tables always give the same file, and so the same hash
+            info = zipfile.ZipInfo(f"{name}.txt", date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            z.writestr(info, b.getvalue())
 
 
 def read_feed(path: Path) -> dict[str, pd.DataFrame]:
