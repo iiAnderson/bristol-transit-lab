@@ -27,6 +27,21 @@ def _net(cfg, raw, ps) -> dict:
     return network.settings(cfg, raw, ps)
 
 
+def _scn(cfg, raw, scenario: str | None) -> dict:
+    """Where a coverage run reads its GTFS and keeps its tables: the baseline, or a built
+    scenario (its offset-0 feeds — service levels do not depend on the offset)."""
+    if not scenario or scenario == raw["baseline"]["scenario"]:
+        return {"id": raw["baseline"]["scenario"], "sfx": "", "tag": "",
+                "gtfs": {k: cfg.root / raw[k]["out"] for k in ("bus", "rail")}}
+    built = sorted((cfg.root / raw["baseline"]["built_dir"] / scenario).glob("*/report.json"),
+                   key=lambda f: f.stat().st_mtime)
+    if not built:
+        raise click.ClickException(f"scenario {scenario} has no built feeds: run `lab scenario build {scenario}`")
+    d = built[-1].parent / "offset_0"
+    return {"id": scenario, "sfx": "__" + scenario.replace("-", "_"), "tag": f"+{scenario}-{built[-1].parent.name}",
+            "gtfs": {f.stem: f for f in sorted(d.glob("*.zip"))}}
+
+
 def _periods(ps: dict) -> dict:
     return cov.parse_periods({k.split(".", 1)[1]: v for k, v in ps.items() if k.startswith("periods.")})
 
@@ -63,20 +78,22 @@ def coverage() -> None:
 
 
 @coverage.command("stops")
-def coverage_stops() -> None:
+@click.option("--scenario", default=None, help="A built scenario (default: the baseline).")
+def coverage_stops(scenario: str | None) -> None:
     """Stop service table and stop clusters from the baseline bus and rail GTFS."""
     import duckdb
     import pandas as pd
     cfg, raw, ps = _ctx()
     nw = _net(cfg, raw, ps)
-    nv, hashes = nw["version"], nw["hashes"]
+    sc_ = _scn(cfg, raw, scenario)
+    nv, hashes = nw["version"] + sc_["tag"], nw["hashes"] | {f"gtfs:{k}": params.file_hash(p) for k, p in sc_["gtfs"].items()}
     day = raw["modelled_date"]
     rec = runrecord.build(cfg, command="coverage-stops",
                           inputs=[{"name": k, "sha256": v} for k, v in hashes.items()])
     run_dir = runrecord.write(cfg, rec).parent
     try:
         brt = set(raw["metrobus"]["route_ids"])
-        feeds_ = {k: cov.read_gtfs(cfg.root / raw[k]["out"]) for k in ("bus", "rail")}
+        feeds_ = {k: cov.read_gtfs(p) for k, p in sc_["gtfs"].items()}
         dep = pd.concat([cov.departures(f, brt) for f in feeds_.values()], ignore_index=True)
         # Independent reconciliation (rule 5): departures = stop_times that are not the
         # last call of their trip and allow boarding, one per source trip.
@@ -120,7 +137,7 @@ def coverage_stops() -> None:
         with duckdb.connect(str(cfg.lab_db)) as con:
             for name, df in (("stop_cluster", sc), ("stop_service", ss), ("cluster_service", cs)):
                 con.register("df_", df)
-                con.execute(f"CREATE OR REPLACE TABLE {name} AS SELECT * FROM df_")
+                con.execute(f"CREATE OR REPLACE TABLE {name}{sc_['sfx']} AS SELECT * FROM df_")
                 con.unregister("df_")
         size = sc.groupby("cluster_id").size()
         day_tot = dep.groupby("stop_id").size()
@@ -131,6 +148,7 @@ def coverage_stops() -> None:
             "rail_departures": int(dep.mode_class.eq("rail").sum()),
             "rail_stop_times_minus_trips": int(len(feeds_["rail"]["stop_times"]) - len(feeds_["rail"]["trips"])),
             "rail_set_down_only_calls": int((feeds_["rail"]["stop_times"].get("pickup_type") == "1").sum()),
+            "scenario": sc_["id"],
             "stops_with_departures": int(len(stops)),
             "departures_by_mode_class": dep.mode_class.value_counts().to_dict(),
             "routes_by_mode_class": dep.groupby("mode_class").route_id.nunique().to_dict(),
@@ -183,18 +201,20 @@ def _cluster_plot(sc, cut, out: Path) -> None:
 
 
 @coverage.command("walk")
-def coverage_walk() -> None:
+@click.option("--scenario", default=None, help="A built scenario (default: the baseline).")
+def coverage_walk(scenario: str | None) -> None:
     """Walking times on the network from every OA centroid to every stop with service."""
     import duckdb
     import numpy as np
     cfg, raw, ps = _ctx()
     nw = _net(cfg, raw, ps)
-    nv, hashes, elevation = nw["version"], nw["hashes"], nw["elevation"] or "none"
+    sc_ = _scn(cfg, raw, scenario)
+    nv, hashes, elevation = nw["version"] + sc_["tag"], nw["hashes"], nw["elevation"] or "none"
     day = raw["modelled_date"]
     day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
     with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
         o = con.execute("SELECT OA21CD id, lon, lat FROM int_oa_pwc ORDER BY 1").df()
-        s = con.execute("SELECT stop_id id, lon, lat, cluster_id, stop_name FROM stop_cluster ORDER BY 1").df()
+        s = con.execute(f"SELECT stop_id id, lon, lat, cluster_id, stop_name FROM stop_cluster{sc_['sfx']} ORDER BY 1").df()
     rec = runrecord.build(cfg, command="coverage-walk",
                           inputs=[{"name": k, "sha256": v} for k, v in hashes.items()])
     run_dir = runrecord.write(cfg, rec).parent
@@ -256,7 +276,8 @@ def _obs(ps: dict) -> tuple[dict, dict]:
 
 
 @coverage.command("score")
-def coverage_score() -> None:
+@click.option("--scenario", default=None, help="A built scenario (default: the baseline).")
+def coverage_score(scenario: str | None) -> None:
     """Service-quality class, continuous score and frequent-service coverage per OA."""
     import duckdb
     import geopandas as gpd
@@ -265,7 +286,8 @@ def coverage_score() -> None:
     from .supply import feeds, gtfs_rail
     cfg, raw, ps = _ctx()
     nw = _net(cfg, raw, ps)
-    nv, hashes, fn = nw["version"], nw["hashes"], nw["elevation"]
+    sc_ = _scn(cfg, raw, scenario)
+    nv, hashes, fn = nw["version"] + sc_["tag"], nw["hashes"], nw["elevation"]
     cc = raw["coverage"]
     dep_files = {k: cfg.root / v["path"] for k, v in cc["deprivation"].items()}
     odwp = cfg.upstream_raw / raw["spikes"]["odwp01ew_oa"]
@@ -280,8 +302,8 @@ def coverage_score() -> None:
             feeds.register(cfg, feed_id=f"deprivation_{k}", kind="ref", source_url=v["url"],
                            path=dep_files[k], downloaded_at=now, licence=v["licence"], notes=v["page"])
         with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
-            sc = con.execute("SELECT * FROM stop_cluster").df()
-            cs = con.execute("SELECT * FROM cluster_service").df()
+            sc = con.execute(f"SELECT * FROM stop_cluster{sc_['sfx']}").df()
+            cs = con.execute(f"SELECT * FROM cluster_service{sc_['sfx']}").df()
             oa = con.execute("SELECT OA21CD, LSOA21CD FROM int_oa ORDER BY 1").df()
             bres = con.execute("SELECT LSOA21CD, jobs FROM nat_bres").df()
             wp = con.execute(f"""SELECT "OA of workplace code" OA21CD, sum("Count") workers
@@ -432,12 +454,12 @@ def coverage_score() -> None:
         g.to_parquet(run_dir / "coverage_oa.parquet")
         with duckdb.connect(str(cfg.lab_db)) as con:
             con.register("df_", pd.DataFrame(g.drop(columns="geometry")))
-            con.execute("CREATE OR REPLACE TABLE coverage_oa AS SELECT * FROM df_")
+            con.execute(f"CREATE OR REPLACE TABLE coverage_oa{sc_['sfx']} AS SELECT * FROM df_")
         _coverage_map(g, hs, ps["coverage.headline_headway_min"], label, run_dir / "coverage_map.png")
         (run_dir / "label.txt").write_text(label + "\n")
         a = tables["all"]
         res = {
-            "network_version": nv, "label": label, "totals": tot, "jobs_split": jobs_info,
+            "network_version": nv, "scenario": sc_["id"], "label": label, "totals": tot, "jobs_split": jobs_info,
             "walk_speed_kmh": nw["walk_kmh"], "elevation": fn,
             "walk_truncation_correction_min": ps["coverage.walk_truncation_correction_min"],
             "headline_headway_min": ps["coverage.headline_headway_min"],

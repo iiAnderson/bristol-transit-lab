@@ -282,6 +282,115 @@ def scenario_new(scenario_id: str, parent: str, description: str | None) -> None
     click.echo(f"wrote {out}")
 
 
+def _scenario_skim_dir(cfg, raw, b: dict, base_version: str) -> Path:
+    return cfg.root / raw["baseline"]["skims"] / b["scenario"].id / f"{base_version}+{b['chain_hash']}"
+
+
+def _run_scenario(scenario_id: str, periods: list[str]) -> None:
+    """Supply, skims and connectivity for a scenario, against its parent (P3b-5).
+    Demand-dependent metrics (mode shares, boardings, loads, benefits) arrive in P5–P6."""
+    import datetime as dt
+    import json
+    import duckdb
+    import pandas as pd
+    import yaml
+    from . import network, run as rn
+    from .coverage_cli import coverage_score, coverage_stops, coverage_walk
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    ps = {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")}
+    day = raw["modelled_date"]
+    day = day if isinstance(day, dt.date) else dt.date.fromisoformat(day)
+    rec = runrecord.build(cfg, command="run", scenario={"id": scenario_id, "spec_hash": "pending"})
+    run_dir = runrecord.write(cfg, rec).parent
+    log = lambda m: click.echo(f"  {m}", err=True)  # noqa: E731
+    try:
+        b = _build_scenario(scenario_id, click.echo)
+        s = b["scenario"]
+        rec["scenario"] = {"id": s.id, "spec_hash": s.spec_hash}
+        base = network.settings(cfg, raw, ps)
+        root_id = raw["baseline"]["scenario"]
+        if s.parent is None:
+            raise click.ClickException(f"{s.id} is a root baseline: its skims come from `lab skims`, not `lab run`")
+        out_dir = _scenario_skim_dir(cfg, raw, b, base["version"])
+        nets, combined = {}, {}
+        for per in periods:
+            frames = []
+            for k in b["report"]["by_offset"]:
+                gtfs = {f.stem: f for f in sorted((b["dir"] / f"offset_{k}").glob("*.zip"))}
+                nw = rn.offset_network(cfg, raw, ps, gtfs)
+                nets[k] = {"network_version": nw["version"], "feeds": {n: params.file_hash(p) for n, p in gtfs.items()}}
+                f_k = out_dir / "pt" / f"{per}.offset_{k}.parquet"
+                if f_k.is_file():
+                    click.echo(f"  {s.id} {per} offset {k}: skim already built")
+                    frames.append(pd.read_parquet(f_k))
+                    continue
+                click.echo(f"  {s.id} {per} offset {k}: PT skim on network {nw['version']}")
+                f = rn.pt_skim(cfg, raw, ps, nw, per, out_dir / "_work" / f"pt_{per}_offset_{k}", day, log)
+                f_k.parent.mkdir(parents=True, exist_ok=True)
+                f.to_parquet(f_k, compression="zstd")
+                frames.append(f)
+            combined[per] = rn.combine_offsets(frames)
+            combined[per].to_parquet(out_dir / "pt" / f"{per}.parquet", compression="zstd")
+        # the parent's skims: the baseline's, or a scenario's that has been run
+        def parent_skim(per: str) -> pd.DataFrame:
+            if s.parent == root_id:
+                return pd.read_parquet(network.skim(base, "pt", per))
+            pb = _build_scenario(s.parent, lambda m: None)
+            f = _scenario_skim_dir(cfg, raw, pb, base["version"]) / "pt" / f"{per}.parquet"
+            if not f.is_file():
+                raise click.ClickException(f"parent {s.parent} has no {per} skim: run `lab run {s.parent}` first")
+            return pd.read_parquet(f)
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            jobs = con.execute("""SELECT d.LSOA21CD, coalesce(b.jobs, 0) jobs FROM skim_dest d
+                                  LEFT JOIN nat_bres b USING (LSOA21CD)""").df().set_index("LSOA21CD").jobs
+            oa = con.execute("SELECT OA21CD, residents, edge FROM coverage_oa JOIN access_oa USING (OA21CD)").df() \
+                .set_index("OA21CD")
+        th = [30, 45]
+        card: dict = {"scenario": s.id, "parent": s.parent, "offsets": s.offsets, "networks": nets,
+                      "not_yet_modelled": s.not_yet_modelled, "accessibility": {}, "pt_skim_change": {}}
+        for per in periods:
+            par = parent_skim(per)
+            a_p = rn.access_summary(rn.jobs_within(par, jobs, th), oa.residents, oa.edge, th)
+            a_s = rn.access_summary(rn.jobs_within(combined[per], jobs, th), oa.residents, oa.edge, th)
+            card["accessibility"][per] = {"scenario": a_s, "parent": a_p, "difference": rn.diff(a_p, a_s)}
+            card["pt_skim_change"][per] = rn.skim_diff(par, combined[per])
+        # coverage on the scenario's feeds
+        ctx = click.get_current_context()
+        for cmd in (coverage_stops, coverage_walk, coverage_score):
+            ctx.invoke(cmd, scenario=s.id)
+        sfx = lambda sid: "" if sid == root_id else "__" + sid.replace("-", "_")  # noqa: E731
+        hs = ps["coverage.frequent_headway_min"]
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            def cov_sum(sid: str) -> dict:
+                try:
+                    c = con.execute(f"SELECT * FROM coverage_oa{sfx(sid)}").df()
+                except duckdb.CatalogException:
+                    raise click.ClickException(f"no coverage table for {sid}: run `lab run {sid}` first")
+                return {f"frequent_{h}": {"residents": int(c.residents[c[f"frequent_{h}"]].sum()),
+                                          "jobs": round(float(c.jobs[c[f"frequent_{h}"]].sum()))} for h in hs} | {
+                    "residents_in_no_class": int(c.residents[c.are_class == "none"].sum())}
+            c_s, c_p = cov_sum(s.id), cov_sum(s.parent)
+        card["coverage"] = {"scenario": c_s, "parent": c_p, "difference": rn.diff(c_p, c_s),
+                            "walk_speed_kmh_flat": ps["routing.walk_speed_kmh"], "gradient": base["elevation"]}
+        card["build"] = b["report"]["by_offset"]["0"]["ops"]
+        card["notes"] = ["Accessibility: jobs within 30 / 45 min by PT on the pair's median time, walking at "
+                         f"{ps['routing.walk_speed_kmh']:g} km/h on flat ground with gradient; PT times are the mean "
+                         "over the timetable offsets.",
+                         "Demand-dependent metrics (mode shares, boardings, loads, benefits) are not yet built (P5–P6).",
+                         "Sketch-planning model: indicative and comparative, not for a business case."]
+        (run_dir / "scorecard.json").write_text(json.dumps(card, indent=1, default=str))
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"scorecard": str(run_dir / "scorecard.json"), "skims": str(out_dir),
+                     "networks": nets, "chain_hash": b["chain_hash"],
+                     "accessibility_difference": {p: card["accessibility"][p]["difference"] for p in periods},
+                     "coverage_difference": card["coverage"]["difference"]}
+    click.echo(json.dumps(rec["result"], indent=1, default=str))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.command()
 @click.argument("scenario_id", required=False)
 @click.option("--demand", default=None, help="Demand version.")
@@ -292,7 +401,8 @@ def run(scenario_id: str | None, demand: str | None, periods: str, noop: bool) -
     if not noop:
         if scenario_id is None:
             raise click.UsageError("give a SCENARIO_ID, or --noop")
-        _not_yet("P6")
+        _run_scenario(scenario_id, [p for p in periods.split(",") if p])
+        return
     if scenario_id is not None:
         raise click.UsageError("--noop takes no SCENARIO_ID")
     cfg = LabConfig.load()
