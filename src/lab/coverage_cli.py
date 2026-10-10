@@ -109,7 +109,9 @@ def coverage_stops(scenario: str | None) -> None:
             indep += len(st.drop_duplicates(["journey", "stop_id", "departure_time"]))
         if indep != len(dep):
             raise click.ClickException(f"departures do not reconcile: {len(dep)} vs {indep}")
-        stops = pd.concat([f["stops"].assign(feed=k) for k, f in feeds_.items()], ignore_index=True)
+        # a generated feed repeats the existing stops its routes call at: one row per stop
+        stops = pd.concat([f["stops"].assign(feed=k) for k, f in sorted(feeds_.items(), key=lambda kv: kv[0] == "generated")],
+                          ignore_index=True).drop_duplicates("stop_id")
         stops = stops.rename(columns={"stop_lon": "lon", "stop_lat": "lat"})
         stops[["lon", "lat"]] = stops[["lon", "lat"]].astype(float)
         stops = stops[stops.stop_id.isin(set(dep.stop_id))].reset_index(drop=True)
