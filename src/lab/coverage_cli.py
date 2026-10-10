@@ -345,6 +345,11 @@ def coverage_score() -> None:
             "coverage.are_stop_category", "coverage.are_distance_bands_m", "coverage.are_class",
             "coverage.rail_node_min_directions")}}
         rm_scale = ps["coverage.reduced_mobility_scale"]
+        per_min = kmh * 1000 / 60
+        cuts = {"headline": dict(ps["coverage.served_walk_min"]),
+                "strict": {m: c["p85_m"] / per_min for m, c in curves.items()},
+                "loose": {m: v / per_min for m, v in ps["coverage.served_walk_loose_m"].items()}}
+        scfg["served_cut_min"] = cuts["headline"]
         tables, per_period = {}, {}
         for per in ["HEADLINE", *_periods(ps)]:
             lv = cs[cs.period == per]
@@ -381,6 +386,20 @@ def coverage_score() -> None:
             sens[f"brt_towards_rail_{w:g}"] = {
                 f"residents_frequent_{h}": int(head.residents[s2[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
                 for h in hs}
+        # the served cut-off: headline (TfL PTAL), strict (the decay curves' 85th percentiles)
+        # and loose (unverified WYG figures), residents served under each
+        for name, cut in cuts.items():
+            sv = cov.score(walk, cs[cs.period == "HEADLINE"], curves, scfg | {"served_cut_min": cut}) \
+                .set_index("OA21CD").reindex(oa.OA21CD)
+            sens[f"served_cut_{name}"] = {"cut_min": {m: round(v, 2) for m, v in cut.items()}} | {
+                f"residents_frequent_{h}": int(head.residents[sv[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
+                for h in hs}
+        for sc_ in ps["coverage.reduced_mobility_scale_sensitivity"]:
+            sv = cov.score(walk, cs[cs.period == "HEADLINE"], curves, scfg | {"scale": sc_}) \
+                .set_index("OA21CD").reindex(oa.OA21CD)
+            sens[f"reduced_mobility_scale_{sc_:g}"] = {
+                f"residents_frequent_{h}": int(head.residents[sv[f"frequent_{h}"].fillna(False).astype(bool).to_numpy()].sum())
+                for h in hs}
         # alongside: the same score on R5's plain (truncated) walking times
         s3 = cov.score(walk_plain, cs[cs.period == "HEADLINE"], curves, scfg) \
             .set_index("OA21CD").reindex(oa.OA21CD)
@@ -403,8 +422,10 @@ def coverage_score() -> None:
                  f"Frequent = every {ps['coverage.headline_headway_min']} min or better, high frequency = every "
                  f"{min(ps['coverage.frequent_headway_min'])} min or better, in the worse of "
                  f"{' and '.join(ps['coverage.headline_periods'])}, departures in one direction. "
-                 "How far people walk to a stop is taken from Montréal survey data (El-Geneidy et al. 2014), "
-                 "not UK data. No car times are used, so the P2 car spot-check fails do not apply. "
+                 f"Served = within {cuts['headline']['bus']:g} min of a bus or BRT stop or "
+                 f"{cuts['headline']['rail']:g} min of a rail or tram stop (TfL's PTAL limits). "
+                 "Decay weights use Montréal survey data (El-Geneidy et al. 2014), not UK data. "
+                 "No car times are used, so the P2 car spot-check fails do not apply. "
                  "Sketch-planning model: indicative and comparative, not for a business case.")
         g = gpd.GeoDataFrame(head.merge(geom, on="OA21CD"), geometry="geometry", crs=geom.crs)
         g.insert(0, "network_version", nv)
@@ -473,7 +494,7 @@ def _coverage_map(g, hs: list, headline: int, label: str, out: Path) -> None:
                           Patch(color=col[1], label=f"{name.get(lo, 'service')}: every {lo} min or better"),
                           Patch(color=col[0], label="no frequent service in walking reach")],
                  loc="lower left", frameon=False)
-    ax[1].set_title("Frequent service within the 85th-percentile walk for its mode")
+    ax[1].set_title("Frequent service within walking reach (8 min to bus, 12 min to rail)")
     for a in ax:
         a.set_axis_off()
         a.set_aspect(1.6)

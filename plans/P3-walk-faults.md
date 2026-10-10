@@ -46,6 +46,26 @@ paths, and they affect every origin that reaches such a stop, not only the clust
 | Gipsy Patch Lane | 0170SGP90775 / 0170SGP90777 | 51.52169, -2.57074 | 37 m | 5 min | divided road | A38 Gloucester Road North; primary_link | way 148725405 (cycleway), way 1467831126 (footway) | no highway way changed | None: a real barrier. Check only that the nearest mapped crossing is where R5 crosses |
 | The Grove | 0170SGP90771 / 0170SGP90770 | 51.53136, -2.56982 | 77 m | 9 min | divided road | A38 Gloucester Road; primary_link | way 1467831108 (footway), way 1467831107 (footway) | 3 way(s) edited since (4754001, 4755911, 145246809), none a new link between the stops | None: a real barrier. Check only that the nearest mapped crossing is where R5 crosses |
 
+## Review plot and drafted patch (2026-10-10, nothing applied)
+
+`plans/P3-walk-faults.png` (run `20261010T150133-spike-walk-faults-81cfd5`, `lab spike
+walk-faults`) shows the ten artefact candidates: stops in red, roads grey, separately
+mapped footways and cycleways blue, the drafted connectors green. In every one a path runs
+beside a two-way road with the stops on or beside it and no mapped link to the carriageway
+at the stop.
+
+The draft is `data/patches/walk_links.draft.geojson`: **20 connectors, two per pair, each
+3–15 m**, joining the path a stop stands on to the carriageway beside it (tags
+`highway=footway`, `footway=link`), with the two way ids each would join. It is not read by
+any command. To apply it the ways must be split and noded at the connector ends, the
+patched extract re-hashed into the network version, and coverage, skims and spot checks
+re-run with a change report: all of that waits for approval. A first diagonal draft (one
+link straight between the two stops, up to 111 m) was discarded as not a crossing anyone
+makes.
+
+Still from tags and the plot only: not checked against imagery or on the ground. The
+remaining ten pairs (nine divided roads, one unclear) have nothing drafted.
+
 ## Known from P2 (PT spot checks), not yet in a patch list
 
 - **Bath Spa station, rear entrance:** services set down behind the station and the model walks

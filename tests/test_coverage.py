@@ -13,7 +13,8 @@ ARE = {"walk_kmh": 4.8, "frequent_headway_min": [10, 15], "score_cap_dph": 12,
        "are_distance_bands_m": [300, 500, 750, 1000],
        "are_class": {1: list("AABC"), 2: list("ABCD"), 3: ["B", "C", "D", "none"],
                      4: ["C", "D", "none", "none"], 5: ["D", "none", "none", "none"]},
-       "rail_node_min_directions": 3}
+       "rail_node_min_directions": 3,
+       "served_cut_min": {"bus": 10, "rail": 20, "ferry": 10, "brt": 10, "tram": 20, "metro": 20}}
 OBS = {"bus": {"mean_m": 580, "p85_m": 800}, "rail": {"mean_m": 1010, "p85_m": 1610}}
 
 
@@ -159,7 +160,7 @@ def test_score_on_a_line_of_origins_with_known_answers():
     walk = pd.DataFrame({"OA21CD": ["o2", "o8", "o12", "o12", "oc"], "cluster_id": ["c:f", "c:f", "c:f", "c:h", "c:coach"],
                          "walk_min": [2.0, 8.0, 12.0, 1.0, 1.0]})
     s = cov.score(walk, level, cu, ARE).set_index("OA21CD")
-    assert list(s.loc[["o2", "o8", "o12", "oc"], "frequent_10"]) == [True, True, False, False]   # p85 = 10 min
+    assert list(s.loc[["o2", "o8", "o12", "oc"], "frequent_10"]) == [True, True, False, False]   # cut-off 10 min
     assert s.loc["o2", "are_class"] == "C" and s.loc["o8", "are_class"] == "none"     # category IV at 160 m, 640 m
     assert s.loc["o12", "are_class"] == "D" and s.loc["oc", "are_class"] == "none"    # hourly (V) at 80 m; coach
     assert s.loc["oc", "score"] == 0

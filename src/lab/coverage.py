@@ -331,11 +331,13 @@ def score(walk: pd.DataFrame, level: pd.DataFrame, curves: dict[str, dict], cfg:
     ``walk``: OA21CD, cluster_id, walk_min (the nearest stop of the cluster).
     ``level``: cluster_id, mode_class, dph_one_way, directions.
     ``cfg``: walk_kmh, frequent_headway_min (list), score_cap_dph, the ARE tables,
-    rail_node_min_directions, and scale (1, or < 1 for reduced mobility).
+    rail_node_min_directions, served_cut_min (mode class → the furthest walk, in minutes,
+    at which a stop still serves an OA; separate from the decay curves), and scale (1, or
+    < 1 for reduced mobility: shrinks the curves and the cut-off alike).
 
     Columns: ``are_class`` (best over clusters), ``score`` (Σ decay × capped departures
     per hour), and for each headway threshold h: ``frequent_h`` (a cluster with a
-    headway of h or better within the 85th-percentile walk for its mode),
+    headway of h or better within the served cut-off for its mode),
     ``frequent_h_weight`` (the largest decay weight among clusters that frequent) and
     ``frequent_h_walk_min`` (the walk to the nearest of them).
     """
@@ -352,7 +354,7 @@ def score(walk: pd.DataFrame, level: pd.DataFrame, curves: dict[str, dict], cfg:
         for m, g in j.groupby("mode_class"):
             c = curves[m]
             j.loc[g.index, "w"] = weight(g.walk_min, c, cfg["walk_kmh"], scale)
-            j.loc[g.index, "p85_min"] = c["p85_m"] * scale / (cfg["walk_kmh"] * 1000 / 60)
+            j.loc[g.index, "p85_min"] = cfg["served_cut_min"][m] * scale
         cat = [stop_category(m, d, h, cfg["are_interval_bands_min"], cfg["are_stop_category"],
                              cfg["rail_node_min_directions"])
                for m, d, h in zip(j.mode_class, j.directions, j.headway)]

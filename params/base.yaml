@@ -255,6 +255,32 @@ coverage:
     reasoning: >-
       A 5-minute headway is turn-up-and-go; further departures add capacity, not
       access. Stops a bus-station cluster from dominating the continuous score.
+  # The furthest walk at which a stop still "serves" an OA — separate from the decay
+  # curves, which weight how many would walk that far (Robbie, 2026-10-10).
+  served_walk_min:
+    value: {bus: 8, brt: 8, ferry: 8, rail: 12, tram: 12, metro: 12}
+    unit: min of walking at 4.8 km/h effective, by mode class (headline cut-off)
+    tag: SOURCED
+    source: >-
+      TfL, "Assessing transport connectivity in London" (PTAL method),
+      https://content.tfl.gov.uk/connectivity-assessment-guide.pdf (opened 2026-10-10):
+      "people will walk up to 640 metres (approximately eight minutes) to a bus service
+      and up to 960 metres (12 minutes) to a rail or Tube service", at 4.8 kph. BRT takes
+      the bus value and tram the rail value by Robbie's decision; ferry takes bus.
+  served_walk_loose_m:
+    value: {bus: 800, brt: 800, ferry: 800, rail: 1610, tram: 1610, metro: 1610}
+    unit: m; the loose variant of the served cut-off, converted at 4.8 km/h
+    tag: PLACEHOLDER
+    note: >-
+      Wakenshaw and Bunn (WYG) 2015 85th percentiles as quoted second-hand (Oxfordshire
+      CC review); the paper has not been opened. Reported as the loose variant only,
+      labelled as unverified. The strict variant is the decay curves' own 85th
+      percentiles (El-Geneidy et al. 2014).
+  reduced_mobility_scale_sensitivity:
+    value: [0.5, 0.85]
+    unit: alternative values of reduced_mobility_scale, each reported
+    tag: MODELLED
+    reasoning: Robbie, 2026-10-10 — a range either side of 0.7, which has no observed basis yet.
   reduced_mobility_scale:
     value: 0.7
     unit: multiplier on every distance the decay curves are defined on, in the reduced-mobility variant
@@ -263,7 +289,9 @@ coverage:
       People who walk less far, reported alongside for equity (plans/P3.md D2). First
       defined as a 400 m half-weight point for bus, which was 0.70 of the first candidate
       curve's; the sourced bus curve's half-weight point is already 245 m, so the same
-      proportion is kept as a scale rather than a distance. For Robbie to confirm.
+      proportion is kept as a scale rather than a distance (confirmed by Robbie,
+      2026-10-10, with the sensitivity below). Lead not yet opened: DfT Inclusive
+      Mobility (2021), recommended walking distances for disabled people.
   # Walk-to-stop distances by mode: the decay weight at distance d is the share of
   # observed walks that are at least that long. Source (Robbie, 2026-10-10): Montréal's
   # 2003 origin–destination survey, 16,014 home-based transit trips, walking distance on
@@ -552,6 +580,15 @@ routing:
     reasoning: >-
       r5py's default; r5r's default is 3, which changed p50 times on the D7 comparison.
       8 is effectively unlimited for this network, so the router, not a cap, decides.
+  r5py_truncation_correction_min:
+    value: 0.5
+    unit: min added to r5py matrix times (walk and cycle skims) in the column travel_time_corrected
+    tag: MODELLED
+    reasoning: >-
+      r5py's travel time matrix truncates to the whole minute (measured: 95% of 563 walk
+      pairs equal the floor of the itinerary time, mean −0.43 min); half a minute is the
+      unbiased correction. The raw R5 value stays in travel_time. r5r's expanded matrix
+      (PT skims) reports tenths and is not corrected (Robbie, 2026-10-10).
   elevation_cost_function:
     value: TOBLER
     unit: R5 slope cost function applied to walking and cycling (NONE = flat network)

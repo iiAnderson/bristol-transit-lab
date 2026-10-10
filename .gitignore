@@ -1,5 +1,7 @@
 # Data: everything under data/ is downloaded or derived, never committed.
-data/
+data/*
+# …except authored patch files, which are inputs and are versioned (plans/P3.md Q15).
+!data/patches/
 # Run outputs (run.json, scorecards, maps). The directory itself is kept.
 runs/*
 !runs/.gitkeep

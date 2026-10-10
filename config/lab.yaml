@@ -151,6 +151,11 @@ osm:
     - https://download.geofabrik.de/europe/united-kingdom/england/wiltshire-latest.osm.pbf
     - https://download.geofabrik.de/europe/united-kingdom/wales-latest.osm.pbf
   raw_dir: data/raw/osm
+  extract_date: "2026-09-26"            # replication timestamp of the five extracts (sources.md P2)
+  # Drafted footway links for walk-network faults (plans/P3-walk-faults.md). A DRAFT: not
+  # applied to any network. An approved patch file would sit beside it and be hashed into
+  # the network version (plans/P3.md Q15).
+  walk_patch_draft: data/patches/walk_links.draft.geojson
   merged: data/interim/osm/merged.osm.pbf
   clip: data/interim/osm/b2026_clip.osm.pbf
   osrm_base: data/interim/osrm/b2026        # OSRM MLD files (osrm-extract/partition)

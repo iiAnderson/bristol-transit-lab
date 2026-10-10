@@ -1,0 +1,727 @@
+{
+ "type": "FeatureCollection",
+ "name": "walk_links_draft",
+ "osm_extract_date": "2026-09-26",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.9805502850250662,
+      51.3299138688802
+     ],
+     [
+      -2.980464372627638,
+      51.32992931989261
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSC30295",
+     "0190NSC30296"
+    ],
+    "stop_name": "Broadoak Road",
+    "connects_ways": [
+     1223550245,
+     169626770
+    ],
+    "length_m": 6.2,
+    "stops_apart_m": 37.5,
+    "r5_walk_min_before": 7.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.9806790590022123,
+      51.330201259590545
+     ],
+     [
+      -2.9805961045033498,
+      51.330216257307775
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSC30295",
+     "0190NSC30296"
+    ],
+    "stop_name": "Broadoak Road",
+    "connects_ways": [
+     1223550245,
+     169626770
+    ],
+    "length_m": 6.0,
+    "stops_apart_m": 37.5,
+    "r5_walk_min_before": 7.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.9011524812692553,
+      51.35106666523462
+     ],
+     [
+      -2.9011873302075255,
+      51.351024996494075
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSA01322",
+     "0190NSA01323"
+    ],
+    "stop_name": "Churchland Way",
+    "connects_ways": [
+     1414072464,
+     29567557
+    ],
+    "length_m": 5.2,
+    "stops_apart_m": 15.5,
+    "r5_walk_min_before": 5.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.901003385784913,
+      51.35102147437012
+     ],
+     [
+      -2.9010406653063256,
+      51.35097689956461
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSA01322",
+     "0190NSA01323"
+    ],
+    "stop_name": "Churchland Way",
+    "connects_ways": [
+     1414072464,
+     29567557
+    ],
+    "length_m": 5.6,
+    "stops_apart_m": 15.5,
+    "r5_walk_min_before": 5.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.986372394537125,
+      51.352059559836306
+     ],
+     [
+      -2.986367996248225,
+      51.352100426049745
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSC30070",
+     "0190NSC30044"
+    ],
+    "stop_name": "Upper Church Road",
+    "connects_ways": [
+     78020941,
+     1300574186
+    ],
+    "length_m": 4.6,
+    "stops_apart_m": 38.0,
+    "r5_walk_min_before": 10.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.986900338050468,
+      51.35208602245969
+     ],
+     [
+      -2.986898828813656,
+      51.35211642119722
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSC30070",
+     "0190NSC30044"
+    ],
+    "stop_name": "Upper Church Road",
+    "connects_ways": [
+     78020941,
+     1300574186
+    ],
+    "length_m": 3.4,
+    "stops_apart_m": 38.0,
+    "r5_walk_min_before": 10.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.8624638213409166,
+      51.440066505293665
+     ],
+     [
+      -2.862430036861409,
+      51.44001757123391
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSC30821",
+     "0190NSC30820"
+    ],
+    "stop_name": "Elton Road",
+    "connects_ways": [
+     27622842,
+     362238949
+    ],
+    "length_m": 5.9,
+    "stops_apart_m": 48.9,
+    "r5_walk_min_before": 5.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.861559188984569,
+      51.4401683953248
+     ],
+     [
+      -2.8617705889847174,
+      51.44013379532477
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0190NSC30821",
+     "0190NSC30820"
+    ],
+    "stop_name": "Elton Road",
+    "connects_ways": [
+     1452702554,
+     1452707323
+    ],
+    "length_m": 15.2,
+    "stops_apart_m": 48.9,
+    "r5_walk_min_before": 5.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.9691212248121728,
+      51.61417032878901
+     ],
+     [
+      -2.969094759289074,
+      51.614122359988954
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "5310AWB30647",
+     "5310AWB30646"
+    ],
+    "stop_name": "Eleanor Hudson House",
+    "connects_ways": [
+     924937820,
+     732767346
+    ],
+    "length_m": 5.6,
+    "stops_apart_m": 32.2,
+    "r5_walk_min_before": 8.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.9694994358535864,
+      51.61398431959877
+     ],
+     [
+      -2.9695252688118456,
+      51.61403089934301
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "5310AWB30647",
+     "5310AWB30646"
+    ],
+    "stop_name": "Eleanor Hudson House",
+    "connects_ways": [
+     924937823,
+     732767346
+    ],
+    "length_m": 5.5,
+    "stops_apart_m": 32.2,
+    "r5_walk_min_before": 8.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.9664763197519,
+      51.61483628523398
+     ],
+     [
+      -2.9664129075416543,
+      51.614774373276816
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "5310AWB30645",
+     "5310AWB30644"
+    ],
+    "stop_name": "St Cadoc`s Hospital",
+    "connects_ways": [
+     924937824,
+     732780414
+    ],
+    "length_m": 8.2,
+    "stops_apart_m": 17.1,
+    "r5_walk_min_before": 6.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.966221563045859,
+      51.614758061357705
+     ],
+     [
+      -2.9662887507110876,
+      51.614823659843836
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "5310AWB30645",
+     "5310AWB30644"
+    ],
+    "stop_name": "St Cadoc`s Hospital",
+    "connects_ways": [
+     924937823,
+     732780414
+    ],
+    "length_m": 8.7,
+    "stops_apart_m": 17.1,
+    "r5_walk_min_before": 6.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.5312699266593577,
+      51.42774646937753
+     ],
+     [
+      -2.5313064399364977,
+      51.427690939467574
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0100BRA10888",
+     "0100BRA10889"
+    ],
+    "stop_name": "Brislington House",
+    "connects_ways": [
+     365103094,
+     133390818
+    ],
+    "length_m": 6.7,
+    "stops_apart_m": 110.6,
+    "r5_walk_min_before": 6.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.53282664175707,
+      51.427968872785165
+     ],
+     [
+      -2.532770208617465,
+      51.42806609663533
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0100BRA10888",
+     "0100BRA10889"
+    ],
+    "stop_name": "Brislington House",
+    "connects_ways": [
+     829277224,
+     1043466854
+    ],
+    "length_m": 11.5,
+    "stops_apart_m": 110.6,
+    "r5_walk_min_before": 6.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.4869584711282013,
+      51.42404081928608
+     ],
+     [
+      -2.486912220655337,
+      51.424022155948656
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0170SGB20290",
+     "0170SGB20291"
+    ],
+    "stop_name": "Tudor House",
+    "connects_ways": [
+     190281498,
+     553538097
+    ],
+    "length_m": 3.8,
+    "stops_apart_m": 42.4,
+    "r5_walk_min_before": 9.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.4866213712385616,
+      51.424354884203886
+     ],
+     [
+      -2.486572213787503,
+      51.42433372187446
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "0170SGB20290",
+     "0170SGB20291"
+    ],
+    "stop_name": "Tudor House",
+    "connects_ways": [
+     190281498,
+     553538097
+    ],
+    "length_m": 4.1,
+    "stops_apart_m": 42.4,
+    "r5_walk_min_before": 9.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.2352599649339018,
+      51.332479522767066
+     ],
+     [
+      -2.2353025346485578,
+      51.3324414731509
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "4600WIA11501",
+     "4600WIA13623"
+    ],
+    "stop_name": "Widbrook Farm",
+    "connects_ways": [
+     177642682,
+     58739805
+    ],
+    "length_m": 5.2,
+    "stops_apart_m": 9.7,
+    "r5_walk_min_before": 7.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.235330215473797,
+      51.33250779183077
+     ],
+     [
+      -2.2353708536197345,
+      51.33247146863738
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "4600WIA11501",
+     "4600WIA13623"
+    ],
+    "stop_name": "Widbrook Farm",
+    "connects_ways": [
+     177642682,
+     58739805
+    ],
+    "length_m": 4.9,
+    "stops_apart_m": 9.7,
+    "r5_walk_min_before": 7.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.3052597094098033,
+      51.34782332702769
+     ],
+     [
+      -2.305240366474026,
+      51.34779373925168
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "4600WIA11389",
+     "4600WIA11388"
+    ],
+    "stop_name": "Murhill Turn",
+    "connects_ways": [
+     368439261,
+     159153552
+    ],
+    "length_m": 3.6,
+    "stops_apart_m": 11.1,
+    "r5_walk_min_before": 10.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "LineString",
+    "coordinates": [
+     [
+      -2.30519670952902,
+      51.3478388225881
+     ],
+     [
+      -2.30517773407217,
+      51.34780979686274
+     ]
+    ]
+   },
+   "properties": {
+    "status": "draft \u2014 not applied",
+    "tags": {
+     "highway": "footway",
+     "footway": "link"
+    },
+    "stops": [
+     "4600WIA11389",
+     "4600WIA11388"
+    ],
+    "stop_name": "Murhill Turn",
+    "connects_ways": [
+     368439261,
+     159153552
+    ],
+    "length_m": 3.5,
+    "stops_apart_m": 11.1,
+    "r5_walk_min_before": 10.0,
+    "evidence": "two-way road with a separately mapped path beside it and no mapped link between path and carriageway at the stop; from OSM tags and the plot only, not checked on the ground"
+   }
+  }
+ ]
+}

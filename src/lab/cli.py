@@ -1440,6 +1440,50 @@ def spike_d7(n_origins: int, near_m: float) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@spike.command("walk-faults")
+@click.option("--stops-run", default=None, help="A `coverage stops` run directory (default: the latest).")
+def spike_walk_faults(stops_run: str | None) -> None:
+    """Stop pairs cut by the barrier test: classify, plot the artefact candidates, draft links."""
+    import json
+    import zipfile
+    import pandas as pd
+    import yaml
+    from .spikes import walk_faults as wf
+    from .supply import feeds
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    src = Path(stops_run) if stops_run else sorted(cfg.runs_dir.glob("*-coverage-stops-*"))[-1]
+    pairs = pd.read_csv(src / "cluster_pairs_cut_by_barrier_test.csv")
+    with zipfile.ZipFile(cfg.root / raw["bus"]["out"]) as z:
+        stops = pd.read_csv(z.open("stops.txt"), dtype=str).set_index("stop_id")
+    stops = stops.rename(columns={"stop_lon": "lon", "stop_lat": "lat"}).astype({"lon": float, "lat": float})
+    osm = feeds.get(cfg, "osm_clip")
+    rec = runrecord.build(cfg, command="spike-walk-faults",
+                          inputs=[{"name": "osm_clip", "sha256": osm["sha256"]},
+                                  {"name": str(src / "cluster_pairs_cut_by_barrier_test.csv"),
+                                   "sha256": params.file_hash(src / "cluster_pairs_cut_by_barrier_test.csv")}])
+    run_dir = runrecord.write(cfg, rec).parent
+    recs = wf.analyse(pairs, stops, str(cfg.root / raw["osm"]["clip"]))
+    art = [r for r in recs if r["kind"] == "separately mapped path"]
+    wf.plot(art, run_dir / "walk_fault_candidates.png")
+    patch = wf.draft_patch(recs, raw["osm"]["extract_date"])
+    (run_dir / "walk_links.draft.geojson").write_text(json.dumps(patch, indent=1))
+    draft = cfg.root / raw["osm"]["walk_patch_draft"]
+    draft.parent.mkdir(parents=True, exist_ok=True)
+    draft.write_text(json.dumps(patch, indent=1))
+    (run_dir / "pairs.json").write_text(json.dumps(
+        [{k: v for k, v in r.items() if k != "ways"} for r in recs], indent=1, default=str))
+    rec["result"] = {"pairs": len(recs), "by_kind": pd.Series([r["kind"] for r in recs]).value_counts().to_dict(),
+                     "links_drafted": len(patch["features"]),
+                     "artefacts_with_nothing_drafted": [r["name"] for r in art if not r.get("links")],
+                     "draft": str(draft), "applied": False,
+                     "pairs_list": [{"name": r["name"], "kind": r["kind"], "dist_m": round(r["dist_m"]),
+                                     "walk_min": r["walk_min"],
+                                     "links_m": [ln["length_m"] for ln in r.get("links", [])]} for r in recs]}
+    click.echo(json.dumps(rec["result"], indent=1))
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.group()
 def skims() -> None:
     """P2c skims: PT (r5r), walk and cycle (r5py)."""
@@ -1667,6 +1711,7 @@ def skims_active() -> None:
                                  speed_cycling=ps["routing.cycle_speed_kmh"],
                                  max_bicycle_traffic_stress=ps["routing.max_bicycle_lts"])
             out = network.skim(nw, mode)
+            t["travel_time_corrected"] = t["travel_time"] + ps["routing.r5py_truncation_correction_min"]
             t.to_parquet(out)
             res[mode] = {"pairs": len(t), "reachable": int(t["travel_time"].notna().sum()),
                          "median_min": float(t["travel_time"].median())}
@@ -1690,6 +1735,9 @@ def access_cmd(thresholds: str) -> None:
     nw = network.settings(cfg, yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text()),
                           {p.path: p.value for p in params.load(cfg.root / "params" / "base.yaml")})
     f_pt, f_wk = network.skim(nw, "pt", "AM"), network.skim(nw, "walk")
+    import pyarrow.parquet as pq
+    # walk times: R5's truncated minutes plus the half-minute correction where the skim has it
+    wk_col = "travel_time_corrected" if "travel_time_corrected" in pq.read_schema(f_wk).names else "travel_time"
     th = [int(x) for x in thresholds.split(",")]
     x0, y0, x1, y1 = cfg.extent
     rec = runrecord.build(cfg, command="access", inputs=[
@@ -1704,7 +1752,7 @@ def access_cmd(thresholds: str) -> None:
                 SELECT from_id, to_id, CASE WHEN NOT unreachable THEN p50 END t
                 FROM read_parquet('{f_pt}')""")
             con.execute(f"""CREATE OR REPLACE TEMP VIEW wk AS
-                SELECT from_id, to_id, travel_time t FROM read_parquet('{f_wk}')""")
+                SELECT from_id, to_id, {wk_col} t FROM read_parquet('{f_wk}')""")
             for mode in ("pt", "wk"):
                 con.execute(f"""CREATE OR REPLACE TEMP TABLE acc_{mode} AS
                     SELECT o.OA21CD, {cols}
