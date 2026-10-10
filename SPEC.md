@@ -71,7 +71,11 @@ behaviour and metrics — see §6.1 and §11b). See §12 for the future list.
 
 **Base years:** `B2026` (current network, built in P2) and `B2028` (built in P3 from
 `B2026` by scenario ops: + the Portishead line with Portishead and Pill stations at an
-hourly service to Temple Meads). All scenarios compare against `B2028` by default.
+hourly service to Temple Meads). *Amended at the P3b opening stop (2026-10-10):* `B2028`
+also has the Henbury-line extension of the hourly Filton Abbey Wood service to North
+Filton (Bristol Brabazon; opens November 2026) and Henbury (March 2028), on the West of
+England Combined Authority's October 2025 business case; one sensitivity run omits
+Henbury. This supersedes the P2a sentence below for `B2028`. All scenarios compare against `B2028` by default.
 *Amended at P2a (2026-09-27):* the Henbury-line stations (Henbury, North Filton) are
 not open — Darwin on 28 Sep 2026 has Henbury with no services and North Filton not in
 the reference data — so they are in neither base year. `B2028` moves to P3 because it
@@ -332,9 +336,23 @@ ops:
   matched the timetable's median within 1 minute on only 37–43% of the pairs that use
   the route, whatever the number of draws, while explicit trips at the same offset
   reproduce it exactly. A 3-minute shift of the explicit trips moves results as much, so
-  **every generated service is run at 3 offsets spread evenly across its headway; the
-  mean and the range are reported and comparisons use the mean.** The offsets are
-  recorded inputs of the run.
+  **every scenario with a generated service is run at 3 offsets; the mean and the range
+  are reported and comparisons use the mean.** An offset is a shared phase fraction:
+  offset k shifts every generated service by the same fraction of its own headway
+  (0, ⅓, ⅔ by default), so a scenario yields 3 networks however many services it
+  generates. The capacity check runs on each. Networks and skims are cached by
+  `spec_hash` + offset + `network_version`.
+- *Decided at the P3b opening stop (2026-10-10):* **ops beyond the list above** —
+  `modify_route` also takes `stopping_pattern` (`add` / `remove`), `extend_to` and
+  `truncate_at`; `replace_route` swaps a route (all day or in named periods) for a
+  generated one, keeping the link; `reroute` moves a route onto a new alignment between
+  two of its stops. `scenarios/<id>.yaml` is checked by `lab scenario validate`, one
+  named rule per failure (`src/lab/scenario.py`).
+- *Run times on existing track (D8, decided 2026-10-10):* for `existing_rail` segments
+  the sectional time is the median working time between the two timing points over
+  today's trains of the operator that call at both ends, and the dwell is that operator's
+  median; the speed-profile rule applies only where no passenger train runs today. Times
+  taken this way reflect today's diesel and bi-mode fleet (§11 item 23).
 - *Added at the end of P2:* the baseline bus GTFS holds **copies** of trips that carry
   pick-up or set-down restrictions (976 source trips written as 4,727 copies; R5 ignores
   the GTFS flags, §7.1). `trips.txt` has an `original_trip_id` column. The generator and
@@ -638,8 +656,12 @@ scenario, its parent, and the difference.
   - **headline: "frequent" = every 15 minutes or better** (the scheme design standard),
     with every 10 minutes or better shown as "high frequency"; on network v2 (terrain)
     with the half-minute truncation correction, the uncorrected figure alongside;
-  - an OA is served if a stop cluster at that service level is within the
-    85th-percentile walk for its mode; the decay-weighted count is reported beside it;
+  - **served and decay are separate** (decided 2026-10-10): an OA is served if a stop
+    cluster at that service level is within TfL's PTAL maximum walk — 8 minutes to bus
+    and BRT, 12 minutes to rail and tram, at 4.8 km/h effective. The decay curves weight
+    how many would walk that far and give the decay-weighted count beside it. Two
+    variants are always reported: strict (the decay curves' 85th percentiles, 524 m and
+    1,259 m) and loose (800 m and 1,610 m, the unverified WYG figures);
   - decay: a logistic curve per mode class fitted to the mean and 85th percentile of
     observed walks to stops, from El-Geneidy et al. (2014), Montréal — **not UK data**
     (bus 296 / 524 m, rail 818 / 1,259 m, metro 565 / 873 m); BRT and tram interpolated
@@ -989,6 +1011,10 @@ matter for the scenario being reported.
 22. **How far people walk to a stop comes from Montréal (2003 survey), not the UK.**
     No UK primary source could be opened. The British figures in circulation are
     longer, which would raise coverage. A UK lead: NTS stage-level microdata.
+
+23. **Run times on existing track are today's.** They come from the working timetable
+    of the present diesel and bi-mode fleet, so they are pessimistic for a new electric
+    fleet with better acceleration. Stated, not adjusted.
 
 ---
 
