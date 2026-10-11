@@ -746,6 +746,28 @@ opex_year  = veh_hours × £/veh_hour + veh_km × £/veh_km   (annualised from a
 revenue    = Σ PT trips × average fare, minus abstraction from existing services
 ```
 
+- **As built at P3c-1 and P3c-2 (2026-10-11)** — `params/costs.yaml`, `src/lab/costs.py`,
+  `lab scenario cost`; where this differs from the formulae above and the seed values
+  below, this is what the code does:
+  - Price base 2025. Values are stored as published with their price year; capital is
+    rebased on the ONS construction output price index for new infrastructure work
+    (before 2014: the GDP deflator plus TAG's 2.1 points a year), operating costs on the
+    GDP deflator in the TAG data book.
+  - Capital by item, each with its own TAG A1.2 optimism-bias category: new way per
+    route-km by mode and alignment type; bored tunnel built up from the HS2 guide's parts
+    (per km, per week, per drive, machines, portals, shafts); stations by type (surface,
+    underground box, underground mined); depot; vehicles. Stage 1 uplifts by default.
+    Optimism bias on base costs without risk or contingency; no contingency reported.
+  - Fleet = ceil(round trip ÷ peak headway), spares added once per mode over the
+    scenario. Heavy-rail fleet is a lease in operating cost, not a purchase.
+  - Operating cost a year = change in weekday vehicle-km by mode (stop-to-stop straight
+    lines, a lower bound; journeys by `original_trip_id`) × a weekday-to-year factor ×
+    the mode's rate per km, plus for heavy rail the units leased, crews, new stations and
+    tunnel maintenance. No rate per vehicle-hour has been sourced.
+  - Low, central and high throughout. A unit cost with no value is listed as not costed
+    and the result is marked incomplete; nothing is guessed.
+  - The seed values below are superseded: the tram seed is about half the sourced
+    outturns; the tunnel and viaduct multipliers stay `[PLACEHOLDER]`.
 - Seed values: UK tram £20–30m per route-km as a ballpark including vehicles [SOURCED —
   Bath & Bristol Trams / D. Walmsley]; tunnel ×4–6 and elevated ×2–2.5 of at-grade
   [SOURCED — Halcrow Fox 2000, via the Flyvbjerg et al. comparison]; Coventry VLR claim

@@ -341,6 +341,109 @@ def scenario_capacity(scenario_id: str) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+def _scenario_cost(b: dict, stage: int | None = None) -> dict:
+    """Capital and operating cost of a scenario's own ops against its parent (SPEC §8.3)."""
+    import json
+    import pandas as pd
+    import yaml
+    from . import costs, generator as gen
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    lib = costs.Library.load(cfg.root / "params" / "costs.yaml")
+    s = b["scenario"]
+    sdir = s.path.parent
+    r0 = b["report"]["by_offset"]["0"]
+    reps = r0["ops"][len(r0["ops"]) - len(s.ops):]              # this scenario's own ops, last in the chain
+    mine = {n: gen.read_feed(b["dir"] / "offset_0" / f"{n}.zip") for n in r0["files"]}
+    if s.parent == raw["baseline"]["scenario"]:
+        pdir = {n: cfg.root / raw[n]["out"] for n in ("bus", "rail")}
+    else:
+        pb = _build_scenario(s.parent, lambda m: None)
+        pdir = {n: pb["dir"] / "offset_0" / f"{n}.zip" for n in pb["report"]["by_offset"]["0"]["files"]}
+    # only the feeds that differ from the parent's are read twice
+    differ = {n for n in mine if n not in pdir or params.file_hash(pdir[n]) != r0["files"][n]["sha256"]}
+    km_s = costs.feed_km({n: mine[n] for n in differ})
+    km_p = costs.feed_km({n: gen.read_feed(pdir[n]) for n in differ if n in pdir})
+
+    def stops_of(path: str) -> list[dict]:
+        return [f["properties"] for f in json.loads((sdir / path).read_text())["features"]]
+    services = []
+    for (kind, op), rep in zip(s.ops, reps):
+        if kind in ("add_line", "replace_route"):
+            q = costs.service_quantities(rep, op["mode"], stops_of(op["stops"]), op["headways_min"])
+            q["name"] = rep["route_id"]
+        elif kind == "modify_route" and "extend_to" in rep:
+            routes = pd.concat([f["routes"] for f in mine.values()])
+            rt = routes.set_index("route_id").route_type.get(op["route_id"])
+            mode = {"2": "heavy_rail", "0": "tram", "1": "metro"}.get(rt, "bus")
+            hw = (rep.get("fill_span") or {}).get("headway_min") or op.get("headways_min")
+            q = costs.service_quantities(rep["extend_to"], mode, stops_of(op["extend_to"]["stops"]), hw)
+            q["name"] = f"{op['route_id']} extension"
+        else:
+            continue
+        q["fleet"] = costs.fleet(q, lib)
+        services.append(q)
+    # two directions of one service extended over the same track and stops: built once
+    seen, build = set(), []
+    for q in services:
+        key = (tuple(sorted(q["km_by_type"].items())), tuple(x["stop_id"] for x in q["new_stops"]))
+        if q["is_extension"] and key in seen:
+            build.append(q | {"km_by_type": {}, "tunnel_runs": [], "new_stops": [],
+                              "fleet": q["fleet"] | {"in_service": None}})
+            continue
+        seen.add(key)
+        build.append(q)
+    cap, notes = costs.capex(build, lib, stage)
+    op_lines, op_notes = costs.opex(km_p, km_s, build, lib)
+    out = costs.summarise(cap, op_lines, notes + op_notes, lib, stage)
+    out["services"] = [{k: q[k] for k in ("name", "mode", "km_by_type", "tunnel_runs", "one_way_min", "fleet")}
+                       | {"new_stops": [x["stop_id"] for x in q["new_stops"]]} for q in services]
+    out["against"] = s.parent
+    return out
+
+
+@scenario.command("cost")
+@click.argument("scenario_id")
+@click.option("--stage", type=click.IntRange(1, 3), default=None, help="TAG optimism-bias stage (default: the library's).")
+def scenario_cost(scenario_id: str, stage: int | None) -> None:
+    """Capital and operating cost of a scenario's own ops, against its parent."""
+    import json
+    cfg = LabConfig.load()
+    rec = runrecord.build(cfg, command="scenario-cost")
+    run_dir = runrecord.write(cfg, rec).parent
+    try:
+        b = _build_scenario(scenario_id)
+        c = _scenario_cost(b, stage)
+        (run_dir / "cost.json").write_text(json.dumps(c, indent=1, default=str))
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["scenario"] = {"id": b["scenario"].id, "spec_hash": b["scenario"].spec_hash}
+    rec["result"] = {k: c[k] for k in ("price_base_year", "optimism_bias_stage", "complete", "not_costed", "against")} | {
+        "capex": {k: c["capex"][k] for k in ("raw", "with_optimism_bias")},
+        "opex_per_year": {k: v for k, v in c["opex_per_year"].items() if k != "lines"}, "table": str(run_dir / "cost.json")}
+    m = lambda v: f"£{v / 1e6:,.1f}m" if abs(v) >= 1e6 else f"£{v / 1e3:,.0f}k"  # noqa: E731
+    click.echo(f"{b['scenario'].id} against {c['against']}, {c['price_base_year']} prices")
+    for x in c["capex"]["lines"]:
+        cost = "not costed" if x["cost"] is None else f"{m(x['low'])} – {m(x['cost'])} – {m(x['high'])}  (+{x['ob']:.0%})"
+        click.echo(f"  {x['item']:<58} {x['quantity']:>8g} {x['per']:<10} {cost}  [{x['tag']}]")
+    r, o = c["capex"]["raw"], c["capex"]["with_optimism_bias"]
+    click.echo(f"  capital, low – central – high: {m(r['low'])} – {m(r['central'])} – {m(r['high'])}; with optimism bias "
+               f"(stage {c['optimism_bias_stage']}) {m(o['low'])} – {m(o['central'])} – {m(o['high'])}")
+    for x in c["opex_per_year"]["lines"]:
+        cost = "not costed" if x["cost"] is None else f"{m(x['low'])} – {m(x['cost'])} – {m(x['high'])} a year"
+        click.echo(f"  {x['item']:<58} {x['quantity']:>12,.0f} {x['per']:<18} {cost}  [{x['tag']}]")
+    oy = c["opex_per_year"]
+    click.echo(f"  operating, a year: {m(oy['low'])} – {m(oy['central'])} – {m(oy['high'])}")
+    for n in c["not_costed"]:
+        click.echo(f"  NOT COSTED: {n}")
+    for n in c["notes"]:
+        click.echo(f"  note: {n}")
+    click.echo(f"  placeholders behind these figures: {', '.join(c['unit_costs_used_by_tag'].get('PLACEHOLDER', [])) or 'none'}")
+    click.echo(c["caveat"])
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @scenario.command("draw-rail")
 @click.argument("spec", type=click.Path(exists=True))
 def scenario_draw_rail(spec: str) -> None:

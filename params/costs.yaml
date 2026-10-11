@@ -1,55 +1,457 @@
-# Unit cost library (SPEC §8.3). Every entry: value, unit, price_year, source, tag.
-# Seed figures from the spec are PLACEHOLDER until the cited publication has been
-# opened and the figure confirmed (rule 3); the claimed source is in `note`.
-# Capex is ±50% at best (SPEC §11 item 14) — report ranges, not points, once sourced.
+# Unit cost library (SPEC §8.3; plans/P3.md D9, P3c-1). Sources and access dates: sources.md,
+# "P3c datasets and sources".
+#
+# Every entry: value, range (where the source gives one), unit, price_year, source, tag, and
+# for capital items the TAG optimism-bias category it is uplifted by (`ob_category`).
+# Values are stored as published, in the source's own price year. The cost engine
+# (src/lab/costs.py) rebases each to the price base: capital items with the ONS
+# construction output price index for new infrastructure work, operating items with the
+# GDP deflator in the TAG data book (`index: gdp`).
+#
+# Rules the engine follows (TAG unit A1.2, May 2025, opened 2026-10-10):
+# - Optimism bias goes on the base cost WITHOUT risk or contingency (A1.2 §3.5.8 and the
+#   worked example in Appendix A, where the OB-adjusted and the risk-adjusted estimates are
+#   alternatives and the appraisal carries the OB-adjusted one). So every sourced capital
+#   value here is net of its source's risk allowance, contingency and optimism bias, or
+#   says that it could not be separated.
+# - A scheme made of different kinds of work is uplifted part by part (§3.5.16): track,
+#   tunnels, stations and vehicles each take their own category.
+# - Contingency belongs to the financial case only (§3.2.24); the lab reports no
+#   contingency.
+# Capital costs are ±50% at best (SPEC §11 item 14): the engine reports low, central and
+# high, never a point.
 
 _meta:
   currency: GBP
-  price_base_year: null    # choose one base year and deflate every entry to it (P3)
-  status: P0 skeleton
+  price_base_year: 2025
+  status: P3c-1 — restructured per D9; placeholders listed by `lab cost` and `lab compare`
 
-capex_per_route_km:
-  light_rail:
-    at_grade_street:
-      value: 25.0e6
-      range: [20.0e6, 30.0e6]
-      unit: GBP per route-km, incl. vehicles
-      price_year: null
-      tag: PLACEHOLDER
-      note: UK tram ballpark per spec — Bath & Bristol Trams / D. Walmsley; verify
-    low_cost_vlr:
-      value: 7.0e6
-      unit: GBP per route-km
-      price_year: null
-      tag: PLACEHOLDER
-      note: Coventry VLR claim per spec; unproven even once sourced
-  bus: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: not yet sourced}
-  brt: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: not yet sourced}
+indices:
+  construction_infrastructure:
+    value: {2014: 99.3, 2015: 100.0, 2016: 101.2, 2017: 102.0, 2018: 105.5, 2019: 110.6,
+            2020: 112.3, 2021: 116.4, 2022: 129.5, 2023: 137.4, 2024: 140.2, 2025: 143.6}
+    unit: index, 2015 = 100; calendar-year mean of the monthly index
+    tag: SOURCED
+    source: >-
+      ONS, Construction output price indices, Quarter 2 (April to June) 2026 (released
+      13 Aug 2026), Table 2 "New work output prices", column "Infrastructure"; annual means
+      of the twelve monthly values computed here. The series starts in January 2014.
+  gdp_deflator:
+    value: {2009: 70.874, 2010: 71.814, 2011: 73.593, 2012: 74.731, 2013: 76.342, 2014: 77.560,
+            2015: 78.081, 2016: 79.434, 2017: 80.661, 2018: 82.244, 2019: 84.268, 2020: 88.533,
+            2021: 88.972, 2022: 94.026, 2023: 100.0, 2024: 103.895, 2025: 107.755}
+    unit: index, 2023 = 100
+    tag: SOURCED
+    source: >-
+      DfT, TAG data book v2.03 (May 2026), sheet "Annual Parameters", GDP deflator: 1990–2025
+      from the ONS MNF2 series published 12 Feb 2026.
+  construction_real_growth_before_2014:
+    value: 0.021
+    unit: growth a year above the GDP deflator, for capital costs priced before 2014
+    tag: SOURCED
+    source: >-
+      DfT, TAG data book v2.03, Table A1.2.1 "Cost inflation series": for 2010/11 to 2014/15,
+      before the ONS index exists, real construction cost inflation is taken as 2.1
+      percentage points a year (the Pmean uplift).
 
-alignment_multiplier:          # applied to at-grade cost
-  tunnel:
-    value: 5.0
-    range: [4.0, 6.0]
-    unit: x at-grade
+optimism_bias:
+  default_stage:
+    value: 1
+    unit: TAG stage (1 = strategic outline, 2 = outline, 3 = full business case)
+    tag: MODELLED
+    reasoning: every scheme in the lab is a concept; Robbie's decision at the P3b opening stop (2026-10-10)
+  rail:
+    value: [0.56, 0.33, 0.30]
+    unit: uplift on base capital cost at stages 1, 2, 3
+    tag: SOURCED
+    source: "DfT, TAG unit A1.2 (May 2025), Table 7: Rail — metro, light rail, guided buses on tracks, line upgrades, high-speed rail"
+  fixed_links:
+    value: [0.55, 0.32, 0.28]
+    unit: uplift on base capital cost at stages 1, 2, 3
+    tag: SOURCED
+    source: "DfT, TAG unit A1.2 (May 2025), Table 7: Fixed links — bridges and tunnels"
+  buildings:
+    value: [0.70, 0.48, 0.44]
+    unit: uplift on base capital cost at stages 1, 2, 3
+    tag: SOURCED
+    source: "DfT, TAG unit A1.2 (May 2025), Table 7: Building projects — stations and terminal buildings"
+  rolling_stock:
+    value: [0.61, 0.38, 0.35]
+    unit: uplift on base capital cost at stages 1, 2, 3
+    tag: SOURCED
+    source: "DfT, TAG unit A1.2 (May 2025), Table 7: Rolling stock — powered and unpowered vehicles (new stock bought, not leased)"
+  roads:
+    value: [0.46, 0.23, 0.20]
+    unit: uplift on base capital cost at stages 1, 2, 3
+    tag: SOURCED
+    source: "DfT, TAG unit A1.2 (May 2025), Table 7: Roads — motorway, trunk roads, local roads"
+  operating:
+    value: 0.0
+    unit: uplift on operating cost
     tag: PLACEHOLDER
-    note: Halcrow Fox 2000 via Flyvbjerg et al., per spec; verify
+    note: >-
+      Lead: the WECA MetroWest Phase 2 business case applies 1% to rail operating costs at
+      full business case, citing TAG unit A5.3 Table 3. A5.3 has not been opened, and
+      A1.2 §3.5.18 says the evidence for operating-cost uplifts is thin.
+
+# ---------------------------------------------------------------- capital: way and works
+# £ per route-km of NEW construction, by mode and alignment type. `existing_rail` costs
+# nothing here: works to existing track (electrification, doubling, junctions) are separate
+# items below and are costed only where a scenario lists them.
+capex_per_route_km:
+  tram:
+    at_grade_street:
+      value: 34.1e+6
+      range: [34.1e+6, 70.2e+6]
+      unit: GBP per route-km, double track with stops, without vehicles
+      price_year: 2021
+      ob_category: rail
+      tag: SOURCED
+      source: >-
+        Central: City of Edinburgh Council, Edinburgh Tram York Place to Newhaven Final
+        Business Case (Feb 2019), Table 15 and §2.2: capital costs to completion £156.7m
+        (before £31.9m risk and 6% optimism bias) for about 4.6 km with eight stops, no new
+        trams; a budget in outturn prices for work done 2019–2023, taken here as 2021 prices
+        (the middle of the spend). High: Greater Manchester Combined Authority, "Metrolink
+        breaks ground as works start on new Trafford Park line": a £350m funding package
+        for 5.5 km and six stops (£63.6m per km), whose risk allowance and vehicle content
+        are not stated, built 2017–2020: taken as 2018 prices and restated here in 2021
+        prices with the index below (× 116.4 ÷ 105.5 = £70.2m).
+      note: >-
+        Two schemes are not a distribution. Stops are inside the rate (eight in 4.6 km and
+        six in 5.5 km), so tram stops at grade are not costed again. Lead not opened: the
+        West Midlands Wednesbury – Brierley Hill extension (the combined authority's
+        decision page returned 403).
+    at_grade_segregated:
+      value: 34.1e+6
+      range: [34.1e+6, 70.2e+6]
+      unit: GBP per route-km, double track with stops, without vehicles
+      price_year: 2021
+      ob_category: rail
+      tag: MODELLED
+      reasoning: >-
+        No separate source opened. Taken as the street rate: both sourced schemes mix
+        street and segregated running, and segregated track saves utility diversions but
+        adds earthworks and structures.
+  light_rail:
+    at_grade_street: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: "same thing as tram in this library; the engine reads tram"}
+  low_cost_vlr:
+    at_grade_street:
+      value: 7.0e+6
+      unit: GBP per route-km
+      tag: PLACEHOLDER
+      note: Coventry very light rail claim per spec; not opened, and unproven even once sourced
+  brt:
+    at_grade_segregated:
+      value: 28.9e+6
+      unit: GBP per route-km
+      price_year: 2021
+      ob_category: roads
+      tag: PLACEHOLDER
+      note: >-
+        Not sourced. Seed: the tram rate ÷ 1.18, from the WECA mass transit draft
+        strategic outline case (WSP, Jan 2023, §4.3.6), which costs steel-wheeled options
+        18% above rubber-wheeled on "appropriate cost line items" — so dividing the whole
+        rate overstates the saving.
+    at_grade_street: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: not sourced}
+  bus:
+    at_grade_street: {value: 0.0, unit: GBP per route-km, tag: MODELLED, reasoning: "a bus route on existing roads needs no new way; stops and priority measures are not costed (listed as not costed in every report)"}
+  heavy_rail:
+    at_grade_segregated: {value: null, unit: GBP per route-km of new double track at grade, tag: PLACEHOLDER, note: "not sourced; lead: Network Rail and DfT figures for reopened lines (Northumberland line, Portishead DCO funding statement)"}
+    elevated: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: not sourced}
+
+alignment_multiplier:          # for modes with no sourced tunnel or viaduct rate of their own
   elevated:
     value: 2.25
     range: [2.0, 2.5]
     unit: x at-grade
     tag: PLACEHOLDER
-    note: Halcrow Fox 2000 via Flyvbjerg et al., per spec; verify
+    note: Halcrow Fox 2000 via Flyvbjerg et al., per spec; not opened
 
-optimism_bias:
-  note_only:
-    value: null
-    unit: uplift by project stage
-    tag: PLACEHOLDER
-    note: TAG A1.2 table by scheme type and stage; enter in P3
+# Bored tunnel, built up as the HS2 guide does. A tunnel run of L km costs
+#   L × (construction + spoil + systems + time-related) + fixed per drive + 2 TBMs
+#   + portals + shafts.
+tunnel:
+  twin_bore_construction:
+    value: 22.0e+6
+    range: [22.0e+6, 25.0e+6]
+    unit: GBP per route-km of twin single-track tunnel, with cross passages, track slab base and walkways
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: >-
+      HS2 Ltd, "A Guide to Tunnelling Costs" (LWM-HS2-HY-PPR-000-000076, 2015), §3.3:
+      £22,000 per route metre with an earth-pressure-balance machine, £25,000 with a slurry
+      machine; 2Q2011 prices; what a principal contractor charges, without the employer's
+      project management, design or land.
+    note: >-
+      High-speed tunnels of about 8.8 m internal diameter: larger than a suburban or tram
+      tunnel needs, so on the high side for the civil works. The IPA / British Tunnelling
+      Society benchmark (2018) confirms cost rises with diameter but prints only charts.
+  spoil_disposal:
+    value: 3.0e+6
+    range: [3.0e+6, 4.5e+6]
+    unit: GBP per route-km of twin tunnel
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.4: £3,000 (sustainable placement) to £4,500 (commercial tip) per route metre; 2Q2011"
+  systems:
+    value: 4.0e+6
+    unit: GBP per route-km (lighting, drainage, ventilation, fire and life safety; not track, power or signalling)
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.7: £4,000 per route metre; 2Q2011"
+  time_related_per_week:
+    value: 1.1e+6
+    unit: GBP per week of the tunnelling site
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.2.2; 2Q2011"
+  weeks_per_km:
+    value: 15.0
+    unit: weeks of site per route-km (boring at 80 m a week, clear-out at 400 m a week)
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), Appendix A: 7,000 m at 80 m/week and 400 m/week = 105 weeks"
+  fixed_per_drive:
+    value: 35.0e+6
+    range: [35.0e+6, 45.0e+6]
+    unit: GBP per tunnel drive (site, power, segment handling; slurry plant at the high end)
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.2.1; 2Q2011"
+  tbm_each:
+    value: 18.0e+6
+    range: [16.0e+6, 18.0e+6]
+    unit: GBP per tunnel boring machine; two per twin-bore drive
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.1: slurry £16m, earth pressure balance £18m; 2Q2011"
+    note: the WECA mass transit draft case left the machines out of its totals
+  portal_each:
+    value: 20.0e+6
+    range: [20.0e+6, 65.0e+6]
+    unit: GBP per portal
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.5: £20m to £65m depending on topography; up to 700 m long at 3%; 2Q2011"
+    note: central is the guide's own example (hilly ground); flat ground is nearer the top
+  vent_shaft_each:
+    value: 12.0e+6
+    range: [10.0e+6, 30.0e+6]
+    unit: GBP per shaft
+    price_year: 2011
+    ob_category: fixed_links
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.6 and Appendix A: £10m to £30m, urban sites dearer; £12m in the rural example; 2Q2011"
+    note: urban shafts are the dear ones, so the central value is low for a city tunnel
+  vent_shaft_spacing_km:
+    value: 3.0
+    unit: km of tunnel per ventilation shaft
+    tag: SOURCED
+    source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.6: typically every 3 km"
+  single_bore: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: "not sourced; a single-track tunnel is costed as twin bore until it is"}
+  track_and_power_in_tunnel: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: "not sourced: track, overhead line or conductor rail and signalling inside a tunnel are NOT in the HS2 guide's rates"}
 
+# ---------------------------------------------------------------- capital: stations
+stations:
+  heavy_rail:
+    surface:
+      value: 18.2e+6
+      range: [18.2e+6, 32.9e+6]
+      unit: GBP per new station on an existing line, with its access works
+      price_year: 2023
+      ob_category: buildings
+      tag: SOURCED
+      source: >-
+        West of England Combined Authority, MetroWest Phase 2 Full Business Case Stage 2
+        Update (WSP, Oct 2025). Central: §8.2.7, Ashley Down station delivered for £18.2m
+        (two platforms, opened 2024; outturn, taken as 2023 prices). High: Table 7-19 and
+        §7.13.3–4, £72.0m in nominal prices for North Filton (two platforms) and Henbury
+        (one platform) with highway access, parking and a walking and cycling link, before
+        the 20% contingency: £68.8m at 2025/26 prices on the document's own 4% a year,
+        £34.4m a station.
+      note: the high value is restated in 2023 prices (£34.4m × 137.4 ÷ 143.6 = £32.9m) so that one price year serves the entry
+    underground_box:
+      value: 234.0e+6
+      unit: GBP per station built as an open box, main civil works contract only
+      price_year: 2015
+      ob_category: buildings
+      tag: SOURCED
+      source: >-
+        National Audit Office, Completing Crossrail (HC 2106, May 2019), Figure 6: Woolwich
+        station main civils, forecast final cost £234m at December 2018. Spent over about
+        2011–2018, taken as 2015 prices.
+      note: >-
+        A London station for 200 m trains; contractors' forecasts that include risk still
+        open in 2018; no fit-out, systems or land. Large for the West of England, and the
+        only figure opened: treat as an upper bound.
+    underground_mined:
+      value: 412.0e+6
+      range: [282.0e+6, 659.0e+6]
+      unit: GBP per mined station, main civil works contract only
+      price_year: 2015
+      ob_category: buildings
+      tag: SOURCED
+      source: >-
+        National Audit Office, Completing Crossrail (HC 2106, May 2019), Figure 6: main
+        civils forecasts at December 2018 for Tottenham Court Road (£282m), Liverpool
+        Street (374), Bond Street (412), Paddington (571), Farringdon (634) and Whitechapel
+        (659); central is the lower-middle of the six. Taken as 2015 prices.
+      note: >-
+        As for the box station: 200 m platforms under central London, outturn after large
+        overruns (154% to 499% over the award targets). An upper bound for a shorter
+        station; no smaller underground station's cost has been opened. Lead: the WECA
+        mass transit draft case scaled a "previous example for Canary Wharf station" but
+        does not print the figure.
+    bay_platform: {value: null, unit: GBP each, tag: PLACEHOLDER, note: not sourced}
+  tram:
+    at_grade: {value: 0.0, unit: GBP per stop, tag: MODELLED, reasoning: "inside the per-km rate, which comes from schemes with a stop every 0.6 to 0.9 km"}
+  brt:
+    at_grade: {value: null, unit: GBP per stop, tag: PLACEHOLDER, note: not sourced}
+  default_underground:
+    value: underground_mined
+    unit: the station type a new stop on a tunnel leg takes unless its stop record says `station_type`
+    tag: MODELLED
+    reasoning: the dearer of the two, so an unstated station type cannot flatter a scheme
+
+# ---------------------------------------------------------------- capital: works to existing railway
+# Costed only where a scenario lists the quantity; no op does yet (plans/schemes.md needs them).
+rail_works:
+  electrification_simple:
+    value: 0.875e+6
+    range: [0.75e+6, 1.0e+6]
+    unit: GBP per single-track km
+    price_year: 2018
+    ob_category: rail
+    tag: SOURCED
+    source: >-
+      Railway Industry Association, Electrification Cost Challenge (March 2019), as
+      presented by RIA to the Permanent Way Institution on 24 April 2019: "Simpler projects
+      £0.75m to £1m/stk". Central is the middle of the range.
+    note: an industry body's target from its better projects, not an average; Great Western outturned far higher
+  electrification_complex:
+    value: 1.25e+6
+    range: [1.0e+6, 1.5e+6]
+    unit: GBP per single-track km
+    price_year: 2018
+    ob_category: rail
+    tag: SOURCED
+    source: "Railway Industry Association, Electrification Cost Challenge (March 2019), RIA presentation of 24 April 2019: \"Complex projects £1m to £1.5m/stk\""
+  track_doubling: {value: null, unit: GBP per km, tag: PLACEHOLDER, note: not sourced}
+  grade_separated_junction: {value: null, unit: GBP each, tag: PLACEHOLDER, note: not sourced}
+
+# ---------------------------------------------------------------- capital: depot and fleet
+depot:
+  any:
+    value: 50.0e+6
+    unit: GBP per depot, direct construction cost
+    price_year: 2022
+    ob_category: buildings
+    tag: SOURCED
+    source: >-
+      West of England Combined Authority, Mass Transit (Future4WEST) draft Financial
+      Dimension (WSP, Jan 2023; a draft released by the authority), §4.3.11: "a direct
+      construction cost of circa £50m", benchmarked on HS2, before indirect costs and land.
+    note: one figure for every mode and fleet size; the source calls it indicative. Charged once per scheme that adds a new mode or a fleet with no depot today
 fleet:
+  tram_vehicle:
+    value: 3.98e+6
+    unit: GBP per tram
+    price_year: 2019
+    ob_category: rolling_stock
+    tag: SOURCED
+    source: >-
+      West Midlands Combined Authority, "West Midlands Metro orders 21 new trams" (7 Oct
+      2019): contracts worth £83.5m for 21 battery trams "plus technical support and
+      battery management services over 30 years" — £3.98m a tram, so high for the vehicle
+      alone.
+    note: "lead, not opened in a primary source and so not used: Transport for Greater Manchester's £72m order for 27 trams (2018), £2.67m each"
+  heavy_rail_vehicle: {value: null, unit: GBP per vehicle, tag: PLACEHOLDER, note: "not sourced. Heavy rail fleet is costed as a lease (opex.heavy_rail.lease_per_unit_year), as the operator does today"}
+  brt_vehicle: {value: null, unit: GBP per vehicle, tag: PLACEHOLDER, note: not sourced}
+  bus_vehicle: {value: null, unit: GBP per vehicle, tag: PLACEHOLDER, note: "not sourced; the bus operating cost per km already carries the vehicle (depreciation and leasing)"}
   spare_ratio:
     value: 0.1
     unit: share of peak fleet
     tag: PLACEHOLDER
-    note: typical figure; source in P3
+    note: typical figure; not sourced
+  layover_min:
+    value: 5.0
+    unit: minutes at each end of a round trip
+    tag: PLACEHOLDER
+    note: not sourced; sets the fleet with the round trip and the headway
+
+# ---------------------------------------------------------------- operating
+opex:
+  annualisation:
+    value: 300.0
+    unit: weekdays' worth of service in a year
+    tag: PLACEHOLDER
+    note: not sourced; lead — count the year's departures in the timetable data against the modelled Wednesday
+  bus:
+    per_vehicle_km:
+      value: 3.17
+      range: [3.17, 3.71]
+      unit: GBP per vehicle-km, all operating costs
+      price_year: 2024
+      index: gdp
+      tag: SOURCED
+      source: >-
+        DfT, Bus statistics table BUS04gi_km (revised, updated March 2026): operating cost
+        per vehicle kilometre on local bus services at current prices, year ending March
+        2025 — English non-metropolitan areas 317p, English metropolitan areas 371p.
+        Before Bus Service Operators Grant; figures for 2022 to 2025 are provisional.
+  brt: {per_vehicle_km: {value: null, unit: GBP per vehicle-km, tag: PLACEHOLDER, note: "not sourced; the engine uses the bus rate and says so"}}
+  tram:
+    per_vehicle_km: {value: null, unit: GBP per vehicle-km, tag: PLACEHOLDER, note: "not sourced; lead: operators' accounts (Edinburgh Trams, West Midlands Metro)"}
+  heavy_rail:
+    per_train_km:
+      value: 1.669
+      unit: GBP per train-km of a three-car diesel unit (fuel, light maintenance, track access)
+      price_year: 2025
+      index: gdp
+      tag: SOURCED
+      source: >-
+        WECA, MetroWest Phase 2 FBC Stage 2 Update (Oct 2025), Tables 8-5 and 8-7 (costs
+        from Great Western Railway, 2025 prices): mileage-based costs £116,000 a year for
+        43,197 miles.
+    lease_per_unit_year:
+      value: 606000.0
+      unit: GBP per three-car diesel unit per year (capital and maintenance lease)
+      price_year: 2025
+      index: gdp
+      tag: SOURCED
+      source: "WECA, MetroWest Phase 2 FBC Stage 2 Update (Oct 2025), Tables 8-5 and 8-7: lease £606,000 a year for one unit"
+    staff_per_unit_year:
+      value: 630000.0
+      unit: GBP per unit in service per year (5.0 drivers and 3.8 conductors)
+      price_year: 2025
+      index: gdp
+      tag: SOURCED
+      source: "WECA, MetroWest Phase 2 FBC Stage 2 Update (Oct 2025), Tables 8-5 and 8-7: train staff £630,000 a year for one unit on an hourly all-day service"
+    station_per_year:
+      value: 139590.0
+      range: [139590.0, 378205.0]
+      unit: GBP per new station per year, operation and maintenance without staff
+      price_year: 2025
+      index: gdp
+      tag: SOURCED
+      source: "WECA, MetroWest Phase 2 FBC Stage 2 Update (Oct 2025), Table 8-6: Henbury £139,590 (one platform), North Filton £378,205 (two platforms, beside an arena)"
+  tunnel_maintenance_per_km_year:
+    value: 1.25e+6
+    unit: GBP per km of tunnel per year
+    price_year: 2020
+    index: gdp
+    tag: SOURCED
+    source: "WECA, Mass Transit (Future4WEST) draft Financial Dimension (WSP, Jan 2023), §4.3.42: £1,250 per metre a year, 2020/21 prices, \"benchmarks from similar projects\""
+  renewals_share_of_capex:
+    value: 0.29
+    unit: share of capital cost, over a 60-year appraisal period
+    tag: SOURCED
+    source: "WECA, MetroWest Phase 2 FBC Stage 2 Update (Oct 2025), §7.13.7: renewals taken as 29% of capital costs, in thirds at years 15, 30 and 45"
+    note: reported beside the capital cost; not added to it

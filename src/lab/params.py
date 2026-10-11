@@ -27,7 +27,7 @@ TAGS = {
 }
 # Keys that describe a parameter rather than being parameters themselves.
 META_KEYS = {"value", "unit", "tag", "source", "target", "reasoning", "note",
-             "price_year", "range"}
+             "price_year", "range", "ob_category", "index"}
 
 
 class ParamError(ValueError):

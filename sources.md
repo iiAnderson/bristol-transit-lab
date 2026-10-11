@@ -1412,6 +1412,59 @@ P3b) and the generated feeds (builds `20261011T121755`, `…121804`, `…121819`
   today (the freight line); "around 25 minutes" implies about 70 km/h. Lead, not urgent:
   the design line speed in the DCO or business case documents (none opened).
 
+### P3c datasets and sources: the cost library (2026-10-11)
+
+All opened on 2026-10-11 unless noted; copies in `data/raw/refs/` (not in git). Figures are
+in `params/costs.yaml`, in each source's own price year; `src/lab/costs.py` rebases them.
+
+| Dataset / document | URL | Accessed | Licence | Version / notes |
+|---|---|---|---|---|
+| ONS, Construction output price indices | https://www.ons.gov.uk/businessindustryandtrade/constructionindustry/datasets/interimconstructionoutputpriceindices/current (file `bulletindataset9.xlsx`) | 2026-10-11 | OGL v3.0 | Quarter 2 2026, released 13 Aug 2026; sha256 `ea0cbfe6573be522…`. Table 2 "New work", column "Infrastructure", 2015 = 100, monthly from Jan 2014; annual means computed here (2014 99.3 … 2025 143.6). **The capital-cost index.** The "All new work" column (147.5 in 2025) is not used: TAG's own cost-inflation table names the infrastructure series |
+| DfT, TAG data book v2.03 (May 2026) | https://www.gov.uk/government/publications/tag-data-book (file `tag-data-book-v2-03.xlsm`) | 2026-10-11 | OGL v3.0 | sha256 `d5a24066dd11bff9…`. Sheet "Annual Parameters": GDP deflator, 2023 = 100 (2025 = 107.755), ONS MNF2 of 12 Feb 2026. **The operating-cost index.** Table A1.2.1: before the ONS index starts, real construction inflation of 2.1 points a year above the deflator — used to bring 2011 prices to 2014 |
+| DfT, TAG unit A1.2 Scheme Costs (May 2025) | (opened 2026-10-10, P3b opening stop) | 2026-10-10 | OGL v3.0 | Table 7 optimism-bias uplifts by category and stage. **Read again for the rule:** §3.5.8 and Appendix A apply the uplift to the base cost *without* the risk allowance (the OB-adjusted and risk-adjusted estimates are alternatives; the larger OB one is carried); §3.2.24 and §3.5.3 keep contingency to the financial case; §3.5.16 uplifts a mixed scheme part by part |
+| WECA, MetroWest Phase 2 FBC Stage 2 Update (WSP, Oct 2025) | (opened 2026-10-10) | 2026-10-10 | — (cited) | New uses: Table 7-19 capital £72.0m nominal before the 20% contingency (16.7 / 26.6 / 28.7 over 2025/26–2027/28; £68.8m at 2025/26 prices on its own 4% a year); §8.2.7 Ashley Down station £18.2m; Tables 8-5 to 8-7 operating costs from GWR at 2025 prices (one three-car unit, 43,197 miles, lease £606k, mileage £116k, train staff £630k; stations £139,590 and £378,205); §7.13.7 renewals 29% of capital. Tables 8-1 to 8-3 are redacted |
+| WECA, Mass Transit (Future4WEST) draft Financial Dimension (WSP, Jan 2023) | https://www.westofengland-ca.gov.uk/wp-content/uploads/2023/07/DRAFT-Future4WEST_FinancialDimension.pdf | 2026-10-11 | — (cited) | A draft marked confidential, published by the authority in July 2023. Used: depot "circa £50m" direct cost (§4.3.11); tunnel maintenance £1,250 per metre a year at 2020/21 prices (§4.3.42); steel-wheeled 18% above rubber-wheeled on some lines (§4.3.6); its 40% risk allowance and its indirect-cost percentages noted, not used. **Gives option totals but no route lengths, so no cost per km can be taken from it;** it left land, demolition and the tunnelling machines out |
+| HS2 Ltd, A Guide to Tunnelling Costs (2015) | https://assets.publishing.service.gov.uk/media/5a819fe740f0b623026984f5/HS2_Guide_to_Tunnelling_Costs.pdf | 2026-10-11 | OGL v3.0 | Rates at 2Q2011 prices, contractor's costs only: twin tunnel £22,000–25,000 per route metre, spoil £3,000–4,500, systems £4,000, site £1.1m a week, fixed £35–45m a drive, machines £16–18m each, portals £20–65m, shafts £10–30m every 3 km. For tunnels of about 8.8 m bore. **The tunnel build-up** |
+| IPA / British Tunnelling Society, Benchmarking tunnelling costs and production rates in the UK (2018) | https://assets.publishing.service.gov.uk/media/5c07dc95ed915d7475317c9b/CCS207_CCS1118018748-001_Benchmarking_tunnelling_costs_and_production_rates_in_the_UK_Web_Accessible.pdf | 2026-10-11 | OGL v3.0 | Sixteen UK tunnels, 2016/17 prices; cost against diameter as charts only, no table. Read for method; no figure taken |
+| National Audit Office, Completing Crossrail (HC 2106, May 2019) | https://www.nao.org.uk/wp-content/uploads/2019/05/Completing-Crossrail.pdf | 2026-10-11 | OGL v3.0 | Figure 6, station main civils forecasts at Dec 2018: Woolwich £234m (a box), Tottenham Court Road 282, Liverpool Street 374, Bond Street 412, Paddington 571, Farringdon 634, Whitechapel 659. **The only underground station costs opened**: London stations for 200 m trains, after overruns of 154–499% |
+| City of Edinburgh Council, Edinburgh Tram York Place to Newhaven Final Business Case (Feb 2019) | https://www.edinburgh.gov.uk/tramstonewhaven/downloads/file/66/final-business-case | 2026-10-11 | — (cited) | Table 15: capital to completion £156.7m, risk £31.9m, optimism bias 6% (£11.3m), total £207.3m; §2.2 about 4.6 km. The Nov 2020 refresh (also opened) keeps the budget. That it finished within budget is reported by others and was not opened in a council document |
+| Greater Manchester Combined Authority, "Metrolink breaks ground as works start on new Trafford Park line" | https://www.greatermanchester-ca.gov.uk/news/metrolink-breaks-ground-as-works-start-on-new-trafford-park-line/ | 2026-10-11 | — (cited) | "£350 million", "3.4 mile (5.5km)", six stops. A funding package: what it holds for risk or vehicles is not stated |
+| West Midlands Combined Authority, "West Midlands Metro orders 21 new trams" (7 Oct 2019) | https://www.wmca.org.uk/news/west-midlands-metro-orders-21-new-trams-for-rapidly-expanding-network/ | 2026-10-11 | — (cited) | "contracts worth £83.5 million" for 21 battery trams "plus technical support and battery management services over 30 years" |
+| Railway Industry Association, Electrification Cost Challenge (March 2019), as RIA's presentation to the Permanent Way Institution, 24 Apr 2019 | https://www.thepwi.org/wp-content/uploads/2021/02/Presentation_190424_The-electrification-cost-challenge.pdf | 2026-10-11 | — (cited) | "Simpler projects £0.75m to £1m/stk", "Complex projects £1m to £1.5m/stk". The report itself would not download (two hosts); the 2026 second edition (opened) prints costs only as a chart |
+| DfT, Bus statistics BUS04 (costs, fares and revenue), current prices | https://www.gov.uk/government/statistical-data-sets/bus-statistics-data-tables (file `bus04i.ods`) | 2026-10-11 | OGL v3.0 | Revised, last updated March 2026. Table BUS04gi_km, year ending March 2025: English non-metropolitan areas 317p per vehicle-km, metropolitan 371p; provisional; before BSOG |
+
+**Leads, not opened, and not in the library:** the West Midlands Wednesbury – Brierley
+Hill extension's cost (the authority's decision page returned 403; press figures of £449.5m
+rising to about £650m for 11 km); Transport for Greater Manchester's £72m order for 27
+trams; TAG unit A5.3 (rail operating-cost optimism bias); Halcrow Fox 2000 (the tunnel and
+viaduct multipliers in the spec); the Coventry very-light-rail claim; any cost for new
+heavy-rail track at grade, track doubling, a grade-separated junction, a bay platform, a
+heavy-rail vehicle, a BRT scheme or tram operation.
+
+### P3c findings (2026-10-11)
+
+- **The spec's tram seed is low by about half.** £20–30m per route-km "including
+  vehicles" against £34.1m per km at Edinburgh before risk and without vehicles (£42.1m at
+  2025 prices) and £63.6m at Trafford Park (£86.6m at 2025 prices).
+- **Optimism bias goes on the base cost without risk** (TAG A1.2), so sourced figures
+  were stripped of risk and contingency where the source allowed: Edinburgh £156.7m, not
+  £207.3m; MetroWest £72.0m, not £86.8m. Trafford Park and the Crossrail station
+  contracts could not be stripped and sit at the high end or are marked as upper bounds.
+- **Rebasing.** 2011 → 2025 is × 1.622 for capital (deflator and 2.1 points a year to
+  2014, then the infrastructure index); 2018 → 2025 × 1.361; 2021 → 2025 × 1.234.
+- **YAML reads `25.0e6` as text**, not a number: the seed figures in the P0 cost file were
+  strings. The library now writes `e+6` and the engine refuses a non-number.
+- **Check against a real scheme.** B2028's Henbury extension (two stations): £38.0m
+  central, £68.8m high at 2025 prices against the business case's £68.8m before
+  contingency — the high end is that scheme, the central is Ashley Down twice. Operating:
+  one unit's lease, crew and two stations come to about £1.5m a year against the business
+  case's £2.55m, which also carries £0.68m of station staff the library leaves out.
+- **Underground stations swamp everything.** The test tunnel (2.1 km, two stations)
+  costs £300m for the tunnel and £1.18bn for two stations at the Crossrail rate. No smaller
+  station's cost has been opened; this is the weakest number in the library.
+- **Not costed anywhere yet:** works to existing railway (so the Portishead line's
+  reopening costs only its two stations), track and power inside a tunnel, land.
+
 ## Phase status
 
 | phase | status |
