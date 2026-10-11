@@ -372,6 +372,15 @@ ops:
     departure; each new journey takes the stop times of the existing journey nearest in
     time, restriction copies and all. The same headway on evenly timed service
     reproduces it exactly; an uneven timetable cannot be recovered from a headway.
+  - *Speed-profile legs carry an allowance* (`scenario.profile_allowance`, +15%
+    `[CALIBRATED]`): on the 96 sections where Darwin's working times and the profile at
+    the tagged line speed can both be had, the plain profile is 16% fast. Working-time
+    legs take none. Generated services dwell for each station's own median timetabled
+    dwell where the operator calls there today, else the profile's dwell.
+  - *Replacing a timetabled service with a generated one is not neutral:* it loses the
+    timetable's phase against its connections. Re-timing one uneven bus route to an even
+    headway with the same journeys moved about 5,000 pairs 2 minutes faster and 6,700
+    slower (sources.md). Results of that size on a re-timed route are artefact.
   - *Removing a call* gives back only the dwell timetabled there.
   - *Rail alignments* are drawn from OSM track by `lab scenario draw-rail`; each
     `existing_rail` feature names the Darwin timing points it runs between, which must

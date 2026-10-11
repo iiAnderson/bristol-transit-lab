@@ -1240,6 +1240,136 @@ generator's on-street run-time rule that would use it is not built.
 within 20 m; linking the stops would add 378 residents (0.06%) to the frequent-service
 headline.
 
+### P3b follow-up: the speed-profile allowance and the B2028 re-run (2026-10-10 – 11)
+
+Robbie's decisions on the P3b stop (plans/P3.md §8). **The B2028 figures above this heading
+(116,053 and 81,803 pairs, the journey times of the first build) are superseded.**
+
+**Sources of the two published times.**
+- *"around 25 minutes"* (Portishead – Temple Meads): Network Rail, "The Portishead line"
+  web page (URL above), checked in the page's own text on 2026-10-10: "The restored railway
+  will provide an hourly direct train from Portishead to Bristol Temple Meads in around 25
+  minutes." A sentence on a project page: no page number, no table, no timetable, no
+  calling pattern, and "around".
+- *"23 minutes"* (Temple Meads – North Filton): West of England Mayoral Combined Authority,
+  MetroWest Phase 2 Full Business Case Stage 2 Update (WSP, October 2025), **§5.2.3, page 7
+  of 207**, running text, not a table: "22 return services will call at the new stations at
+  North Filton and Henbury with a travel time of 23 minutes between Bristol Temple Meads and
+  North Filton and 26 minutes between Henbury and North Filton." The last clause is garbled
+  as printed; read here as 26 minutes Temple Meads – Henbury. Table 5-1 (page 8) has the
+  hourly Filton Abbey Wood service extended to the two stations.
+
+**The plain speed profile runs fast against the timetable** (run
+`20261010T205442-spike-profile-allowance-3a7947`). OSM tags a line speed on 95% of the
+railway in the extract (608 of 642 km). For the 96 station-to-station sections (47 station
+pairs) with five or more trains of one operator, both stations in the clip box and a line
+speed on at least 80% of the track, the profile (0.5 m/s² to the line speed, cruise, brake)
+is faster than the median working time on 93%: timetable ÷ profile has a median of 1.19
+(quartiles 1.07 and 1.32); the profile is 16% fast at the median and in total. Fitted
+allowance: **+15.0%, and no per-junction margin** (it fitted negative and is held at zero).
+Held out by station pair: median error 9%, 90th percentile 23%, total −3%. The largest
+shortfalls are approaches to terminal and junction stations (ratios of 1.3–1.6 into Temple
+Meads, Weston-super-Mare, Newport), which a percentage does not single out. The allowance
+depends on the acceleration assumed: 4% plus 5.5 s a junction at 0.3 m/s², 19% at 0.7, 23%
+at 1.0; it is fitted and applied at 0.5. `scenario.profile_allowance` `[CALIBRATED]`;
+applied to every speed-profile leg, never to working-time legs. Generated services also
+take each station's own median timetabled dwell where the operator calls there today.
+
+**The gaps, by leg, with the allowance** (build of `819a25b`):
+
+| Portishead → Temple Meads | rule | first build | with allowance |
+|---|---|---|---|
+| Portishead – Pill, 5.1 km | speed profile, 80 km/h | 4.5 min | 5.2 |
+| Pill – Parson Street, 9.7 km | speed profile, 80 km/h | 8.0 | 9.2 |
+| Parson Street – Bedminster – Temple Meads | working times (medians of 24 trains) | 6.0 | 6.0 |
+| dwells at Pill, Parson Street, Bedminster | 60 s each | 3.0 | 3.0 |
+| **total** | | **21.5** | **23.4** |
+| published | | around 25 | around 25 |
+| gap | | −3.5 (−14%) | **−1.6 (−6%)** |
+
+All of the Portishead gap is on the two new legs; the existing-track legs are today's own
+times. Today the branch is tagged at 30 mph, at which the two legs would take 22 minutes
+with the allowance, so "around 25" implies a raised line speed: about 70 km/h would meet
+it. The remaining −6% is inside the allowance's hold-out error.
+
+| Temple Meads → North Filton | rule | with allowance |
+|---|---|---|
+| Temple Meads – Lawrence Hill – Stapleton Road – Ashley Down – Filton Abbey Wood | working times (medians of 14–57 trains) | 10.0 min |
+| dwells at the four stations | each station's median today (60, 60, 60, 90 s) | 4.5 |
+| Filton Abbey Wood – North Filton, 2.35 km | speed profile, 80 km/h | 2.9 |
+| **total** | | **17.4** |
+| published | | 23 |
+| gap | | **−5.6 (−24%)** |
+
+Today's terminators are timetabled Temple Meads – Filton Abbey Wood in 14.0 minutes (median
+of 13; range 14–16), so the published 23 leaves about 8 minutes for the last 2.35 km and the
+call before it. **The allowance does not close this gap and line speed cannot:** Darwin's
+empty-stock runs take 3.0 minutes from Filton Abbey Wood to the junction and 6.5 more to
+Hallen Moor, which would put North Filton about 4–5 minutes from Filton Abbey Wood at most.
+At least 3.5 minutes of the gap is therefore something else in the business case's draft
+timetable — pathing, a longer stand at Filton Abbey Wood, or different running south of it
+— which the lab cannot see. Temple Meads – Henbury is 22.0 minutes against 26 as read
+(−4.0); the model's 4.6 minutes from North Filton to Henbury, dwell included, is longer than
+the published 3. **Unexplained; not calibrated.**
+
+**Henbury-line service.** Rebuilt as a generated service of 22 return trips, Temple Meads –
+Henbury calling at every station, replacing today's 13 and 14 Filton Abbey Wood terminators
+(which already run exactly hourly, 08:04–20:03). "Hourly" and "22 return services" fit
+together only over a 22-hour day; the trips are placed hourly from 05:00 to 02:00, which is
+`[MODELLED]`, not a published timetable. The AM and inter-peak skims see one train an hour
+either way.
+
+**Capacity, against modelled limits.** 32 sections used by B2028, none over at any offset.
+Two are exactly at their limit: the east throat of Temple Meads (16 today + 1 freight
+allowance + 1 generated = 18 against 18) and Pill – Parson Street (1 + 1 against 2, single
+track assumed). The check now adds trains hour by hour, and takes its limits from today's
+untouched timetable plus the freight allowance.
+
+**B2028 against B2026, by people** (run `20261010T212013-B2028-224820`, clean tree, networks
+`tobler-ed755f8ecf`, `tobler-755489a4ca`, `tobler-9932d7660c`; without Henbury
+`20261011T084714-B2028-no-henbury-6662e0`). Of 1,219,504 residents, AM:
+
+| residents whose AM PT time improves | B2028 | without Henbury |
+|---|---|---|
+| to the centre, by 2 min or more | **45,095** (3.7%) | 35,505 |
+| to the centre, by 5 min or more | 27,180 | 25,800 |
+| to the centre, slower by 2 min or more | 0 | 0 |
+| to jobs (jobs-weighted mean time to the jobs reachable before and after), by 2 min or more | **38,777** (3.2%) | 31,067 |
+| to jobs, by 1 min or more | 53,284 | 36,385 |
+| with a tenth of all jobs at least 2 min nearer | 78,682 | 45,911 |
+
+Inter-peak, to the centre by 2 min or more: 25,283 (21,752 without Henbury); to jobs
+25,473 (21,841). "The centre" is the first centre in config (the LSOA of highest job
+density). Pairs, for the record and ranked by people: 128,293 OA → LSOA pairs at least 2
+minutes faster in the AM (95,919 without Henbury), which is 3.8% of all resident × job
+pairs; half of the resident-weighted total comes from 216 OAs. 1,071,562 residents have
+at least one destination 2 minutes nearer, which is why a count of pairs or of people
+"with any gain" says little.
+
+**33,228 pairs are also 2 minutes or more slower in the AM, and 5,443 are lost** (31,705 and
+3,492 inter-peak). None of that is the new lines: it is the Filton Bank local service being
+replaced by a generated one, which no longer keeps today's phase against its connections.
+The null test below measures the same effect on its own. No resident is 2 minutes slower to
+the centre, and jobs within 45 minutes for the median core OA slip from 79,055 to 78,943 in
+the AM while the resident-weighted mean rises by 195.
+
+**Offsets matter where a generated service is used.** Over the 657,570 AM pairs whose usual
+routes include a generated service at any offset, the pair's median time ranges across the
+three offsets by 2.6 minutes on average (median 2.0; 90th percentile 6.0; 95th 7.7; largest
+31); 53% move by 2 minutes or more and 15% by 5 or more. Over the other 1.9 million pairs
+the mean range is 0.08 minutes. The first run's 0.25 minutes was an average over both.
+
+**Null re-timing test** (`scenarios/T004-null-retime.yaml`, run
+`20261010T210221-T004-null-retime-1392cc`). The one bus route in the feed with a single
+stop pattern, six or more AM journeys each way and clearly uneven headways (7 each way;
+gaps of 11–48 and 14–32 minutes) was re-timed to an even 26 minutes with the same 7
+journeys, one offset. Against B2026 in the AM: 4,983 pairs at least 2 minutes faster and
+6,739 slower; 106 gained and 453 lost; mean change +0.002 minutes; 4,232 residents at
+least 2 minutes slower to the centre and none faster; frequent-service coverage −340
+residents (departures move across the period's edge at downstream stops). **That is the
+artefact of evening out one modest route**, before any change in frequency: results of a
+few thousand pairs or residents on a re-timed route are within it.
+
 ## Phase status
 
 | phase | status |
@@ -1247,4 +1377,4 @@ headline.
 | P0 | done 2026-09-27 (`5be73ab`); committed and pushed to `git@github.com:iiAnderson/bristol-transit-lab.git` |
 | P1 | approved 2026-09-27; upstream `correct()` merged to upstream `main` (`1c82c76`, from `0ea228d`); external-factor fallback added after approval |
 | P2 | **complete 2026-10-09** (plans/P2.md §9). Delivered: bus and rail GTFS for Wed 23 Sep 2026 (pick-up / set-down restrictions enforced), nine archive and three live AVL days, car speeds (DfT fit + WebTRIS + ANPR layer in the Bristol built-up area), PT / walk / cycle / car skims, accessibility (DfT Connectivity ρ 0.947 OA, 0.952 LSOA), the gap map (door-to-door time difference PT − car: mean 29 min with high car terminal times, 37 with none). **Documented fails:** (1) PT spot checks, AM peak 15 of 20 against ≥ 16 (IP 18 of 20 passes) — 4 comparison artefacts, 1 model error; (2) car spot checks on held-out ANPR links, 8 of 20 (AM peak hour) and 6 of 20 (IP) within ±15% against ≥ 16. **Accepted deviations:** held-out bus speed error 27% per cell / 20% per corridor against ≤ 15%; DfT ±5% given up inside the ANPR layer's scope (Bristol roads −9.6%) in favour of ANPR, met outside it (33 of 35 roads). Leave-one-road-out 11.2% (≤ 15% ✓). Open [PLACEHOLDER]s: 4 in `params/base.yaml` (none used by P2 outputs), 8 in `params/costs.yaml` (P6). Awaiting: Robbie's review of the ANPR-layer scope map |
-| P3 | **in progress** (plans/P3.md). P3a done (frequent-service coverage on B2026). P3b at its stop: network v2 (terrain) adopted; scenario schema, validator and generator; Darwin timing points and sections; capacity check; **B2028 built from B2026 by ops** and run, with a no-Henbury sensitivity; `bus_speed_ratio` fitted; minimal `L2026`. **Flagged:** B2028's reopened lines are 14–24% faster than published (modelled speed profile, not tuned); every capacity limit is modelled; several ops are not built (`reroute`, `add_stop`, `truncate_at`, on-street legs). Open [PLACEHOLDER]s: 5 in `params/base.yaml` (the 4 from P2 plus the loose coverage cut-off), 8 in `params/costs.yaml` (**P3c**, not P6 as the P2 row says). WIMD licence to confirm before anything Welsh is published. Next: P3c |
+| P3 | **in progress** (plans/P3.md). P3a done. P3b done to its follow-up stop: network v2; scenario engine; Darwin timing points and sections; capacity check against modelled limits; `bus_speed_ratio` fitted (not to be used as fitted); minimal `L2026`; **B2028 rebuilt** with a speed-profile allowance calibrated against Darwin (+15%) and the Henbury line as 22 generated return services, re-run with a people-weighted comparison. **Flagged:** Temple Meads – North Filton is 17.4 min against a published 23, unexplained by line speed and not calibrated (Portishead is within 6%); replacing a timetabled service by a generated one makes some pairs slower as an artefact; every capacity limit is modelled; several ops are not built. Open [PLACEHOLDER]s: 5 in `params/base.yaml`, 8 in `params/costs.yaml` (**P3c**). WIMD licence to confirm before anything Welsh is published. Next: P3c, on Robbie's word |
