@@ -1,6 +1,6 @@
 # Sensitivity on the 2028 baseline (Robbie, 2026-10-10): B2028 without Henbury station,
-# which opens in March 2028. The alignment is drawn to Henbury; trains call only as far as
-# North Filton. A sibling of B2028, not its child.
+# which opens in March 2028. Trains run only as far as North Filton. A sibling of B2028,
+# not its child.
 #
 # Sources (sources.md P3b):
 # - Portishead line: Network Rail, "The Portishead line" (opened 2026-10-10): "an hourly
@@ -8,30 +8,48 @@
 #   2028, new stations at Portishead and Pill.
 # - Henbury line: West of England Combined Authority, MetroWest Phase 2 FBC Stage 2 Update
 #   (October 2025): the hourly Filton Abbey Wood service extended to North Filton (Bristol
-#   Brabazon; November 2026) and Henbury (March 2028); 23 minutes Temple Meads to North Filton.
+#   Brabazon; November 2026) and Henbury (March 2028); 23 minutes Temple Meads to North
+#   Filton; "22 return services will call at the new stations" (§5.2.3, p. 7; Table 5-1, p. 8).
 #
 # [MODELLED] in this file, each to be read as an assumption:
 # - Portishead trains call at Parson Street and Bedminster (no source for the calling pattern
 #   beyond Pill has been opened).
 # - Speed profiles on the two reopened lines: 80 km/h maximum, 0.5 m/s² (a diesel unit), 60 s
-#   dwell (the operator's median dwell in the 23 Sep 2026 timetable). No line speed has been
-#   sourced; the resulting journey times are checked against the two figures above and the
-#   difference is reported, not tuned away.
+#   dwell (the operator's median dwell in the 23 Sep 2026 timetable). 80 km/h is [MODELLED]:
+#   no line speed has been sourced. OSM tags the Portishead branch at 30 mph today (the
+#   freight line), and the published "around 25 minutes" implies about 70 km/h. The model
+#   gives 23.4 min Portishead – Temple Meads; accepted uncalibrated (P3b follow-up stop,
+#   decision 2). Lead, not urgent: the design line speed in the DCO or business case documents.
 # - Portishead service 06:00–23:00 at one train an hour all day.
-# - The Henbury-line service is a generated hourly service Temple Meads – Lawrence Hill –
-#   Stapleton Road – Ashley Down – Filton Abbey Wood – North Filton – Henbury, replacing
-#   today's 13–14 Filton Abbey Wood terminators each way. The business case says "22 return
-#   services will call at the new stations" (§5.2.3, p. 7) and that the hourly Filton Abbey
-#   Wood service is extended (Table 5-1, p. 8). 22 hourly departures need a 22-hour day:
-#   they are placed from 05:00 to 02:00, which is not a published timetable. The AM and
-#   inter-peak skims see one train an hour either way.
+# - The Henbury-line service is today's timetable, phase anchored (P3b follow-up stop,
+#   decision 3, option c): today's Filton Abbey Wood terminators (13 from Temple Meads, 14
+#   back; 08:04–20:03 and 07:48–20:47) run on to the new stations at their timetabled times,
+#   and trips are added outside those hours at the same minutes past the hour. The phase is
+#   today's, so this service takes no timetable offset.
+# - The added trips fill the span of today's local service on Filton Bank, measured in the
+#   23 Sep 2026 timetable as the trains calling at Lawrence Hill or Stapleton Road and at
+#   Ashley Down or Filton Abbey Wood: 05:45–20:51 from Temple Meads and 06:17–00:26 from
+#   Filton Abbey Wood. One span for both directions, the two together: 05:45–00:26. That
+#   gives 19 trips each way against the business case's 22; the published timetable is
+#   not known. The AM and inter-peak skims (08:00–09:00 and the inter-peak hour) do not
+#   depend on the added trips: every train in those hours is one timetabled today.
 # - Henbury's position is the old station's site.
 # Run times on legs with no timed train today are the speed profile plus the allowance
-# calibrated against Darwin (params scenario.profile_allowance).
+# fitted against Darwin at the profile's acceleration (params scenario.profile_allowance).
 id: B2028-no-henbury
 parent: B2026
 description: Sensitivity on B2028 — as B2028 but the Henbury-line service stops at North Filton (Henbury not open)
 landuse: L2026
+caveats:
+  - >-
+    Temple Meads to North Filton is 17.9 to 19.8 minutes here (median 18.8: today's timetabled
+    trains to Filton Abbey Wood, then 2.8 minutes modelled; 17.4 as an all-modelled service)
+    against the business case's 23, flagged and not calibrated. The business case's time holds
+    about 4 to 5 minutes of pathing or stand around Filton Abbey Wood (it publishes 3 minutes
+    North Filton to Henbury against the model's 3.6, or 4.6 with the dwell at North Filton),
+    plausibly a conflict at the junction west of Filton, and a 2028 timetable may keep it.
+    Henbury-line figures are therefore a range: this scenario at the short end and
+    B2028-filton-stand (median 23.4 minutes) at the long end.
 ops:
   - add_line:
       route_id: GEN-PORTISHEAD
@@ -43,15 +61,19 @@ ops:
       speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
       headways_min: {AM: 60, IP: 60, PM: 60, OP: 60}
       span: "06:00-23:00"
-  - replace_route:
+  - modify_route:
       route_id: "GW:BRI-FIT"
-      new_route_id: GEN-HENBURY
-      name: Bristol Temple Meads – Henbury
-      mode: heavy_rail
-      operator: GW
-      alignment: lines/henbury_line.geojson
-      stops: stops/henbury_line_to_north_filton.geojson
-      speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
-      headways_min: {AM: 60, IP: 60, PM: 60, OP: 60}
-      span: "05:00-03:00"
-  - remove_route: {route_id: "GW:FIT-BRI"}
+      fill_span: "05:45-00:26"
+      extend_to:
+        from_stop: FIT
+        alignment: lines/henbury_extension.geojson
+        stops: stops/henbury_extension_to_north_filton.geojson
+        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+  - modify_route:
+      route_id: "GW:FIT-BRI"
+      fill_span: "05:45-00:26"
+      extend_to:
+        from_stop: FIT
+        alignment: lines/henbury_extension.geojson
+        stops: stops/henbury_extension_to_north_filton.geojson
+        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}

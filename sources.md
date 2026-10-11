@@ -1370,6 +1370,48 @@ residents (departures move across the period's edge at downstream stops). **That
 artefact of evening out one modest route**, before any change in frequency: results of a
 few thousand pairs or residents on a re-timed route are within it.
 
+### P3b follow-up stop decisions applied: the Henbury line from today's timetable (2026-10-11)
+
+No new dataset. Measured in the rail GTFS of 23 Sep 2026 (`data/interim` rail feed, as
+P3b) and the generated feeds (builds `20261011T121755`, `…121804`, `…121819`).
+
+- **Today's Filton Abbey Wood terminators run 08:04–20:03 from Temple Meads (13) and
+  07:48–20:47 back (14)**, hourly at :04 and :47. Extending only these gives 13 / 14 trips,
+  not the business case's 22.
+- **Span of today's local service on Filton Bank** (trains calling at Lawrence Hill or
+  Stapleton Road *and* at Ashley Down or Filton Abbey Wood; 22 northbound, 19 southbound):
+  05:45–20:51 from Temple Meads, 06:17–00:26 from Filton Abbey Wood. Used as one span,
+  05:45–00:26, for the added trips (`fill_span`): **19 trips each way** (6 added northbound,
+  5 southbound) against the business case's 22. Taking each direction's own span would
+  give 15 and 18. The plan's earlier note of "05:14–24:34" was not reproduced by this
+  definition and is not used.
+- **The AM is not wholly independent of the added trips.** The skim hours (08:00–09:00
+  and the inter-peak hour) contain only trains timetabled today. But today's first
+  terminator leaves Temple Meads at 08:04, so the 07:04 departure and the 06:47 from
+  Filton Abbey Wood are added trips inside the 07:00–10:00 AM *period*: they count in
+  the AM frequency used by coverage and in the capacity check's AM rows.
+- **Temple Meads – North Filton is now 17.9–19.8 min (median 18.8), not 17.4.** The
+  extended trains keep today's public times to Filton Abbey Wood (15–17 min, whole
+  minutes, against 13.6 modelled), then 60 s dwell and 2.8 min modelled. The gap to the
+  published 23 is 4.2 min at the median.
+- **North Filton – Henbury: 3.6 min run in the model** (4.6 from arrival at North Filton,
+  with its 60 s dwell) against the 3 min published. The comparison at the follow-up stop
+  ("3 against 4.6") included the dwell.
+- **Stand sensitivity** (`B2028-filton-stand`): a 336 s stand at Filton Abbey Wood (5.6 min
+  = 23 − 17.4) gives 22.4–24.4 min to North Filton, median 23.4. `[MODELLED]`: where the
+  published time is lost is not known. With it a train reaches Henbury at about :33 and
+  the return working leaves at about :33: one unit cannot do both, which the model does
+  not check.
+- **Unit turnround in B2028:** arrive Henbury :27, leave :39 — 11 minutes.
+- **Capacity:** B2028 uses 16 sections, none over; two at their limit (Parson Street –
+  Pill, each way, 2 of 2), where the limit is the **modelled track capacity** of the
+  single line, not the floor at today's use; no section used by B2028 has the floor as
+  its limit. The 11 added trips are not counted on Filton Bank itself (they are over the
+  extension): one each way falls in a checked period.
+- **Portishead line speed:** 80 km/h stays `[MODELLED]`. OSM tags the branch at 30 mph
+  today (the freight line); "around 25 minutes" implies about 70 km/h. Lead, not urgent:
+  the design line speed in the DCO or business case documents (none opened).
+
 ## Phase status
 
 | phase | status |

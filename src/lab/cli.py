@@ -62,7 +62,8 @@ def _scenario_ctx():
                 sections.add((sec["from"], sec["to"]))
     feeds_ = [cov.read_gtfs(cfg.root / raw[k]["out"]) for k in ("bus", "rail")]
     periods = set(ps["scenario.headway_periods"]) | {"OP"}
-    cat = scn.catalogue_from_gtfs(feeds_, sections, periods, cfg.extent)
+    cat = scn.catalogue_from_gtfs(feeds_, sections, periods, cfg.extent,
+                                  tuple(float(k) for k in ps["scenario.profile_allowance"]))
     return cfg, raw, ps, sdir, cat, scn
 
 
@@ -220,6 +221,15 @@ def _build_scenario(scenario_id: str, log=click.echo) -> dict:
             files[name]["sha256"] = params.file_hash(dst)
         report["by_offset"][str(k)] = {"fraction": frac, "files": files, "ops": reps}
         log(f"  {s.id} offset {k} ({frac:.3f}): {', '.join(n + (' (changed)' if v['changed'] else '') for n, v in files.items())}")
+
+        def _uses(o):                       # does any part of this op's report take the offset?
+            return bool(o.get("uses_offsets")) or any(_uses(v) for v in o.values() if isinstance(v, dict))
+        if k == 0 and not any(_uses(o) for o in reps):
+            # every generated or re-timed service is anchored to the old timetable (or there
+            # is none): the offsets would give the same network three times
+            report["single_offset_reason"] = "no service in this scenario takes a timetable offset"
+            log(f"  {s.id}: no service takes an offset; one network")
+            break
     done.write_text(json.dumps(report, indent=1, default=str))
     return {"scenario": s, "chain": chain, "chain_hash": chain_hash, "dir": out, "report": report}
 
@@ -280,9 +290,17 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
         chk = cp.check(lim, base, cp.scenario_use(feeds_k, off["ops"]), periods)
         chk.insert(0, "offset", int(k))
         tables.append(chk)
+        at = chk[chk.total_tph == chk.limit_tph] if len(chk) else chk
         summary[k] = {"sections_used": int(chk[["from", "to"]].drop_duplicates().shape[0]) if len(chk) else 0,
-                      "over": chk[chk.over][["from", "to", "period", "total_tph", "limit_tph"]].to_dict("records") if len(chk) else [],
-                      "rail_routes_retimed_counted_at_todays_paths": retimed}
+                      "over": chk[chk.over][["from", "to", "period", "total_tph", "limit_tph", "limit_from"]].to_dict("records") if len(chk) else [],
+                      "at_the_limit": at[["from", "to", "limit_tph", "limit_from", "modelled_track_tph"]].drop_duplicates().to_dict("records") if len(chk) else [],
+                      "sections_where_todays_floor_is_the_limit": int(chk[chk.limit_from.str.startswith("today")][["from", "to"]].drop_duplicates().shape[0]) if len(chk) else 0,
+                      "rail_routes_retimed_counted_at_todays_paths": retimed,
+                      # trips added by `fill_span` copy a timetabled journey; they are counted over
+                      # an extension but not over the track the copied journey already uses
+                      "trips_added_to_todays_routes_not_counted_on_todays_track": {
+                          op["route_id"]: sum(len(v) for v in op["fill_span"]["added"].values())
+                          for op in off["ops"] if "fill_span" in op}}
     table = pd.concat(tables, ignore_index=True) if tables else pd.DataFrame()
     return {"table": table, "summary": summary,
             "caveat": "Catches overloads only; proves nothing about a timetable. Base use is today's trains in the "
@@ -316,7 +334,7 @@ def scenario_capacity(scenario_id: str) -> None:
     rec["result"] = {"summary": c["summary"], "caveat": c["caveat"], "table": str(run_dir / "capacity.csv")}
     t = c["table"]
     if len(t):
-        show = t[t.offset == 0].drop(columns=["offset", "limit_basis"])
+        show = t[t.offset == 0].drop(columns=["offset", "limit_basis", "busiest_today_tph"])
         click.echo(show.to_string(index=False))
     click.echo(json.dumps(c["summary"], indent=1))
     click.echo(c["caveat"])
@@ -430,7 +448,7 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
         for k, v in capc["summary"].items():
             click.echo(f"  capacity, offset {k}: {v['sections_used']} sections used, {len(v['over'])} over, "
                        "against modelled limits")
-        nets, combined, spread = {}, {}, {}
+        nets, combined, spread, by_offset = {}, {}, {}, {}
         for per in periods:
             frames = []
             for k in b["report"]["by_offset"]:
@@ -448,6 +466,7 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
                 f.to_parquet(f_k, compression="zstd")
                 frames.append(f)
             combined[per] = rn.combine_offsets(frames)
+            by_offset[per] = frames
             combined[per].to_parquet(out_dir / "pt" / f"{per}.parquet", compression="zstd")
             gen_routes = sorted({op.get("route_id") for op in b["report"]["by_offset"]["0"]["ops"]
                                  if op["type"] in ("add_line", "replace_route")} - {None})
@@ -467,7 +486,9 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
             oa = con.execute("SELECT OA21CD, residents, edge FROM coverage_oa JOIN access_oa USING (OA21CD)").df() \
                 .set_index("OA21CD")
         th = [30, 45]
-        card: dict = {"scenario": s.id, "parent": s.parent, "offsets": s.offsets, "networks": nets,
+        caveats = [f"{x.id}: {c}" for x in b["chain"] for c in x.caveats]
+        card: dict = {"scenario": s.id, "parent": s.parent, "caveats": caveats,
+                      "offsets": s.offsets[:len(b["report"]["by_offset"])], "networks": nets,
                       "not_yet_modelled": s.not_yet_modelled, "accessibility": {}, "pt_skim_change": {}, "people": {}}
         for per in periods:
             par = parent_skim(per)
@@ -477,6 +498,9 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
             card["pt_skim_change"][per] = rn.skim_diff(par, combined[per])
             centre = raw["centres"][0]["lsoa"]             # the first centre in config: the main one
             ppl, by_oa = rn.people_summary(par, combined[per], oa.residents, jobs, centre)
+            if len(by_offset[per]) > 1:           # the same figures on each offset's own network
+                ppl["range_across_offsets"] = rn.people_range(
+                    [rn.people_summary(par, f, oa.residents, jobs, centre)[0] for f in by_offset[per]])
             card["people"][per] = ppl
             by_oa.to_csv(run_dir / f"people_by_oa_{per}.csv", index=False)
         card["offset_spread"] = spread
@@ -510,7 +534,7 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
         runrecord.finish(cfg, rec, "failed")
         raise
     rec["result"] = {"scorecard": str(run_dir / "scorecard.json"), "skims": str(out_dir),
-                     "networks": nets, "chain_hash": b["chain_hash"],
+                     "networks": nets, "chain_hash": b["chain_hash"], "caveats": card["caveats"],
                      "accessibility_difference": {p: card["accessibility"][p]["difference"] for p in periods},
                      "people": card["people"], "offset_spread": card["offset_spread"],
                      "coverage_difference": card["coverage"]["difference"]}

@@ -27,7 +27,7 @@ OPS = {"add_line", "modify_route", "replace_route", "reroute", "remove_route", "
        "road_speed_factor", "fare_change", "landuse_delta"}
 #: ops that are validated and recorded but change nothing yet, and the phase that will act on them
 NOT_YET_MODELLED = {"fare_change": "P5"}
-TOP_KEYS = {"id", "parent", "description", "landuse", "ops", "offsets", "sources"}
+TOP_KEYS = {"id", "parent", "description", "landuse", "ops", "offsets", "sources", "caveats"}
 ID_RE = re.compile(r"^[A-Z][A-Za-z0-9]*(-[a-z0-9]+)*$")
 SPAN_RE = re.compile(r"^(\d{2}):(\d{2})-(\d{2}):(\d{2})$")
 
@@ -48,10 +48,11 @@ class Catalogue:
     sections: set[tuple[str, str]] = field(default_factory=set)   # known timing-point pairs
     periods: set[str] = field(default_factory=lambda: {"AM", "IP", "PM", "OP"})
     extent: tuple[float, float, float, float] | None = None
+    accelerations: tuple = ()          # accelerations a speed profile may use (those with a fitted allowance)
 
     def copy(self) -> "Catalogue":
         return Catalogue({k: list(v) for k, v in self.routes.items()}, dict(self.stops),
-                         set(self.sections), set(self.periods), self.extent)
+                         set(self.sections), set(self.periods), self.extent, self.accelerations)
 
 
 @dataclass
@@ -66,6 +67,7 @@ class Scenario:
     spec_hash: str
     files: list[Path]
     not_yet_modelled: list[str]
+    caveats: list[str] = field(default_factory=list)       # carried onto every output, and by every child
 
 
 def _req(d: dict, keys: list[str], where: str, rule: str = "required-field") -> None:
@@ -185,6 +187,17 @@ def _stops(p: Path, segs, tol_m: float, where: str) -> list[dict]:
     return out
 
 
+def _profile(sp_: dict, cat: Catalogue, where: str) -> None:
+    _known(sp_, {"max_kmh", "accel_ms2", "dwell_s"}, f"{where}.speed_profile")
+    _req(sp_, ["max_kmh", "accel_ms2", "dwell_s"], f"{where}.speed_profile")
+    for k, v in sp_.items():
+        if not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0:
+            raise ScenarioError("speed-profile", f"{where}: speed_profile.{k} must be positive, got {v!r}")
+    if cat.accelerations and not any(abs(sp_["accel_ms2"] - a) < 1e-9 for a in cat.accelerations):
+        raise ScenarioError("acceleration", f"{where}: accel_ms2 {sp_['accel_ms2']} has no fitted timetable allowance; "
+                                            f"use one of {sorted(cat.accelerations)} (params scenario.profile_allowance)")
+
+
 def _route(cat: Catalogue, op: dict, where: str) -> str:
     _req(op, ["route_id"], where)
     rid = op["route_id"]
@@ -221,11 +234,7 @@ def _new_service(op: dict, base: Path, cat: Catalogue, tol_m: float, where: str,
     if needs_profile:
         _req(op, ["speed_profile"], where)
     if sp_ is not None:
-        _known(sp_, {"max_kmh", "accel_ms2", "dwell_s"}, f"{where}.speed_profile")
-        _req(sp_, ["max_kmh", "accel_ms2", "dwell_s"], f"{where}.speed_profile")
-        for k, v in sp_.items():
-            if not isinstance(v, (int, float)) or isinstance(v, bool) or v <= 0:
-                raise ScenarioError("speed-profile", f"{where}: speed_profile.{k} must be positive, got {v!r}")
+        _profile(sp_, cat, where)
     cap = (op.get("vehicle") or {}).get("capacity")
     if cap is not None and (not isinstance(cap, int) or isinstance(cap, bool) or cap <= 0):
         raise ScenarioError("vehicle", f"{where}: vehicle.capacity must be a positive whole number, got {cap!r}")
@@ -271,10 +280,12 @@ def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, whe
         if not op.get("periods"):
             del cat.routes[rid]                    # replaced all day
     elif kind == "modify_route":
-        _known(op, {"route_id", "headways_min", "stopping_pattern", "extend_to", "truncate_at"}, where)
+        _known(op, {"route_id", "headways_min", "stopping_pattern", "extend_to", "truncate_at", "fill_span"}, where)
         rid = _route(cat, op, where)
-        if not any(k in op for k in ("headways_min", "stopping_pattern", "extend_to", "truncate_at")):
+        if not any(k in op for k in ("headways_min", "stopping_pattern", "extend_to", "truncate_at", "fill_span")):
             raise ScenarioError("empty-op", f"{where}: modify_route changes nothing")
+        if "fill_span" in op:
+            _span(op["fill_span"], where)
         if "headways_min" in op:
             _headways(op["headways_min"], cat.periods, where)
         if "stopping_pattern" in op:
@@ -292,7 +303,12 @@ def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, whe
             _on_route(cat, rid, op["truncate_at"], where)
         if "extend_to" in op:
             ext = op["extend_to"]
-            _known(ext, {"from_stop", "alignment", "stops", "speed_profile"}, f"{where}.extend_to")
+            _known(ext, {"from_stop", "alignment", "stops", "speed_profile", "stand_at_from_stop_s"}, f"{where}.extend_to")
+            sd = ext.get("stand_at_from_stop_s")
+            if sd is not None and (not isinstance(sd, (int, float)) or isinstance(sd, bool) or sd < 0):
+                raise ScenarioError("speed-profile", f"{where}: stand_at_from_stop_s must be zero or more, got {sd!r}")
+            if ext.get("speed_profile") is not None:
+                _profile(ext["speed_profile"], cat, f"{where}.extend_to")
             _req(ext, ["from_stop", "alignment", "stops"], f"{where}.extend_to")
             _on_route(cat, rid, ext["from_stop"], where)
             ap, sp = _file(base, ext["alignment"], where), _file(base, ext["stops"], where)
@@ -330,6 +346,8 @@ def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, whe
                                                     f"(limit {tol_m:g} m)")
         if any(t != "existing_rail" for _, t in segs):
             _req(op, ["speed_profile"], where)
+        if op.get("speed_profile") is not None:
+            _profile(op["speed_profile"], cat, where)
         if "stops" in op:
             sp = _file(base, op["stops"], where)
             files.append(sp)
@@ -449,12 +467,15 @@ def load(path: Path, cat: Catalogue, *, stop_tolerance_m: float, offset_count: i
     for item in (lu if isinstance(lu, list) else []):
         if isinstance(item, str) and item.endswith((".yaml", ".yml")):
             files.append(_file(base, item, f"{sid} landuse"))
+    caveats = doc.get("caveats") or []
+    if not isinstance(caveats, list) or not all(isinstance(c, str) and c.strip() for c in caveats):
+        raise ScenarioError("caveats", f"{sid}: caveats must be a list of sentences")
     return Scenario(sid, parent, doc["description"], lu, ops, phase_fractions(doc.get("offsets"), offset_count),
-                    path, spec_hash(path, files, base), sorted(set(files)), later)
+                    path, spec_hash(path, files, base), sorted(set(files)), later, [" ".join(c.split()) for c in caveats])
 
 
 def catalogue_from_gtfs(feeds: list[dict], sections: set[tuple[str, str]], periods: set[str],
-                        extent) -> Catalogue:
+                        extent, accelerations: tuple = ()) -> Catalogue:
     """``feeds``: GTFS tables as frames (stops, trips, stop_times), as ``coverage.read_gtfs`` gives."""
     routes: dict[str, list[str]] = {}
     stops: dict[str, tuple[float, float]] = {}
@@ -464,4 +485,4 @@ def catalogue_from_gtfs(feeds: list[dict], sections: set[tuple[str, str]], perio
             routes[rid] = sorted(set(g.stop_id))
         for r in f["stops"].itertuples():
             stops[r.stop_id] = (float(r.stop_lon), float(r.stop_lat))
-    return Catalogue(routes, stops, sections, periods, extent)
+    return Catalogue(routes, stops, sections, periods, extent, tuple(accelerations))

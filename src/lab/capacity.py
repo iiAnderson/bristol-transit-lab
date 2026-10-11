@@ -97,9 +97,13 @@ def limits(sections: list[dict], cap: dict, base: pd.DataFrame, run_min: dict | 
             lim, how = d["double_track_tph"], "double track, default"
         fr = freight.get(key, o.get("freight_tph", 0))
         seen = int(busiest.get((s["from"], s["to"]), 0)) + fr        # what the section carries today
+        track_lim, limit_from = lim, "modelled track capacity"
         if seen > lim:
             lim, how = seen, f"raised to today's busiest hour plus the freight allowance ({how} gave less)"
+            # the floor binds: the check on this section measures "busier than today", not capacity
+            limit_from = "today's busiest hour (floor)"
         rows.append({"from": s["from"], "to": s["to"], "tracks": tracks, "limit_tph": lim, "limit_basis": how,
+                     "limit_from": limit_from, "modelled_track_tph": track_lim, "busiest_today_tph": seen,
                      "freight_allowance_tph": fr,
                      "timed_today": bool(s.get("timed", True))})
     return pd.DataFrame(rows)
@@ -124,6 +128,8 @@ def check(lim: pd.DataFrame, base: pd.DataFrame, scen: pd.DataFrame, periods: di
             tot = bb + ss + r.freight_allowance_tph
             rows.append({"from": r[1], "to": r.to, "period": per, "hour": h_max, "tracks": r.tracks, "base_tph": bb,
                          "freight_allowance_tph": r.freight_allowance_tph, "scenario_tph": ss, "total_tph": tot,
-                         "limit_tph": r.limit_tph, "over": bool(tot > r.limit_tph), "limit_basis": r.limit_basis,
+                         "limit_tph": r.limit_tph, "over": bool(tot > r.limit_tph), "limit_from": r.limit_from,
+                         "modelled_track_tph": r.modelled_track_tph, "busiest_today_tph": r.busiest_today_tph,
+                         "limit_basis": r.limit_basis,
                          "timed_today": r.timed_today})
     return pd.DataFrame(rows)

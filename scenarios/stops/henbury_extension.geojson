@@ -1,0 +1,53 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.562431,
+     51.504939
+    ]
+   },
+   "properties": {
+    "stop_id": "FIT",
+    "name": "Filton Abbey Wood",
+    "tiploc": "FILTNEW",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.580371,
+     51.517582
+    ]
+   },
+   "properties": {
+    "stop_id": "BBZ",
+    "name": "Bristol Brabazon",
+    "tiploc": "NRHFILT",
+    "source": "NaPTAN 9100NRHFILT; CRS BBZ from the Darwin reference"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.62527,
+     51.51497
+    ]
+   },
+   "properties": {
+    "stop_id": "HBR",
+    "name": "Henbury",
+    "tiploc": "HENBURY",
+    "source": "OSM historic:railway=station node 6353014942 [MODELLED position]; CRS HBR from the Darwin reference"
+   }
+  }
+ ]
+}

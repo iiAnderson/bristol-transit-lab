@@ -240,7 +240,7 @@ def test_working_times_take_only_trains_calling_at_both_ends():
 def test_speed_profile_legs_take_the_allowance_and_timed_stations_their_own_dwell(geo):
     runs = {("TA", "TB", None): (120.0, 9), ("TB", "TA", None): (150.0, 9)}
     c = ctx(runs, {None: 60.0, ("at", "TB", None): (90.0, 9), ("at", "TA", None): (45.0, 2)})
-    c["allowance"] = {"pct": 0.15, "per_junction_s": 0.0}
+    c["allowance"] = {"1.0": {"pct": 0.15, "per_junction_s": 0.0}, "0.5": {"pct": 0.5, "per_junction_s": 0.0}}
     out, rep = gen.apply(bus_feed(), [("add_line", LINE)], geo, c, 0.0)
     l1, l2 = rep[0]["legs"]
     assert l1["fwd_s"] == 120 and l1["fwd_rule"].startswith("working times")          # no allowance on timetable times
@@ -256,7 +256,65 @@ def test_per_junction_margin_counts_junction_timing_points_inside_a_leg(geo):
                                             timing_points=["TA", "XJ", "YJN", "MID", "TC"])))
     (geo / "sj.geojson").write_text(fc(point(-2.60, 51.45, stop_id="A", tiploc="TA"), point(-2.57, 51.45, stop_id="C", tiploc="TC")))
     c = ctx()
-    c["allowance"] = {"pct": 0.0, "per_junction_s": 20.0}
+    c["allowance"] = {"1.0": {"pct": 0.0, "per_junction_s": 20.0}}
     _, rep = gen.apply(bus_feed(), [("add_line", LINE | {"alignment": "lj.geojson", "stops": "sj.geojson"})], geo, c, 0.0)
     lg = rep[0]["legs"][0]
     assert lg["fwd_s"] == pytest.approx(lg["fwd_profile_s"] + 40, abs=0.1)              # two junctions inside
+
+
+
+def test_an_acceleration_with_no_fitted_allowance_is_an_error(geo):
+    c = ctx()
+    c["allowance"] = {"0.5": {"pct": 0.15, "per_junction_s": 0.0}}
+    with pytest.raises(gen.GeneratorError, match="allowance"):
+        gen.apply(bus_feed(), [("add_line", LINE)], geo, c, 0.0)            # LINE uses 1.0 m/s²
+
+
+def test_a_replacement_at_a_headway_that_divides_the_old_one_keeps_its_phase(geo):
+    # today: route Q every 30 min from A at :07; replaced by a generated service every 15 min
+    def feed():
+        f = bus_feed()
+        b = f["bus"]
+        b["stops"] = pd.concat([b["stops"], pd.DataFrame({"stop_id": ["A", "C"], "stop_name": ["A", "C"],
+                               "stop_lat": ["51.45"] * 2, "stop_lon": ["-2.60", "-2.57"]})], ignore_index=True)
+        trips, st = [], []
+        for n, t0 in enumerate(range(427, 600, 30)):
+            trips.append({"route_id": "Q", "service_id": "S", "trip_id": f"q{n}", "direction_id": "0", "original_trip_id": f"q{n}"})
+            st += [{"trip_id": f"q{n}", "arrival_time": gen.hms(t0 + 9 * i), "departure_time": gen.hms(t0 + 9 * i), "stop_id": s,
+                    "stop_sequence": str(i + 1), "pickup_type": "0", "drop_off_type": "0"} for i, s in enumerate("AC")]
+        b["trips"] = pd.concat([b["trips"], pd.DataFrame(trips)], ignore_index=True)
+        b["stop_times"] = pd.concat([b["stop_times"], pd.DataFrame(st)], ignore_index=True)
+        return f
+    op = LINE | {"route_id": "Q", "new_route_id": "Q2", "headways_min": {"AM": 15}}
+    del op["name"]
+    for off in (0.0, 1 / 3):
+        out, rep = gen.apply(feed(), [("replace_route", op)], geo, ctx(), off)
+        g = out["generated"]
+        first = g["stop_times"][g["stop_times"].stop_sequence.astype(int) == 1]
+        t = g["trips"].merge(first, on="trip_id")
+        fwd = sorted(gen.mins(t[t.direction_id.astype(int) == 0].departure_time))
+        assert fwd[:3] == [427, 442, 457], (off, fwd[:3])                    # anchored: the offset does nothing
+        back = sorted(gen.mins(t[t.direction_id.astype(int) == 1].departure_time))
+        assert back[0] == pytest.approx(420 + off * 15)                      # no old service from C: the offset applies
+        assert rep[0]["anchored_to_the_old_timetable"] == {"0:AM": True, "1:AM": False} and rep[0]["uses_offsets"]
+    out, rep = gen.apply(feed(), [("replace_route", op | {"headways_min": {"AM": 20}})], geo, ctx(), 1 / 3)
+    assert not rep[0]["anchored_to_the_old_timetable"]["0:AM"]               # 20 does not divide 30
+    assert gen.divides(15, 60) and gen.divides(30, 30) and not gen.divides(60, 30) and not gen.divides(15, None)
+
+
+def test_fill_span_runs_a_route_for_longer_at_its_own_phase_and_stand_holds_trains(geo):
+    f = bus_feed(60, start=484, end=1210)                                    # hourly at :04, 08:04 to 20:04
+    out, rep = gen.apply(f, [("modify_route", {"route_id": "R", "fill_span": "05:30-23:30"})], None, ctx(), 0.5)
+    fs = rep[0]["fill_span"]
+    assert fs["added"]["0"] == ["06:04", "07:04", "21:04", "22:04", "23:04"] and fs["journeys_per_day"]["0"] == 18
+    assert not fs["uses_offsets"]
+    one = out["bus"]["stop_times"][out["bus"]["stop_times"].trip_id == "fill:R:0:0"]
+    assert list(one.departure_time) == ["06:04:00", "06:09:00", "06:14:00"]
+    assert len(out["bus"]["trips"]) == 36 and out["bus"]["trips"].trip_id.is_unique
+    ext = {"from_stop": "c", "alignment": "ext.geojson", "stops": "ext_s.geojson", "stand_at_from_stop_s": 336,
+           "speed_profile": {"max_kmh": 72, "accel_ms2": 1.0, "dwell_s": 60}}
+    out2, rep2 = gen.apply(bus_feed(60, start=484, end=1210), [("modify_route", {"route_id": "R", "extend_to": ext})],
+                           geo, ctx(), 0.0)
+    east = out2["bus"]["stop_times"][out2["bus"]["stop_times"].trip_id == "t0_0"]
+    assert east.arrival_time.iloc[2] == "08:14:00" and east.departure_time.iloc[2] == "08:19:36"    # stands 5.6 min
+    assert rep2[0]["extend_to"]["stand_at_from_stop_s"] == 336

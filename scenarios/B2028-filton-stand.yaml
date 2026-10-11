@@ -1,0 +1,82 @@
+# Sensitivity on the 2028 baseline (P3b follow-up stop, decision 1): B2028 with the
+# Henbury-line trains standing 5.6 minutes (336 s) at Filton Abbey Wood in place of the 60 s
+# dwell [MODELLED: where the published time is lost is not known]. 5.6 minutes is the
+# business case's 23 minutes Temple Meads to North Filton less the 17.4 of an all-modelled
+# service. On today's timetabled trains, which take 15 to 17 minutes to Filton Abbey Wood,
+# it gives 22.4 to 24.4 minutes to North Filton, median 23.4. The long end of the range for
+# every Henbury-line figure. A sibling of B2028, not its child.
+# Not checked: the unit diagram. A train reaches Henbury at about :33 and the return working
+# leaves at about :33, so this timetable needs a second unit or a different return path.
+#
+# Sources (sources.md P3b):
+# - Portishead line: Network Rail, "The Portishead line" (opened 2026-10-10): "an hourly
+#   direct train from Portishead to Bristol Temple Meads in around 25 minutes", reopening in
+#   2028, new stations at Portishead and Pill.
+# - Henbury line: West of England Combined Authority, MetroWest Phase 2 FBC Stage 2 Update
+#   (October 2025): the hourly Filton Abbey Wood service extended to North Filton (Bristol
+#   Brabazon; November 2026) and Henbury (March 2028); 23 minutes Temple Meads to North
+#   Filton; "22 return services will call at the new stations" (§5.2.3, p. 7; Table 5-1, p. 8).
+#
+# [MODELLED] in this file, each to be read as an assumption:
+# - Portishead trains call at Parson Street and Bedminster (no source for the calling pattern
+#   beyond Pill has been opened).
+# - Speed profiles on the two reopened lines: 80 km/h maximum, 0.5 m/s² (a diesel unit), 60 s
+#   dwell (the operator's median dwell in the 23 Sep 2026 timetable). 80 km/h is [MODELLED]:
+#   no line speed has been sourced. OSM tags the Portishead branch at 30 mph today (the
+#   freight line), and the published "around 25 minutes" implies about 70 km/h. The model
+#   gives 23.4 min Portishead – Temple Meads; accepted uncalibrated (P3b follow-up stop,
+#   decision 2). Lead, not urgent: the design line speed in the DCO or business case documents.
+# - Portishead service 06:00–23:00 at one train an hour all day.
+# - The Henbury-line service is today's timetable, phase anchored (P3b follow-up stop,
+#   decision 3, option c): today's Filton Abbey Wood terminators (13 from Temple Meads, 14
+#   back; 08:04–20:03 and 07:48–20:47) run on to the new stations at their timetabled times,
+#   and trips are added outside those hours at the same minutes past the hour. The phase is
+#   today's, so this service takes no timetable offset.
+# - The added trips fill the span of today's local service on Filton Bank, measured in the
+#   23 Sep 2026 timetable as the trains calling at Lawrence Hill or Stapleton Road and at
+#   Ashley Down or Filton Abbey Wood: 05:45–20:51 from Temple Meads and 06:17–00:26 from
+#   Filton Abbey Wood. One span for both directions, the two together: 05:45–00:26. That
+#   gives 19 trips each way against the business case's 22; the published timetable is
+#   not known. The AM and inter-peak skims (08:00–09:00 and the inter-peak hour) do not
+#   depend on the added trips: every train in those hours is one timetabled today.
+# - Henbury's position is the old station's site.
+# Run times on legs with no timed train today are the speed profile plus the allowance
+# fitted against Darwin at the profile's acceleration (params scenario.profile_allowance).
+id: B2028-filton-stand
+parent: B2026
+description: Sensitivity on B2028 — as B2028 with a 5.6-minute stand at Filton Abbey Wood (about 23 minutes Temple Meads to North Filton)
+landuse: L2026
+caveats:
+  - >-
+    The long end of the Henbury-line range: Temple Meads to North Filton at a median of 23.4
+    minutes (the business case says 23), by a 5.6-minute stand at Filton Abbey Wood. Where
+    the published time is lost is not known; B2028 (median 18.8 minutes) is the short end.
+ops:
+  - add_line:
+      route_id: GEN-PORTISHEAD
+      name: Portishead – Bristol Temple Meads
+      mode: heavy_rail
+      operator: GW
+      alignment: lines/portishead.geojson
+      stops: stops/portishead.geojson
+      speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+      headways_min: {AM: 60, IP: 60, PM: 60, OP: 60}
+      span: "06:00-23:00"
+  - modify_route:
+      route_id: "GW:BRI-FIT"
+      fill_span: "05:45-00:26"
+      extend_to:
+        from_stop: FIT
+        alignment: lines/henbury_extension.geojson
+        stops: stops/henbury_extension.geojson
+        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+        stand_at_from_stop_s: 336
+  - modify_route:
+      route_id: "GW:FIT-BRI"
+      fill_span: "05:45-00:26"
+      extend_to:
+        from_stop: FIT
+        alignment: lines/henbury_extension.geojson
+        stops: stops/henbury_extension.geojson
+        speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}
+        stand_at_from_stop_s: 336

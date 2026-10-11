@@ -393,6 +393,27 @@ ops:
     and the difference. Nothing demand-dependent yet (P5–P6).
   - *Capacity check:* trains per hour per section from Darwin (no freight) plus a
     modelled freight allowance, against modelled limits (§11 item 20).
+  - *Added at the P3b follow-up stop (2026-10-11):*
+    - The allowance is fitted **per acceleration** (`scenario.profile_allowance` is a
+      table); a speed profile at an acceleration with no fitted pair fails validation
+      (rule `acceleration`) and generation.
+    - *Phase anchoring.* A generated service that replaces a timetabled one at the same
+      headway, or one that divides it, starts from the old first departure of each
+      period and takes no offset; so does a re-timing. Anything else takes the offsets.
+      A scenario in which no service takes an offset is built and skimmed once.
+    - `modify_route.fill_span` runs a timetabled route for longer in the day at its own
+      headway and minutes past the hour (copies of its first and last journeys);
+      `extend_to.stand_at_from_stop_s` sets how long extended trains stand at the old
+      terminus (default: the dwell).
+    - A scenario file may carry `caveats`: sentences printed on every output of the
+      scenario and of every scenario built on it.
+    - *Every comparison* reports residents worse off by the threshold beside those better
+      off, to the centre and to jobs, and the range of the headline people figures across
+      the offsets beside the figure from their mean. There is no fixed artefact floor.
+    - *Capacity:* every row says whether its limit is the modelled track capacity or the
+      floor at today's busiest hour (where the check measures "busier than today", not
+      capacity). Trips added by `fill_span` are counted over an extension but not over
+      the track the copied journey already uses; the summary says how many.
 - Validate every op: stops within 50 m of the alignment, alignment within the extent,
   headways positive, `route_id` exists for modify/remove. Fail loudly.
 - `spec_hash` = hash of the YAML plus referenced files, stored on `scenario`.

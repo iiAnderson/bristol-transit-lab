@@ -199,3 +199,32 @@ def test_a_root_baseline_has_no_ops(dirs):
     with pytest.raises(sc.ScenarioError) as e:
         load(dirs / "B1.yaml")
     assert e.value.rule == "parent"
+
+
+def test_a_speed_profile_must_use_an_acceleration_with_a_fitted_allowance(dirs):
+    c = cat()
+    c.accelerations = (0.5, 1.0)
+    p = write(dirs)                       # the good scenario uses 1.0 and 0.8
+    with pytest.raises(sc.ScenarioError) as e:
+        sc.load(p, c, stop_tolerance_m=50, offset_count=3)
+    assert e.value.rule == "acceleration"
+    c.accelerations = (0.8, 1.0)
+    sc.load(p, c, stop_tolerance_m=50, offset_count=3)
+
+
+def test_fill_span_and_stand_are_validated(dirs):
+    ok = [{"modify_route": {"route_id": "R1", "fill_span": "05:30-23:30"}}]
+    assert load(write(dirs, ok)).ops[0][0] == "modify_route"
+    with pytest.raises(sc.ScenarioError) as e:
+        load(write(dirs, [{"modify_route": {"route_id": "R1", "fill_span": "all day"}}]))
+    assert e.value.rule == "span"
+
+
+def test_caveats_are_a_list_of_sentences(dirs):
+    p = write(dirs)
+    p.write_text(p.read_text() + "caveats:\n  - A journey time here is\n    short of the published one.\n")
+    assert load(p).caveats == ["A journey time here is short of the published one."]
+    p.write_text(p.read_text().split("caveats:")[0] + "caveats: just one\n")
+    with pytest.raises(sc.ScenarioError) as e:
+        load(p)
+    assert e.value.rule == "caveats"

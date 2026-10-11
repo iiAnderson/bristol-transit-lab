@@ -227,6 +227,7 @@ def people_summary(parent: pd.DataFrame, scen: pd.DataFrame, residents: pd.Serie
         "to_jobs_weighted_mean_time": {
             "residents_faster_by_threshold": int(R[o.jobs_time_change_min <= -by_min].sum()),
             "residents_faster_by_1_min": int(R[o.jobs_time_change_min <= -1].sum()),
+            "residents_slower_by_threshold": int(R[o.jobs_time_change_min >= by_min].sum()),
             "residents_slower_by_1_min": int(R[o.jobs_time_change_min >= 1].sum()),
             "mean_change_min_all_residents": round(float((o.jobs_time_change_min.fillna(0) * R).sum() / R.sum()), 3)},
         "pairs_faster_by_threshold": {
@@ -240,3 +241,19 @@ def people_summary(parent: pd.DataFrame, scen: pd.DataFrame, residents: pd.Serie
                 (o.destinations_faster * R).sort_values(ascending=False).cumsum()
                 <= 0.5 * (o.destinations_faster * R).sum()).sum() + 1)}}
     return res, o.reset_index(names="OA21CD")
+
+
+PEOPLE_HEADLINES = (("to_the_centre", "residents_faster_by_threshold"), ("to_the_centre", "residents_slower_by_threshold"),
+                    ("to_jobs_weighted_mean_time", "residents_faster_by_threshold"),
+                    ("to_jobs_weighted_mean_time", "residents_slower_by_threshold"))
+
+
+def people_range(per_offset: list[dict]) -> dict:
+    """The headline people figures on each offset's own network, and their range: how far
+    a result depends on where a generated timetable happens to sit. The main figures are
+    from the mean of the offsets' times, so they need not lie inside the range."""
+    out: dict = {}
+    for a, b in PEOPLE_HEADLINES:
+        v = [p[a][b] for p in per_offset]
+        out.setdefault(a, {})[b] = {"by_offset": v, "min": min(v), "max": max(v)}
+    return out

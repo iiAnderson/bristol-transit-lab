@@ -1,0 +1,37 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.562431,
+     51.504939
+    ]
+   },
+   "properties": {
+    "stop_id": "FIT",
+    "name": "Filton Abbey Wood",
+    "tiploc": "FILTNEW",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.580371,
+     51.517582
+    ]
+   },
+   "properties": {
+    "stop_id": "BBZ",
+    "name": "Bristol Brabazon",
+    "tiploc": "NRHFILT",
+    "source": "NaPTAN 9100NRHFILT; CRS BBZ from the Darwin reference"
+   }
+  }
+ ]
+}

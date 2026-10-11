@@ -234,23 +234,30 @@ scenario:
     tag: MODELLED
     reasoning: below this the group takes its period's overall ratio; 30 cells is a few kilometres of observed road, enough that one street does not set the value
   profile_allowance:
-    value: {pct: 0.15, per_junction_s: 0.0}
-    unit: added to every speed-profile leg; run time = (1 + pct) × profile time + per_junction_s × junction timing points inside the leg
+    value:
+      "0.3": {pct: 0.0418, per_junction_s: 5.4832}
+      "0.5": {pct: 0.1502, per_junction_s: 0.0}
+      "0.7": {pct: 0.1925, per_junction_s: 0.0}
+      "1.0": {pct: 0.225, per_junction_s: 0.0}
+    unit: by the speed profile's acceleration (m/s²); run time = (1 + pct) × profile time + per_junction_s × junction timing points inside the leg
     tag: CALIBRATED
     target: >-
       Darwin working times of 23 Sep 2026. On the 96 station-to-station sections (47
       station pairs) with five or more trains of one operator and an OSM line speed on at
-      least 80% of the track, the plain profile (accelerate at 0.5 m/s² to the line speed,
-      cruise, brake) is faster than the timetable's median on 93% of them: 16% fast at the
-      median and in total. Least squares, weighted by trains, of timetable = (1 + pct) ×
-      profile + per_junction × junctions gives pct 0.150 and a per-junction margin of zero
-      (it fitted negative and is held at zero). Held out by station pair (5 folds): median
+      least 80% of the track, the plain profile (accelerate to the line speed, cruise,
+      brake) is faster than the timetable's median on 93% of them at 0.5 m/s²: 16% fast at
+      the median and in total. Least squares, weighted by trains, of timetable = (1 + pct)
+      × profile + per_junction × junctions, per-junction held at zero or above, fitted
+      separately at each acceleration (the brisker the profile, the more it must be
+      slowed to match today's trains). At 0.5: held out by station pair (5 folds), median
       error 9%, 90th percentile 23%, total −3%. Run
-      20261010T205442-spike-profile-allowance-3a7947. Fitted at 0.5 m/s²; a profile with
-      brisker acceleration would need more (19% at 0.7, 23% at 1.0), so for an electric
-      fleet this allowance leaves the run time optimistic (SPEC §11 item 23). The largest
-      shortfalls are approaches to terminal and junction stations, which a percentage does
-      not single out.
+      20261010T205442-spike-profile-allowance-3a7947. A scheme takes the pair fitted at
+      its own acceleration; the validator rejects any other (Robbie, 2026-10-11). These
+      are today's diesel and bi-mode trains: for an electric fleet the fitted time is
+      still pessimistic where the fleet out-accelerates them and optimistic nowhere we
+      can measure (SPEC §11 item 23). Known shortfall: approaches to terminal and
+      junction stations (timetable ÷ profile of 1.3–1.6), to be fitted as a
+      terminal-approach margin with the first scheme that terminates a new service there.
   draw_snap_m:
     value: 45
     unit: m; when drawing a rail alignment, a station may be met at any track within this of its point

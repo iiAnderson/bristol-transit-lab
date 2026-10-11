@@ -42,6 +42,9 @@ def test_limits_default_single_track_and_floor_at_today():
     assert lim.loc[("J", "B"), "freight_allowance_tph"] == 1 and lim.loc[("A", "J"), "freight_allowance_tph"] == 0
     assert lim.loc[("J", "B"), "limit_tph"] == 8                 # today's 7 plus the freight allowance
     assert not lim.loc[("B", "C"), "timed_today"]
+    # which of the two set each limit: the modelled track capacity, or the floor at today's use
+    assert lim.loc[("B", "C"), "limit_from"] == "modelled track capacity"
+    assert lim.loc[("J", "B"), "limit_from"] == "today's busiest hour (floor)" and lim.loc[("J", "B"), "modelled_track_tph"] < 8
 
 
 def feeds(headway):
