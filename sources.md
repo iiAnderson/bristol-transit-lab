@@ -1412,6 +1412,51 @@ P3b) and the generated feeds (builds `20261011T121755`, `…121804`, `…121819`
   today (the freight line); "around 25 minutes" implies about 70 km/h. Lead, not urgent:
   the design line speed in the DCO or business case documents (none opened).
 
+### B2028 rebuilt on the phase-anchored Henbury line: results (2026-10-11)
+
+Runs, all on a clean tree at `e163244`, against B2026, network `tobler-99de5fa760`:
+`20261011T193703-B2028-7063ba`, `20261011T194031-B2028-filton-stand-8678e7`,
+`20261011T230205-B2028-no-henbury-1dc98b`. (B2028's skims were made by run
+`20261011T122645-B2028-c0d3b5` at `1d1812f`, which halted writing its record when the disk
+filled; the run above finished from those skims. The no-Henbury run halted the same way
+once and was finished from its skims.)
+
+Residents at least 2 minutes better off: the figure on the mean of the three offsets'
+times, then the three offsets' own figures. **Residents 2 minutes or more worse off: none,
+in every run, period and offset, to the centre and to jobs; pairs 2 minutes slower: none.**
+
+| Run | Period | To the centre | To jobs (weighted mean time) | Pairs ≥ 2 min faster | Pairs gained |
+|---|---|---|---|---|---|
+| B2028 (North Filton in 17.9–19.8 min) | AM | 53,039 (55,392 / 50,113 / 56,042) | 42,627 (42,890 / 35,902 / 41,882) | 109,941 | 11,087 |
+| | IP | 29,247 (24,496 / 30,787 / 30,171) | 26,864 (27,263 / 27,170 / 26,579) | 99,682 | 6,762 |
+| B2028-filton-stand (median 23.4 min) | AM | 48,330 (48,993 / 43,714 / 49,643) | 41,991 (41,076 / 36,370 / 42,662) | 104,476 | 11,320 |
+| | IP | 26,849 (21,708 / 27,999 / 27,383) | 26,593 (26,560 / 26,899 / 26,308) | 99,064 | 7,180 |
+| B2028-no-henbury | AM | 37,357 (38,592 / 33,313 / 39,242) | 31,776 (30,861 / 25,830 / 31,810) | 76,877 | 8,179 |
+| | IP | 22,660 (17,519 / 23,810 / 23,194) | 21,841 (21,850 / 22,147 / 21,556) | 75,606 | 4,409 |
+
+- **The slower pairs were the artefact.** The previous build replaced the timetabled
+  locals with a generated service and had 33,228 pairs 2 minutes slower; with today's
+  trains kept and extended there are none.
+- **Henbury-line range.** The 5.6-minute stand costs 4,709 residents to the centre in the
+  AM (53,039 → 48,330, 9%) and 636 to jobs; inter-peak 2,398 and 271. Every Henbury-line
+  figure is to be quoted as the pair: 48,330 to 53,039, and so on.
+- **Henbury station itself** (B2028 less the no-Henbury run): 15,682 residents to the
+  centre in the AM, 10,851 to jobs; 6,587 and 5,023 inter-peak.
+- **Offsets** now move only the Portishead service. The spread across offsets is wider
+  than the Henbury-line range: to the centre in the AM 50,113 to 56,042. On pairs using a
+  generated service the range of the pair's time averages 2.7 minutes (AM), 2.5 (IP).
+- **Coverage:** no change in frequent service at 10 or 15 minutes (hourly trains); 549
+  fewer residents in no service class, in all three runs.
+- **Jobs within 45 minutes, resident-weighted mean, AM:** +178 (B2028), +158 (stand),
+  +142 (no Henbury) on about 99,400.
+- **Capacity:** 16 sections used (14 without Henbury), none over; at the limit only
+  Parson Street – Pill each way, on modelled track capacity.
+- **Running them.** The disk filled twice: about 12–14 GB of swap while the router runs,
+  on top of 1 GB of chunk files and 0.9 GB of network caches a run. Chunk folders and
+  the caches of networks no longer in use were deleted (regenerable); skims of the
+  superseded builds (about 10 GB) were left. The Mac also slept with the lid closed
+  (the first run took seven hours).
+
 ### P3c datasets and sources: the cost library (2026-10-11)
 
 All opened on 2026-10-11 unless noted; copies in `data/raw/refs/` (not in git). Figures are
