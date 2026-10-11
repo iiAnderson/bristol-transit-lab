@@ -35,7 +35,7 @@ def test_the_report_shows_losers_ranges_gaps_in_the_cost_and_placeholders():
     md = cmp_.markdown(c)
     assert "| AM | the centre (Z) | 500 | 40 | 450 to 620 | 10 to 90 |" in md
     assert "| AM | jobs (weighted mean time) | 300 | 20 | one network | one network |" in md
-    assert "> **S1:** B: a caveat from the parent" in md
+    assert "> **B:** a caveat from the parent" in md
     assert "| frequent 15 min, residents | 10 | 8 | +2 |" in md and "| residents in no class | 5 | 6 | -1 |" in md
     assert "**incomplete:** 1 items have no unit cost" in md and "track in tunnel" in md
     assert "£1.0m – £2.0m – £3.0m" in md and "£100k – £200k – £300k" in md

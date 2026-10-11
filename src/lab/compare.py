@@ -48,7 +48,7 @@ def markdown(c: dict) -> str:
          "PT times are the median over the departure window, averaged over the scenario's timetable offsets.", ""]
     for who, cav in c["caveats"].items():
         for x in cav:
-            L.append(f"> **{who}:** {x}")
+            L.append(f"> **{x.split(': ', 1)[0]}:** {x.split(': ', 1)[-1]}")
     if any(c["caveats"].values()):
         L.append("")
     L += ["## Who gains and who loses", "",
