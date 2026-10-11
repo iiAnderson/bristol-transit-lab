@@ -732,6 +732,27 @@ scenario, its parent, and the difference.
   Every figure names the modelled date, the walk speed and whether gradient is included.
 - Change maps as GeoParquet
 
+- **As built at P3c-3 and P3c-4 (2026-10-11)** — `run.connectivity`, `src/lab/compare.py`,
+  `lab compare <scenario> <scenario or baseline>`:
+  - per output area and period: jobs within 30 and 45 minutes by PT (the pair's median
+    time), decay-weighted jobs with β = `connectivity.decay_beta_per_min`
+    (`[PLACEHOLDER]` until P5 fits it), and jobs within 45 minutes by PT over the same
+    by car. The car side is in-vehicle time in the AM skim hour, with no parking or
+    walk, on car times that failed their P2 check: the ratio overstates the car and
+    says so wherever it is printed;
+  - residents better and worse off by 2 minutes or more, to the centre and to jobs,
+    with the range across the scenario's timetable offsets;
+  - frequent-service coverage and the residents without it;
+  - cost of each side's own ops (§8.3);
+  - the scenario files' caveats, what is recorded but not yet modelled, the fails
+    inherited from earlier phases (`config/lab.yaml` `inherited`), and every
+    `[PLACEHOLDER]`, `[MODELLED]` and `[CALIBRATED]` value in the parameter groups the
+    comparison reads, with the unit costs its cost lines used;
+  - outputs in the run directory: `compare.md`, `compare.json`, `change_oa.parquet`
+    (GeoParquet).
+  Not built: other destinations (hospitals, schools, food stores), the deprivation
+  split of accessibility, the Palma-style ratio.
+
 ### 8.3 Cost
 
 From `params/costs.yaml`. Every entry: `value`, `unit`, `price_year`, `source`, `tag`.

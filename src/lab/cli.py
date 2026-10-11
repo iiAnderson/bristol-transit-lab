@@ -2669,6 +2669,138 @@ def access_cmd(thresholds: str) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+@cli.command("compare")
+@click.argument("scenario_id")
+@click.argument("against")
+@click.option("--periods", default="AM,IP", show_default=True)
+def compare_cmd(scenario_id: str, against: str, periods: str) -> None:
+    """Compare a scenario with another scenario or the baseline: who gains and loses,
+    accessibility, coverage and cost, and what the figures rest on. Both must have been
+    run (`lab run`)."""
+    import json
+    import duckdb
+    import geopandas as gpd
+    import pandas as pd
+    import yaml
+    from . import compare as cmp_, network, run as rn
+    cfg = LabConfig.load()
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    plist = params.load(cfg.root / "params" / "base.yaml")
+    ps = {p.path: p.value for p in plist}
+    base = network.settings(cfg, raw, ps)
+    root_id = raw["baseline"]["scenario"]
+    pers = [p for p in periods.split(",") if p]
+    if scenario_id == root_id:
+        raise click.ClickException(f"{root_id} is the baseline: give the scenario first, `lab compare <scenario> {root_id}`")
+    rec = runrecord.build(cfg, command="compare", scenario={"id": scenario_id, "spec_hash": "pending"})
+    run_dir = runrecord.write(cfg, rec).parent
+
+    def side(sid: str) -> dict:
+        if sid == root_id:
+            return {"id": sid, "b": None, "dir": None, "caveats": [], "later": [], "table": "coverage_oa",
+                    "file": lambda per: network.skim(base, "pt", per)}
+        b = _build_scenario(sid, lambda m: None)
+        d = _scenario_skim_dir(cfg, raw, b, base["version"]) / "pt"
+        return {"id": sid, "b": b, "dir": d, "caveats": [f"{x.id}: {c}" for x in b["chain"] for c in x.caveats],
+                "later": b["scenario"].not_yet_modelled, "table": "coverage_oa__" + sid.replace("-", "_"),
+                "file": lambda per: d / f"{per}.parquet"}
+    try:
+        A, B = side(scenario_id), side(against)
+        rec["scenario"] = {"id": A["id"], "spec_hash": A["b"]["scenario"].spec_hash}
+        for x in (A, B):
+            missing = [p for p in pers if not Path(x["file"](p)).is_file()]
+            if missing:
+                raise click.ClickException(f"{x['id']} has no PT skim for {', '.join(missing)}: run `lab run {x['id']}` first")
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            jobs = con.execute("""SELECT d.LSOA21CD, coalesce(b.jobs, 0) jobs FROM skim_dest d
+                                  LEFT JOIN nat_bres b USING (LSOA21CD)""").df().set_index("LSOA21CD").jobs
+            oa = con.execute("""SELECT OA21CD, residents, edge, lon, lat FROM coverage_oa
+                                JOIN access_oa USING (OA21CD)""").df().set_index("OA21CD")
+            cov = {}
+            for x in (A, B):
+                try:
+                    cov[x["id"]] = con.execute(f"SELECT * FROM {x['table']}").df().set_index("OA21CD")
+                except duckdb.CatalogException:
+                    raise click.ClickException(f"no coverage table for {x['id']}: run `lab run {x['id']}` first")
+        th = list(ps["connectivity.job_thresholds_min"])
+        beta, rt_, cper = ps["connectivity.decay_beta_per_min"], ps["connectivity.pt_car_threshold_min"], ps["connectivity.car_period"]
+        car_jobs = rn.car_jobs_within(pd.read_parquet(network.skim(base, "car", cper), columns=["from_id", "to_id", "ivt_min"]),
+                                      jobs, rt_)
+        centre = raw["centres"][0]["lsoa"]
+        out_oa = oa[["residents", "lon", "lat"]].copy()
+        conn, people, pairs = {}, {}, {}
+        for per in pers:
+            fa, fb = pd.read_parquet(A["file"](per)), pd.read_parquet(B["file"](per))
+            sa, oa_a = rn.connectivity(fa, car_jobs, jobs, oa.residents, oa.edge, th, beta, rt_)
+            sb, oa_b = rn.connectivity(fb, car_jobs, jobs, oa.residents, oa.edge, th, beta, rt_)
+            conn[per] = {"scenario": sa, "against": sb, "difference": rn.diff(sb, sa)}
+            ppl, by_oa = rn.people_summary(fb, fa, oa.residents, jobs, centre)
+            # the skim of each offset's own network, as `lab run` named it
+            offs = []
+            for k in A["b"]["report"]["by_offset"]:
+                gtfs = {f.stem: f for f in sorted((A["b"]["dir"] / f"offset_{k}").glob("*.zip"))}
+                f_k = A["dir"] / f"{per}.offset_{k}.{rn.offset_network(cfg, raw, ps, gtfs)['version']}.parquet"
+                if f_k.is_file():
+                    offs.append(f_k)
+            if len(offs) > 1:
+                ppl["range_across_offsets"] = rn.people_range(
+                    [rn.people_summary(fb, pd.read_parquet(f), oa.residents, jobs, centre)[0] for f in offs])
+            people[per] = ppl
+            pairs[per] = rn.skim_diff(fb, fa) if "p50_min_offsets" in fa else None
+            by_oa = by_oa.set_index("OA21CD")
+            out_oa[f"centre_change_min_{per}"] = by_oa.centre_change_min
+            out_oa[f"jobs_time_change_min_{per}"] = by_oa.jobs_time_change_min
+            for col in oa_a.columns:
+                if col != "pt_car_ratio":
+                    out_oa[f"{col}_{per}_change"] = oa_a[col] - oa_b[col]
+            out_oa[f"pt_car_ratio_{per}"] = oa_a.get("pt_car_ratio")
+        hs = ps["coverage.frequent_headway_min"]
+
+        def cov_sum(c: pd.DataFrame) -> dict:
+            return {f"frequent_{h}": {"residents": int(c.residents[c[f"frequent_{h}"]].sum()),
+                                      "jobs": round(float(c.jobs[c[f"frequent_{h}"]].sum()))} for h in hs} | {
+                "residents_without_frequent_service": int(c.residents[~c[f"frequent_{max(hs)}"]].sum()),
+                "residents_in_no_class": int(c.residents[c.are_class == "none"].sum())}
+        ca, cb = cov_sum(cov[A["id"]]), cov_sum(cov[B["id"]])
+        for h in hs:
+            out_oa[f"frequent_{h}_change"] = (cov[A["id"]][f"frequent_{h}"].astype(int)
+                                              - cov[B["id"]][f"frequent_{h}"].astype(int)).reindex(out_oa.index)
+        cost = {x["id"]: (_scenario_cost(x["b"]) if x["b"] else None) for x in (A, B)}
+        chain_ids = [x.id for x in A["b"]["chain"]]
+        cost_note = None
+        if A["b"]["scenario"].parent != B["id"]:
+            cost_note = (f"Costs are each scenario's own ops against its own parent, not {A['id']} less {B['id']}: "
+                         + (f"{B['id']} is an ancestor of {A['id']} but not its parent, so the ops between them are not in "
+                            f"{A['id']}'s cost." if B["id"] in chain_ids else f"{B['id']} is not an ancestor of {A['id']}."))
+        used: dict = {}
+        for k in cost.values():
+            for tag, paths in ((k or {}).get("unit_costs_used_by_tag") or {}).items():
+                used.setdefault(tag, set()).update(paths)
+        c = {"scenario": A["id"], "against": B["id"], "periods": pers, "modelled_date": str(raw["modelled_date"]),
+             "walk_speed_kmh": ps["routing.walk_speed_kmh"], "gradient": base["elevation"], "threshold_min": 2.0,
+             "decay_beta": beta, "car_period": cper,
+             "caveats": {A["id"]: A["caveats"], B["id"]: B["caveats"]},
+             "people": people, "connectivity": conn, "pt_skim_change": pairs,
+             "coverage": {"scenario": ca, "against": cb, "difference": rn.diff(cb, ca)},
+             "cost": cost, "cost_note": cost_note, "inherited": raw["inherited"],
+             "not_yet_modelled": {A["id"]: A["later"], B["id"]: B["later"]},
+             "params_behind": cmp_.params_behind(plist, used),
+             "skims": {"scenario": str(A["dir"]), "against": str(B["dir"] or network.skim(base, "pt", pers[0]).parent)}}
+        (run_dir / "compare.json").write_text(json.dumps(c, indent=1, default=str))
+        (run_dir / "compare.md").write_text(cmp_.markdown(c))
+        g = gpd.GeoDataFrame(out_oa.drop(columns=["lon", "lat"]).reset_index(),
+                             geometry=gpd.points_from_xy(out_oa.lon, out_oa.lat), crs="EPSG:4326")
+        g.to_parquet(run_dir / "change_oa.parquet")
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    rec["result"] = {"report": str(run_dir / "compare.md"), "data": str(run_dir / "compare.json"),
+                     "change_map": str(run_dir / "change_oa.parquet"),
+                     "placeholders": c["params_behind"].get("PLACEHOLDER", [])}
+    click.echo((run_dir / "compare.md").read_text())
+    click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
 @cli.command("compare-dft")
 @click.option("--minutes", default=45, show_default=True)
 def compare_dft(minutes: int) -> None:

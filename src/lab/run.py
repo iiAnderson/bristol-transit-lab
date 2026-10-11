@@ -257,3 +257,37 @@ def people_range(per_offset: list[dict]) -> dict:
         v = [p[a][b] for p in per_offset]
         out.setdefault(a, {})[b] = {"by_offset": v, "min": min(v), "max": max(v)}
     return out
+
+
+def connectivity(pt: pd.DataFrame, car_jobs: pd.Series | None, jobs: pd.Series, residents: pd.Series, edge: pd.Series,
+                 thresholds: list[int], beta: float, ratio_t: int) -> tuple[dict, pd.DataFrame]:
+    """Job accessibility by PT per origin OA (SPEC §8.2): jobs within each threshold on
+    the pair's median time; the decay-weighted sum Σ jobs × exp(−β × time); and jobs
+    within ``ratio_t`` by PT over the same by car (``car_jobs``, per OA; None to leave
+    the ratio out). Returns the summary and the per-OA frame."""
+    ok = pt[~pt.unreachable]
+    j = ok.to_id.map(jobs).fillna(0.0)
+    o = jobs_within(pt, jobs, thresholds).reindex(residents.index).fillna(0.0)
+    o["pt_jobs_decay"] = (j * np.exp(-beta * ok.p50)).groupby(ok.from_id).sum().reindex(o.index).fillna(0.0)
+    out = access_summary(o, residents, edge, thresholds)
+    v = o.pt_jobs_decay
+    out["jobs_decay_weighted"] = {"median_core_oa": float(v[~edge].median()), "median_edge_oa": float(v[edge].median()),
+                                  "resident_weighted_mean": float((v * residents).sum() / residents.sum())}
+    if car_jobs is not None:
+        c = car_jobs.reindex(o.index)
+        o["pt_car_ratio"] = (o[f"pt_jobs_{ratio_t}"] / c).where(c > 0)
+        has = o.pt_car_ratio.notna()
+        out[f"pt_over_car_jobs_{ratio_t}min"] = {
+            "resident_weighted_mean": float((o.pt_car_ratio[has] * residents[has]).sum() / residents[has].sum()),
+            "median_core_oa": float(o.pt_car_ratio[~edge].median()),
+            "residents_with_under_a_tenth_of_the_car's_jobs": int(residents[has & (o.pt_car_ratio < 0.1)].sum()),
+            "residents_with_no_jobs_by_car_in_the_threshold": int(residents[~has].sum())}
+    return out, o
+
+
+def car_jobs_within(car: pd.DataFrame, jobs: pd.Series, t: int) -> pd.Series:
+    """Jobs within ``t`` minutes by car, in-vehicle time only (no parking search or walk
+    to and from the car, so the car's reach is overstated), per origin."""
+    ok = car[car.ivt_min <= t]
+    return ok.to_id.map(jobs).fillna(0.0).groupby(ok.from_id).sum()
+

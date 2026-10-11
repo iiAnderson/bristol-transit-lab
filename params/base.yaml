@@ -799,3 +799,29 @@ free_flow:
     unit: km/h (15 mph)
     tag: MODELLED
     reasoning: Service roads, living streets and car parks; slow by design.
+
+# Connectivity metrics on a scenario and its comparison (SPEC §8.2; plans/P3.md P3c-3).
+connectivity:
+  job_thresholds_min:
+    value: [30, 45]
+    unit: minutes of PT time (the pair's median) within which jobs are counted
+    tag: MODELLED
+    reasoning: spec §8.2; the two thresholds P2 reported and checked against DfT's connectivity figures
+  decay_beta_per_min:
+    value: 0.04
+    unit: per minute, in A_i = Σ jobs_j × exp(−β × time_ij)
+    tag: PLACEHOLDER
+    note: >-
+      Not sourced and not fitted. 0.04 halves a job's weight every 17 minutes. To be
+      calibrated against the commute matrix's trip lengths in P5; until then the
+      decay-weighted measure is for comparing scenarios, not for quoting.
+  pt_car_threshold_min:
+    value: 45
+    unit: minutes within which jobs are counted for the PT ÷ car ratio
+    tag: MODELLED
+    reasoning: the longer of the two job thresholds, so that outer areas have a non-zero PT count to divide
+  car_period:
+    value: AMPH
+    unit: the car skim period set against PT
+    tag: MODELLED
+    reasoning: the AM skim hour, as the P2 gap map used

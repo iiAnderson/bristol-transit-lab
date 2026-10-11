@@ -326,3 +326,12 @@ coverage:
       url: "https://datamap.gov.wales/geoserver/ows?service=WFS&version=2.0.0&request=GetFeature&typeName=geonode:wimd2025_overall&outputFormat=application/json&propertyName=lsoa,rank,decile,lsoa_name_en"
       page: https://datamap.gov.wales/layers/geonode:wimd2025_overall
       licence: OGL v3 (Welsh Government; to be confirmed on the layer's metadata page before publication)
+
+# Fails and accepted deviations a P3 result inherits from earlier phases (plans/P2.md §9;
+# sources.md phase status). Printed on every comparison.
+inherited:
+  - "P2 fail: PT spot checks in the AM peak, 15 of 20 within tolerance against a target of 16 (inter-peak 18 of 20 passes); 4 comparison artefacts, 1 model error."
+  - "P2 fail: car times on held-out ANPR links, 8 of 20 (AM peak hour) and 6 of 20 (inter-peak) within ±15% against a target of 16. Every PT ÷ car figure rests on these car times."
+  - "P2 accepted deviation: held-out bus speed error 27% per cell and 20% per corridor against a target of 15%."
+  - "P3b: generated bus and BRT services on streets are not built (the bus speed ratio is fitted but not used); generated rail run times off the timetable are a speed profile plus an allowance fitted to today's diesel trains."
+
