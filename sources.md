@@ -1540,7 +1540,7 @@ sides before contingency and before optimism bias, at 2025 prices. The business 
 - **Optimism bias, same stage.** The business case uplifts by 33% (Henbury, stage 2)
   and 30% (North Filton, stage 3) — TAG's *rail* category — giving £94.6m nominal,
   £90.4m at 2025/26 prices. The library uses TAG's *buildings* category for stations
-  (48% at stage 2, 44% at stage 3): one station at each, £96.3m. At the library's default
+  (48% at stage 2, 44% at stage 3): one station at each, £96.1m. At the library's default
   stage 1 (70%), £111.9m. The business case's choice of category is noted (§7.13.5 argues
   the stations include highway and railway elements with lower uplifts), not adopted.
 - **Not a finding against the station rates:** after the item is added the gap is 4%,
