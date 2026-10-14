@@ -317,6 +317,7 @@ stations:
     underground_box:
       value: 234.0e+6
       unit: GBP per station built as an open box, main civil works contract only
+      bound: upper
       price_year: 2015
       ob_category: buildings
       tag: SOURCED
@@ -332,6 +333,7 @@ stations:
       value: 412.0e+6
       range: [282.0e+6, 659.0e+6]
       unit: GBP per mined station, main civil works contract only
+      bound: upper
       price_year: 2015
       ob_category: buildings
       tag: SOURCED

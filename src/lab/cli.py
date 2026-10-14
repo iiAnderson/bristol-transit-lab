@@ -427,10 +427,11 @@ def scenario_cost(scenario_id: str, stage: int | None) -> None:
     rec["result"] = {k: c[k] for k in ("price_base_year", "optimism_bias_stage", "complete", "not_costed", "against")} | {
         "capex": {k: c["capex"][k] for k in ("raw", "with_optimism_bias")},
         "opex_per_year": {k: v for k, v in c["opex_per_year"].items() if k != "lines"}, "table": str(run_dir / "cost.json")}
-    m = lambda v: f"£{v / 1e6:,.1f}m" if abs(v) >= 1e6 else f"£{v / 1e3:,.0f}k"  # noqa: E731
+    m = lambda v: "(no central figure)" if v is None else (f"£{v / 1e6:,.1f}m" if abs(v) >= 1e6 else f"£{v / 1e3:,.0f}k")  # noqa: E731
     click.echo(f"{b['scenario'].id} against {c['against']}, {c['price_base_year']} prices")
     for x in c["capex"]["lines"]:
-        cost = "not costed" if x["cost"] is None else f"{m(x['low'])} – {m(x['cost'])} – {m(x['high'])}  (+{x['ob']:.0%})"
+        cost = (f"up to {m(x['high'])}, an upper bound only  (+{x['ob']:.0%})" if x.get("upper_bound_only") else
+                "not costed" if x["cost"] is None else f"{m(x['low'])} – {m(x['cost'])} – {m(x['high'])}  (+{x['ob']:.0%})")
         click.echo(f"  {x['item']:<58} {x['quantity']:>8g} {x['per']:<10} {cost}  [{x['tag']}]")
     r, o = c["capex"]["raw"], c["capex"]["with_optimism_bias"]
     click.echo(f"  capital, low – central – high: {m(r['low'])} – {m(r['central'])} – {m(r['high'])}; with optimism bias "

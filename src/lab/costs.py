@@ -85,7 +85,7 @@ class Library:
         """A money entry at the price base: low, central, high (None where the library
         has no value), with its tag, source and optimism-bias category."""
         n = self.node(path)
-        out = {"path": path, "tag": n["tag"], "unit": n.get("unit"), "ob_category": n.get("ob_category"),
+        out = {"path": path, "tag": n["tag"], "unit": n.get("unit"), "ob_category": n.get("ob_category"), "bound": n.get("bound"),
                "source": " ".join(str(n.get("source") or n.get("reasoning") or n.get("note") or "").split()),
                "price_year": n.get("price_year"), "central": None, "low": None, "high": None}
         if n["value"] is None:
@@ -217,6 +217,15 @@ def _line(item: str, qty: float, unit_name: str, u: dict, lib: Library, stage: i
            "source": u["source"], "unit_cost": u["central"], "kind": per}
     if u["central"] is None:
         return row | {"cost": None}
+    if u.get("bound") == "upper":
+        # an upper bound only (plans/P3.md §8, P3c stop — decided, item 2): no low and no
+        # central, so neither can be quoted for a scheme that includes it
+        row |= {"upper_bound_only": True, "unit_cost": None, "low": None, "cost": None, "high": u["high"] * qty}
+        if per == "capex":
+            ob = lib.optimism_bias(u["ob_category"], stage) if u["ob_category"] else 0.0
+            row |= {"ob_category": u["ob_category"], "ob": ob, "low_with_ob": None, "cost_with_ob": None,
+                    "high_with_ob": row["high"] * (1 + ob)}
+        return row
     row |= {"low": u["low"] * qty, "cost": u["central"] * qty, "high": u["high"] * qty}
     if per == "capex":
         ob = lib.optimism_bias(u["ob_category"], stage) if u["ob_category"] else 0.0
@@ -326,11 +335,21 @@ def opex(km_parent: pd.Series, km_scenario: pd.Series, services: list[dict], lib
 
 
 def summarise(capex_lines: list[dict], opex_lines: list[dict], notes: list[str], lib: Library, stage: int | None = None) -> dict:
+    bounded = [x for x in capex_lines + opex_lines if x.get("upper_bound_only")]
+
     def total(lines, keys):
-        done = [x for x in lines if x["cost"] is not None]
-        return {k: round(sum(x[k] for x in done)) for k in keys}
+        out = {}
+        for k in keys:
+            done = [x[k] for x in lines if x.get(k) is not None]
+            # a central figure is withheld when any line is an upper bound only; the low
+            # then leaves those lines out and says so
+            out[k] = None if (k.startswith("cost") and any(x.get("upper_bound_only") for x in lines)) else round(sum(done))
+        return out
     not_costed = [f"{x['item']} ({x['quantity']:g} {x['per']}): no unit cost — {x['unit_cost_path']} [{x['tag']}]"
-                  for x in capex_lines + opex_lines if x["cost"] is None]
+                  for x in capex_lines + opex_lines if x["cost"] is None and not x.get("upper_bound_only")]
+    if bounded:
+        notes = notes + [f"{x['item']}: an upper bound only (up to £{x['high'] / 1e6:,.0f}m); no central figure is given "
+                         "for this scheme, and its low leaves these lines out" for x in bounded]
     used = {}
     for x in capex_lines + opex_lines:
         used.setdefault(x["tag"], set()).add(x["unit_cost_path"])
@@ -340,7 +359,8 @@ def summarise(capex_lines: list[dict], opex_lines: list[dict], notes: list[str],
     return {"price_base_year": lib.base, "optimism_bias_stage": stage or int(lib.number("optimism_bias.default_stage")),
             "capex": {"raw": {"low": cap["low"], "central": cap["cost"], "high": cap["high"]},
                       "with_optimism_bias": {"low": cap["low_with_ob"], "central": cap["cost_with_ob"], "high": cap["high_with_ob"]},
-                      "renewals_over_60_years_central": round(cap["cost"] * float(lib.number("opex.renewals_share_of_capex"))),
+                      "renewals_over_60_years_central": (None if cap["cost"] is None else
+                                                 round(cap["cost"] * float(lib.number("opex.renewals_share_of_capex")))),
                       "lines": capex_lines},
             "opex_per_year": {**{k if k != "cost" else "central": v for k, v in total(opex_lines, ["low", "cost", "high"]).items()},
                               "lines": opex_lines},

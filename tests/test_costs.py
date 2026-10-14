@@ -41,7 +41,7 @@ tunnel:
 stations:
   heavy_rail:
     surface: {value: 10.0e+6, unit: GBP, price_year: 2025, ob_category: buildings, tag: SOURCED, source: s}
-    underground_mined: {value: 100.0e+6, unit: GBP, price_year: 2025, ob_category: buildings, tag: SOURCED, source: s}
+    underground_mined: {value: 100.0e+6, range: [80.0e+6, 150.0e+6], unit: GBP, bound: upper, price_year: 2025, ob_category: buildings, tag: SOURCED, source: s}
     underground_box: {value: 50.0e+6, unit: GBP, price_year: 2025, ob_category: buildings, tag: SOURCED, source: s}
   tram:
     at_grade: {value: 0.0, unit: GBP, tag: MODELLED, reasoning: in the rate}
@@ -135,7 +135,9 @@ def test_a_rail_tunnel_is_built_up_and_what_has_no_unit_cost_is_listed_not_guess
     assert by["R: tunnel 1: twin bore construction"]["cost"] == pytest.approx(120e6 * f)
     assert by["R: tunnel 1: time related per week"]["quantity"] == 90 and by["R: tunnel 1: vent shaft each"]["quantity"] == 2
     assert by["R: tunnel 1: portal each"]["quantity"] == 1 and by["R: tunnel 1: tbm each"]["cost"] == pytest.approx(30e6 * f)
-    assert by["R: 1 new stations (underground box)"]["cost"] == 50e6 and by["R: 1 new stations (underground mined)"]["cost"] == 100e6
+    assert by["R: 1 new stations (underground box)"]["cost"] == 50e6
+    mined = by["R: 1 new stations (underground mined)"]                     # an upper bound only: the top of its range
+    assert mined["upper_bound_only"] and mined["cost"] is None and mined["low"] is None and mined["high"] == 150e6
     assert by["R: tunnel 1: track"]["cost"] is None and by["R: tunnel 1: track"]["quantity"] == 12.0
     assert by["R: tunnel 1: electrification"]["cost"] is None
     assert any("existing railway" in n for n in notes) and any("leased" in n for n in notes)
@@ -147,6 +149,8 @@ def test_a_rail_tunnel_is_built_up_and_what_has_no_unit_cost_is_listed_not_guess
     assert ob["heavy rail: new stations"]["cost"] == 200000 and ob["tunnel maintenance"]["cost"] == 6e6
     s = costs.summarise(lines, ol, notes + on, LIB)
     assert not s["complete"] and len(s["not_costed"]) == 2 and "PLACEHOLDER" in s["not_costed"][0]
+    assert s["capex"]["raw"]["central"] is None and s["capex"]["with_optimism_bias"]["central"] is None
+    assert s["capex"]["raw"]["high"] > s["capex"]["raw"]["low"] and any("upper bound only" in n for n in s["notes"])
     assert s["opex_per_year"]["central"] == round(60000 - 99000 + 1.8e+6 + 1.0e+6 + 200000 + 6e6)
 
 

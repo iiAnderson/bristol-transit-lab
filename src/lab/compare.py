@@ -37,7 +37,7 @@ def _signed(v, unit: str = "") -> str:
 
 
 def _money(v) -> str:
-    return "—" if v is None else (f"£{v / 1e6:,.1f}m" if abs(v) >= 1e6 else f"£{v / 1e3:,.0f}k")
+    return "no central figure" if v is None else (f"£{v / 1e6:,.1f}m" if abs(v) >= 1e6 else f"£{v / 1e3:,.0f}k")
 
 
 def markdown(c: dict) -> str:
