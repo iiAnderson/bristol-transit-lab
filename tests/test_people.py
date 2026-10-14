@@ -26,13 +26,23 @@ def test_residents_better_and_worse_off_are_both_counted():
     assert by_oa.set_index("OA21CD").jobs_time_change_min.round(2).to_dict() == {"o1": -3.0, "o2": 2.5, "o3": 0.0}
 
 
-def test_the_range_across_offsets_is_reported_beside_the_mean():
-    a = PARENT | {("o1", "C"): 24}                       # this offset helps o1
-    b = PARENT | {("o2", "C"): 15, ("o1", "C"): 33}      # this one helps o2 and costs o1
-    per = [rn.people_summary(skim(PARENT), skim(x), RES, JOBS, "C")[0] for x in (a, b)]
-    rg = rn.people_range(per)
-    assert rg["to_the_centre"]["residents_faster_by_threshold"] == {"by_offset": [100, 300], "min": 100, "max": 300}
-    assert rg["to_the_centre"]["residents_slower_by_threshold"]["by_offset"] == [0, 100]
+def test_the_headline_is_the_mean_of_the_offsets_own_counts_with_their_range():
+    a = PARENT | {("o1", "C"): 24}                       # this offset helps o1 (100 residents)
+    b = PARENT | {("o2", "C"): 15, ("o1", "C"): 33}      # this one helps o2 (300) and costs o1
+    pairs, how = rn.offset_pairs([skim(a), skim(b)], [skim(PARENT)])
+    assert how == "each offset against the parent's one network"
+    s, by_oa = rn.people_over_offsets(pairs, RES, JOBS, "C")
+    assert s["to_the_centre"]["residents_faster_by_threshold"] == {"mean": 200, "min": 100, "max": 300}
+    assert s["to_the_centre"]["residents_slower_by_threshold"] == {"mean": 50, "min": 0, "max": 100}
+    assert s["offsets"] == 2 and s["centre_zone"] == "C"
+    assert by_oa.set_index("OA21CD").centre_change_min["o1"] == (-6 + 3) / 2     # per OA: the mean change
+    # one offset: the plain figure
+    one, _ = rn.people_over_offsets(pairs[:1], RES, JOBS, "C")
+    assert one["to_the_centre"]["residents_faster_by_threshold"] == 100
+    # offset k against the parent's offset k when both have the same number
+    assert rn.offset_pairs([1, 2, 3], [4, 5, 6])[0] == [(4, 1), (5, 2), (6, 3)]
+    with pytest.raises(ValueError):
+        rn.offset_pairs([1, 2, 3], [4, 5])
 
 
 def test_connectivity_counts_decay_weights_and_sets_pt_against_car():

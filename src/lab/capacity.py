@@ -30,6 +30,26 @@ def base_use(tp: pd.DataFrame, removed_rids: set[str] | None = None) -> pd.DataF
     return s.groupby(["tpl", "to", "hour"]).size().rename("trains").reset_index().rename(columns={"tpl": "from"})
 
 
+def copied_use(tp: pd.DataFrame, copies: list[dict]) -> pd.DataFrame:
+    """Trains over each section and hour from journeys a scenario adds as copies of
+    today's (``modify_route.fill_span``): each copy runs the copied journey's timing
+    points, moved by its shift. A copy of a journey Darwin does not hold is an error."""
+    if not copies:
+        return pd.DataFrame(columns=["from", "to", "hour", "trains"])
+    parts = []
+    have = set(tp.rid)
+    for i, c in enumerate(copies):
+        rid = str(c["of"]).split("#")[0]
+        if rid not in have:
+            raise ValueError(f"added journey copies {c['of']}, which is not in the timing-point table")
+        x = tp[tp.rid == rid].copy()
+        x["rid"] = f"copy{i}"
+        for col in ("arr_s", "dep_s"):
+            x[col] = x[col] + c["shift_min"] * 60
+        parts.append(x)
+    return base_use(pd.concat(parts, ignore_index=True))
+
+
 def scenario_use(feeds: dict, op_reports: list[dict]) -> pd.DataFrame:
     """Trains over each directed section in each clock hour from the scenario's own
     services: each trip of a generated route, and each extended trip over its extension,

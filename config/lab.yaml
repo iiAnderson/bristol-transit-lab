@@ -335,3 +335,11 @@ inherited:
   - "P2 accepted deviation: held-out bus speed error 27% per cell and 20% per corridor against a target of 15%."
   - "P3b: generated bus and BRT services on streets are not built (the bus speed ratio is fitted but not used); generated rail run times off the timetable are a speed profile plus an allowance fitted to today's diesel trains."
 
+# The router's memory and batch size (plans/P3.md §8 "P3c stop — decided", item 10). The
+# Java heap was 10G: on this 16 GB machine the JVM grew into it and swap filled the disk
+# twice (2026-10-11). Measured 2026-10-14: two 100-origin chunks of a PT skim with a 6G
+# heap peak at 4.6 GB resident, at the same speed (25 s a chunk) as with 10G.
+router:
+  java_mem: 6G
+  chunk_origins: 100
+

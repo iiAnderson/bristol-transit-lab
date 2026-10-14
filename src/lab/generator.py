@@ -482,7 +482,7 @@ def _fill_span(feed: dict, route_id: str, span: str) -> dict:
         hi += 1440
     j = _journeys(feed, route_id)
     st_all, base_trips = feed["stop_times"], feed["trips"].set_index("trip_id")
-    new_trips, new_st, rep_ = [], [], {"route_id": route_id, "span": span, "added": {}, "headway_min": {}}
+    new_trips, new_st, rep_ = [], [], {"route_id": route_id, "span": span, "added": {}, "headway_min": {}, "copies": []}
     for direction, g in j.groupby("direction"):
         main = g[g.pattern == g.pattern.mode().iloc[0]].sort_values("start")
         hw = old_headway(list(main.start))
@@ -497,6 +497,9 @@ def _fill_span(feed: dict, route_id: str, span: str) -> dict:
             tmpl = main.iloc[0] if t0 < first else main.iloc[-1]
             shift = t0 - tmpl.start
             jid = f"fill:{route_id}:{direction}:{n}"
+            # what each added journey copies, and how far it is moved: the capacity check
+            # counts it on the copied journey's track (plans/P3.md §8, P3c stop — decided, 5)
+            rep_["copies"] += [{"of": tid, "shift_min": round(float(shift), 3)} for tid in tmpl.trip_ids]
             for k, tid in enumerate(tmpl.trip_ids):
                 new_id = jid if len(tmpl.trip_ids) == 1 else f"{jid}#{k}"
                 row = base_trips.loc[tid].to_dict() | {"trip_id": new_id}

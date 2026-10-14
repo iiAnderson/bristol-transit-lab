@@ -52,17 +52,17 @@ def markdown(c: dict) -> str:
     if any(c["caveats"].values()):
         L.append("")
     L += ["## Who gains and who loses", "",
-          f"Residents whose time changes by {c['threshold_min']:g} minutes or more. Pairs are not people: these are "
-          "residents, counted at their home output area.", "",
-          "| Period | To | Better off | Worse off | Range across offsets (better) | Range (worse) |", "|---|---|---|---|---|---|"]
+          f"Residents whose time changes by {c['threshold_min']:g} minutes or more, counted at their home output area "
+          "(pairs are not people). Each figure is the mean over the timetable offsets of the count on each offset's own "
+          "network, with the lowest and highest offset beside it.", "",
+          "| Period | To | Better off | (offsets) | Worse off | (offsets) |", "|---|---|---|---|---|---|"]
     for per, p in c["people"].items():
-        rg = p.get("range_across_offsets") or {}
         for key, label in (("to_the_centre", f"the centre ({p['centre_zone']})"), ("to_jobs_weighted_mean_time", "jobs (weighted mean time)")):
-            r1 = (rg.get(key) or {}).get("residents_faster_by_threshold")
-            r2 = (rg.get(key) or {}).get("residents_slower_by_threshold")
-            L.append(f"| {per} | {label} | {_n(p[key]['residents_faster_by_threshold'])} | {_n(p[key]['residents_slower_by_threshold'])} | "
-                     + (f"{_n(r1['min'])} to {_n(r1['max'])}" if r1 else "one network") + " | "
-                     + (f"{_n(r2['min'])} to {_n(r2['max'])}" if r2 else "one network") + " |")
+            cells = []
+            for k2 in ("residents_faster_by_threshold", "residents_slower_by_threshold"):
+                v = p[key][k2]
+                cells += [_n(v["mean"]), f"{_n(v['min'])} to {_n(v['max'])}"] if isinstance(v, dict) else [_n(v), "one network"]
+            L.append(f"| {per} | {label} | " + " | ".join(cells) + " |")
     L += ["", "Worse-off residents are reported beside better-off ones in every comparison: replacing or "
           "re-timing a timetabled service moves its connections, and some of both columns is that and not the scheme.", "",
           "## Job accessibility by public transport", "",

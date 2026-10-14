@@ -287,7 +287,13 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
                         share = 1 / max(len(tps) - 1, 1)
                         run_min[(a, c)], run_min[(c, a)] = lg["fwd_s"] / 60 * share, lg["rev_s"] / 60 * share
         lim = cp.limits(sections, capd, cp.base_use(tp), run_min)      # limits from today's timetable, untouched
-        chk = cp.check(lim, base, cp.scenario_use(feeds_k, off["ops"]), periods)
+        copies = [c for op in off["ops"] for c in (op.get("fill_span") or {}).get("copies", [])]
+        try:
+            added = cp.copied_use(tp, copies)
+        except ValueError as e:
+            raise click.ClickException(f"{b['scenario'].id}: {e}")
+        use = pd.concat([cp.scenario_use(feeds_k, off["ops"]), added]).groupby(["from", "to", "hour"]).trains.sum().reset_index()
+        chk = cp.check(lim, base, use, periods)
         chk.insert(0, "offset", int(k))
         tables.append(chk)
         at = chk[chk.total_tph == chk.limit_tph] if len(chk) else chk
@@ -296,9 +302,8 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
                       "at_the_limit": at[["from", "to", "limit_tph", "limit_from", "modelled_track_tph"]].drop_duplicates().to_dict("records") if len(chk) else [],
                       "sections_where_todays_floor_is_the_limit": int(chk[chk.limit_from.str.startswith("today")][["from", "to"]].drop_duplicates().shape[0]) if len(chk) else 0,
                       "rail_routes_retimed_counted_at_todays_paths": retimed,
-                      # trips added by `fill_span` copy a timetabled journey; they are counted over
-                      # an extension but not over the track the copied journey already uses
-                      "trips_added_to_todays_routes_not_counted_on_todays_track": {
+                      # trips added by `fill_span`: counted on the track of the journey each copies
+                      "trips_added_to_todays_routes_counted_on_todays_track": {
                           op["route_id"]: sum(len(v) for v in op["fill_span"]["added"].values())
                           for op in off["ops"] if "fill_span" in op}}
     table = pd.concat(tables, ignore_index=True) if tables else pd.DataFrame()
@@ -511,6 +516,21 @@ def scenario_new(scenario_id: str, parent: str, description: str | None) -> None
     click.echo(f"wrote {out}")
 
 
+def _offset_skims(cfg, raw, ps, b: dict, skim_dir: Path, per: str) -> list[Path]:
+    """The PT skim of each offset's own network for one period, as `lab run` named them;
+    an error if any is missing."""
+    from . import run as rn
+    out = []
+    for k in b["report"]["by_offset"]:
+        gtfs = {f.stem: f for f in sorted((b["dir"] / f"offset_{k}").glob("*.zip"))}
+        f_k = skim_dir / "pt" / f"{per}.offset_{k}.{rn.offset_network(cfg, raw, ps, gtfs)['version']}.parquet"
+        if not f_k.is_file():
+            raise click.ClickException(f"{b['scenario'].id}: no {per} skim for offset {k} ({f_k.name}): "
+                                       f"run `lab run {b['scenario'].id}` first")
+        out.append(f_k)
+    return out
+
+
 def _scenario_skim_dir(cfg, raw, b: dict, base_version: str) -> Path:
     return cfg.root / raw["baseline"]["skims"] / b["scenario"].id / f"{base_version}+{b['chain_hash']}"
 
@@ -600,10 +620,14 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
             card["accessibility"][per] = {"scenario": a_s, "parent": a_p, "difference": rn.diff(a_p, a_s)}
             card["pt_skim_change"][per] = rn.skim_diff(par, combined[per])
             centre = raw["centres"][0]["lsoa"]             # the first centre in config: the main one
-            ppl, by_oa = rn.people_summary(par, combined[per], oa.residents, jobs, centre)
-            if len(by_offset[per]) > 1:           # the same figures on each offset's own network
-                ppl["range_across_offsets"] = rn.people_range(
-                    [rn.people_summary(par, f, oa.residents, jobs, centre)[0] for f in by_offset[per]])
+            if s.parent == root_id:
+                par_offs = [network.skim(base, "pt", per)]
+            else:
+                pb = _build_scenario(s.parent, lambda m: None)
+                par_offs = _offset_skims(cfg, raw, ps, pb, _scenario_skim_dir(cfg, raw, pb, base["version"]), per)
+            pairs, how = rn.offset_pairs(by_offset[per], par_offs)
+            ppl, by_oa = rn.people_over_offsets(pairs, oa.residents, jobs, centre)
+            ppl["pairing"] = how
             card["people"][per] = ppl
             by_oa.to_csv(run_dir / f"people_by_oa_{per}.csv", index=False)
         card["offset_spread"] = spread
@@ -2068,7 +2092,7 @@ def spike_d1(cap_min: int, relief_radius_m: float) -> None:
                 "destinations": str(run_dir / "dest.csv"),
                 "departure": dep.strftime("%Y-%m-%d %H:%M"),
                 "walk_speed_kmh": ps["routing.walk_speed_kmh"], "max_trip_min": mx,
-                "java_mem": "10G", "out": str(run_dir / "r5r_walk_TOBLER.parquet")}
+                "java_mem": raw["router"]["java_mem"], "out": str(run_dir / "r5r_walk_TOBLER.parquet")}
         (run_dir / "r5r.json").write_text(json.dumps(rcfg))
         subprocess.run([str(sk.R_ENV / "bin" / "Rscript"),
                         str(cfg.root / "src" / "lab" / "r" / "d1_walk.R"),
@@ -2170,7 +2194,7 @@ def spike_d7(n_origins: int, near_m: float) -> None:
                     "departure": dt.datetime.combine(day, start).strftime("%Y-%m-%d %H:%M"),
                     "window_min": win, "draws_per_minute": draws, "max_rides": ps["routing.max_rides"],
                     "walk_speed_kmh": ps["routing.walk_speed_kmh"],
-                    "max_trip_min": ps["routing.max_trip_min"], "route_id": rid, "java_mem": "10G",
+                    "max_trip_min": ps["routing.max_trip_min"], "route_id": rid, "java_mem": raw["router"]["java_mem"],
                     "out": str(run_dir / f"{name}.parquet")}
             (run_dir / f"{name}.json").write_text(json.dumps(rcfg))
             subprocess.run([str(sk.R_ENV / "bin" / "Rscript"), str(cfg.root / "src" / "lab" / "r" / "d7_freq.R"),
@@ -2425,7 +2449,7 @@ def skims_pt(period: str, chunk: int, provisional: bool) -> None:
             "max_walk_min": ps["routing.max_walk_min"], "max_trip_min": ps["routing.max_trip_min"],
             "reach_share_min": ps["routing.pt_reachable_share_min"], "chunk": chunk,
             "sample_ids": str(work / "sample_ids.csv"), "out_dir": str(work / "chunks"),
-            "java_mem": "10G"}
+            "java_mem": raw["router"]["java_mem"]}
     rec = runrecord.build(cfg, command=f"skims-pt-{period}", inputs=[
         {"name": f, "sha256": h} for f, h in nw["hashes"].items()]
         + [{"name": "r5r", "version": "2.4.0 (R5 7.5.1)"},
@@ -2673,7 +2697,9 @@ def access_cmd(thresholds: str) -> None:
 @click.argument("scenario_id")
 @click.argument("against")
 @click.option("--periods", default="AM,IP", show_default=True)
-def compare_cmd(scenario_id: str, against: str, periods: str) -> None:
+@click.option("--unrelated", is_flag=True,
+              help="Allow two scenarios neither of which is built on the other (the difference then mixes both).")
+def compare_cmd(scenario_id: str, against: str, periods: str, unrelated: bool) -> None:
     """Compare a scenario with another scenario or the baseline: who gains and loses,
     accessibility, coverage and cost, and what the figures rest on. Both must have been
     run (`lab run`)."""
@@ -2706,6 +2732,14 @@ def compare_cmd(scenario_id: str, against: str, periods: str) -> None:
                 "file": lambda per: d / f"{per}.parquet"}
     try:
         A, B = side(scenario_id), side(against)
+        chain_a = [x.id for x in A["b"]["chain"]]
+        chain_b = [x.id for x in B["b"]["chain"]] if B["b"] else [root_id]
+        related = B["id"] in chain_a or A["id"] in chain_b
+        if not related and not unrelated:
+            raise click.ClickException(
+                f"{A['id']} (built on {' → '.join(chain_a)}) and {B['id']} (built on {' → '.join(chain_b)}) are not "
+                "ancestor and descendant: the difference would mix both scenarios' changes. Re-point one at the "
+                "other, or pass --unrelated")
         rec["scenario"] = {"id": A["id"], "spec_hash": A["b"]["scenario"].spec_hash}
         for x in (A, B):
             missing = [p for p in pers if not Path(x["file"](p)).is_file()]
@@ -2734,17 +2768,14 @@ def compare_cmd(scenario_id: str, against: str, periods: str) -> None:
             sa, oa_a = rn.connectivity(fa, car_jobs, jobs, oa.residents, oa.edge, th, beta, rt_)
             sb, oa_b = rn.connectivity(fb, car_jobs, jobs, oa.residents, oa.edge, th, beta, rt_)
             conn[per] = {"scenario": sa, "against": sb, "difference": rn.diff(sb, sa)}
-            ppl, by_oa = rn.people_summary(fb, fa, oa.residents, jobs, centre)
-            # the skim of each offset's own network, as `lab run` named it
-            offs = []
-            for k in A["b"]["report"]["by_offset"]:
-                gtfs = {f.stem: f for f in sorted((A["b"]["dir"] / f"offset_{k}").glob("*.zip"))}
-                f_k = A["dir"] / f"{per}.offset_{k}.{rn.offset_network(cfg, raw, ps, gtfs)['version']}.parquet"
-                if f_k.is_file():
-                    offs.append(f_k)
-            if len(offs) > 1:
-                ppl["range_across_offsets"] = rn.people_range(
-                    [rn.people_summary(fb, pd.read_parquet(f), oa.residents, jobs, centre)[0] for f in offs])
+            offs_a = _offset_skims(cfg, raw, ps, A["b"], A["dir"].parent, per)
+            offs_b = _offset_skims(cfg, raw, ps, B["b"], B["dir"].parent, per) if B["b"] else [B["file"](per)]
+            try:
+                op, how = rn.offset_pairs(offs_a, offs_b)
+            except ValueError as e:
+                raise click.ClickException(f"{A['id']} against {B['id']}: {e}")
+            ppl, by_oa = rn.people_over_offsets(op, oa.residents, jobs, centre)
+            ppl["pairing"] = how
             people[per] = ppl
             pairs[per] = rn.skim_diff(fb, fa) if "p50_min_offsets" in fa else None
             by_oa = by_oa.set_index("OA21CD")

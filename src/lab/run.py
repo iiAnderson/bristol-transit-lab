@@ -34,7 +34,7 @@ def offset_network(cfg, raw: dict, ps: dict, gtfs: dict[str, Path]) -> dict:
                    "r5r_net": Path(cfg.root) / raw["baseline"]["r5r"] / f"net-{v}"}
 
 
-def pt_skim(cfg, raw: dict, ps: dict, nw: dict, period: str, work: Path, day, log, chunk: int = 100) -> pd.DataFrame:
+def pt_skim(cfg, raw: dict, ps: dict, nw: dict, period: str, work: Path, day, log) -> pd.DataFrame:
     """r5r PT skim for one period on one network (as ``lab skims pt``, for any feeds)."""
     import duckdb
     net = nw["r5r_net"]
@@ -61,8 +61,8 @@ def pt_skim(cfg, raw: dict, ps: dict, nw: dict, period: str, work: Path, day, lo
             "max_rides": ps["routing.max_rides"], "walk_speed_kmh": nw["walk_kmh"], "elevation": nw["elevation"],
             "network_version": nw["version"], "max_walk_min": ps["routing.max_walk_min"],
             "max_trip_min": ps["routing.max_trip_min"], "reach_share_min": ps["routing.pt_reachable_share_min"],
-            "chunk": chunk, "sample_ids": str(work / "sample_ids.csv"), "out_dir": str(work / "chunks"),
-            "java_mem": "10G"}
+            "chunk": raw["router"]["chunk_origins"], "sample_ids": str(work / "sample_ids.csv"),
+            "out_dir": str(work / "chunks"), "java_mem": raw["router"]["java_mem"]}
     script = cfg.root / "src" / "lab" / "r" / "pt_skims.R"
     hs = list(nw["hashes"].values())
     sk.run_pt(script, rcfg, work / "config.json", log, [hs[0], *hs[1:3], params.file_hash(script), nw["version"]])
@@ -243,20 +243,48 @@ def people_summary(parent: pd.DataFrame, scen: pd.DataFrame, residents: pd.Serie
     return res, o.reset_index(names="OA21CD")
 
 
-PEOPLE_HEADLINES = (("to_the_centre", "residents_faster_by_threshold"), ("to_the_centre", "residents_slower_by_threshold"),
-                    ("to_jobs_weighted_mean_time", "residents_faster_by_threshold"),
-                    ("to_jobs_weighted_mean_time", "residents_slower_by_threshold"))
+def across_offsets(summaries: list):
+    """The people figures over a scenario's timetable offsets: every number becomes its
+    mean over the offsets' own figures, with the minimum and maximum (plans/P3.md §8,
+    "P3c stop — decided", item 7). A threshold count made on times averaged over the
+    offsets is not an expected value, so it is not computed. One offset: the figure."""
+    first = summaries[0]
+    if isinstance(first, dict):
+        return {k: across_offsets([s[k] for s in summaries]) for k in first}
+    if isinstance(first, (int, float)) and not isinstance(first, bool) and len(summaries) > 1:
+        v = [float(x) for x in summaries]
+        return {"mean": round(sum(v) / len(v), 3 if any(abs(x) < 10 for x in v) else 0), "min": min(summaries),
+                "max": max(summaries)}
+    return first
 
 
-def people_range(per_offset: list[dict]) -> dict:
-    """The headline people figures on each offset's own network, and their range: how far
-    a result depends on where a generated timetable happens to sit. The main figures are
-    from the mean of the offsets' times, so they need not lie inside the range."""
-    out: dict = {}
-    for a, b in PEOPLE_HEADLINES:
-        v = [p[a][b] for p in per_offset]
-        out.setdefault(a, {})[b] = {"by_offset": v, "min": min(v), "max": max(v)}
-    return out
+def offset_pairs(scen: list, parent: list) -> tuple[list, str]:
+    """Which parent skim each of the scenario's offset skims is compared with: offset k
+    with the parent's offset k when both have the same offsets (the same phase
+    fractions), else every offset with the parent's one skim."""
+    if len(parent) == len(scen):
+        return list(zip(parent, scen)), "offset by offset"
+    if len(parent) == 1:
+        return [(parent[0], s) for s in scen], "each offset against the parent's one network"
+    raise ValueError(f"{len(scen)} scenario offsets against {len(parent)} parent offsets: no pairing")
+
+
+def people_over_offsets(pairs: list, residents: pd.Series, jobs: pd.Series, centre: str) -> tuple[dict, pd.DataFrame]:
+    """``people_summary`` on each (parent, scenario) pair of skims (frames or parquet
+    paths), then ``across_offsets``; per OA, the mean of the offsets' changes."""
+    sums, frames = [], []
+    for par, scen in pairs:
+        par = pd.read_parquet(par) if not isinstance(par, pd.DataFrame) else par
+        scen = pd.read_parquet(scen) if not isinstance(scen, pd.DataFrame) else scen
+        s, o = people_summary(par, scen, residents, jobs, centre)
+        sums.append(s)
+        frames.append(o.set_index("OA21CD"))
+    by_oa = frames[0].copy()
+    num = [c for c in by_oa.columns if c != "residents" and pd.api.types.is_numeric_dtype(by_oa[c])]
+    by_oa[num] = sum(f[num].astype(float) for f in frames) / len(frames)
+    out = across_offsets(sums)
+    out["offsets"] = len(pairs)
+    return out, by_oa.reset_index()
 
 
 def connectivity(pt: pd.DataFrame, car_jobs: pd.Series | None, jobs: pd.Series, residents: pd.Series, edge: pd.Series,

@@ -1,8 +1,10 @@
 # ENGINE TEST ONLY (plans/P3.md P3b-6) — not a proposal and not anyone's alignment. A new
 # heavy-rail route on one leg of existing track and a straight tunnel to two invented stops,
 # to exercise the run-time rules, the capacity check and (in P3c) costs by alignment type.
+# Built on B2028 (plans/P3.md §8, P3c stop — decided, item 6) so that `lab compare` can set
+# it against the 2028 baseline, as SPEC §10's P7b acceptance needs.
 id: T003-engine-test-tunnel
-parent: B2026
+parent: B2028
 description: Engine test — a new heavy-rail route on existing track plus a tunnel leg to two invented stops
 landuse: L2026
 ops:

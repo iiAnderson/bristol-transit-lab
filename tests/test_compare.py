@@ -14,10 +14,10 @@ def test_params_behind_lists_tagged_values_in_the_namespaces_a_comparison_reads(
 
 def test_the_report_shows_losers_ranges_gaps_in_the_cost_and_placeholders():
     side = {"jobs_45min": {"resident_weighted_mean": 1000.0, "median_core_oa": 900.0}}
-    ppl = {"centre_zone": "Z", "to_the_centre": {"residents_faster_by_threshold": 500, "residents_slower_by_threshold": 40},
-           "to_jobs_weighted_mean_time": {"residents_faster_by_threshold": 300, "residents_slower_by_threshold": 20},
-           "range_across_offsets": {"to_the_centre": {"residents_faster_by_threshold": {"min": 450, "max": 620},
-                                                      "residents_slower_by_threshold": {"min": 10, "max": 90}}}}
+    ppl = {"centre_zone": "Z",
+           "to_the_centre": {"residents_faster_by_threshold": {"mean": 540, "min": 450, "max": 620},
+                             "residents_slower_by_threshold": {"mean": 40, "min": 10, "max": 90}},
+           "to_jobs_weighted_mean_time": {"residents_faster_by_threshold": 300, "residents_slower_by_threshold": 20}}
     cost = {"against": "B", "price_base_year": 2025, "optimism_bias_stage": 1, "complete": False,
             "capex": {"raw": {"low": 1e6, "central": 2e6, "high": 3e6}, "with_optimism_bias": {"low": 1.5e6, "central": 3e6, "high": 4.5e6}},
             "opex_per_year": {"low": 1e5, "central": 2e5, "high": 3e5}, "not_costed": ["track in tunnel: no unit cost"],
@@ -33,8 +33,8 @@ def test_the_report_shows_losers_ranges_gaps_in_the_cost_and_placeholders():
          "params_behind": {"MODELLED": ["a"], "PLACEHOLDER": ["costs.yaml: fleet.spare_ratio"]},
          "skims": {"scenario": "x", "against": "y"}}
     md = cmp_.markdown(c)
-    assert "| AM | the centre (Z) | 500 | 40 | 450 to 620 | 10 to 90 |" in md
-    assert "| AM | jobs (weighted mean time) | 300 | 20 | one network | one network |" in md
+    assert "| AM | the centre (Z) | 540 | 450 to 620 | 40 | 10 to 90 |" in md
+    assert "| AM | jobs (weighted mean time) | 300 | one network | 20 | one network |" in md
     assert "> **B:** a caveat from the parent" in md
     assert "| frequent 15 min, residents | 10 | 8 | +2 |" in md and "| residents in no class | 5 | 6 | -1 |" in md
     assert "**incomplete:** 1 items have no unit cost" in md and "track in tunnel" in md

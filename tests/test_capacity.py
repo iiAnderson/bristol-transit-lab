@@ -1,5 +1,6 @@
 """Track-capacity check (plans/P3.md D6) on a synthetic section graph."""
 import pandas as pd
+import pytest
 
 from lab import capacity as cap
 
@@ -78,3 +79,16 @@ def test_scenario_use_and_the_check_flags_only_the_overloaded_section():
     assert bc.total_tph == 3 and bc.limit_tph == 3 and not bc.over         # 2 + 1 freight on single track
     s4 = cap.scenario_use(feeds(15), REPORT)
     assert cap.check(lim, base, s4, PERIODS).set_index(["from", "to", "period"]).loc[("B", "C", "AM")].over
+
+
+def test_an_added_journey_is_counted_on_the_track_of_the_journey_it_copies():
+    tp = table()
+    rid = tp.rid.iloc[0]
+    one = cap.base_use(tp[tp.rid == rid])
+    moved = cap.copied_use(tp, [{"of": rid, "shift_min": 120.0}])           # two hours later
+    assert sorted(zip(moved["from"], moved.to)) == sorted(zip(one["from"], one.to))
+    assert (moved.hour.to_numpy() == (one.hour.to_numpy() + 2) % 24).all() and moved.trains.sum() == one.trains.sum()
+    assert cap.copied_use(tp, [{"of": f"{rid}#1", "shift_min": 0.0}]).trains.sum() == one.trains.sum()
+    assert cap.copied_use(tp, []).empty
+    with pytest.raises(ValueError):
+        cap.copied_use(tp, [{"of": "not-a-journey", "shift_min": 0.0}])
