@@ -36,7 +36,8 @@ tunnel:
   portal_each: {value: 20.0e+6, unit: GBP, price_year: 2011, ob_category: fixed_links, tag: SOURCED, source: g}
   vent_shaft_each: {value: 10.0e+6, unit: GBP, price_year: 2011, ob_category: fixed_links, tag: SOURCED, source: g}
   vent_shaft_spacing_km: {value: 3.0, tag: SOURCED, source: g}
-  track_and_power_in_tunnel: {value: null, unit: GBP per route-km, tag: PLACEHOLDER}
+  track_per_track_km: {value: null, unit: GBP per track-km, tag: PLACEHOLDER}
+  electrification_per_track_km: {value: null, unit: GBP per track-km, tag: PLACEHOLDER}
 stations:
   heavy_rail:
     surface: {value: 10.0e+6, unit: GBP, price_year: 2025, ob_category: buildings, tag: SOURCED, source: s}
@@ -135,7 +136,8 @@ def test_a_rail_tunnel_is_built_up_and_what_has_no_unit_cost_is_listed_not_guess
     assert by["R: tunnel 1: time related per week"]["quantity"] == 90 and by["R: tunnel 1: vent shaft each"]["quantity"] == 2
     assert by["R: tunnel 1: portal each"]["quantity"] == 1 and by["R: tunnel 1: tbm each"]["cost"] == pytest.approx(30e6 * f)
     assert by["R: 1 new stations (underground box)"]["cost"] == 50e6 and by["R: 1 new stations (underground mined)"]["cost"] == 100e6
-    assert by["R: tunnel 1: track, power and signalling"]["cost"] is None
+    assert by["R: tunnel 1: track"]["cost"] is None and by["R: tunnel 1: track"]["quantity"] == 12.0
+    assert by["R: tunnel 1: electrification"]["cost"] is None
     assert any("existing railway" in n for n in notes) and any("leased" in n for n in notes)
     ol, on = costs.opex(pd.Series({"2": 1000.0, "3": 500.0}), pd.Series({"2": 1100.0, "3": 400.0}), [q], LIB)
     ob = {x["item"].split(" (")[0]: x for x in ol}
@@ -144,7 +146,7 @@ def test_a_rail_tunnel_is_built_up_and_what_has_no_unit_cost_is_listed_not_guess
     assert ob["heavy rail: units leased"]["cost"] == 1.8e+6 and ob["heavy rail: train crew"]["cost"] == 1.0e+6
     assert ob["heavy rail: new stations"]["cost"] == 200000 and ob["tunnel maintenance"]["cost"] == 6e6
     s = costs.summarise(lines, ol, notes + on, LIB)
-    assert not s["complete"] and len(s["not_costed"]) == 1 and "PLACEHOLDER" in s["not_costed"][0]
+    assert not s["complete"] and len(s["not_costed"]) == 2 and "PLACEHOLDER" in s["not_costed"][0]
     assert s["opex_per_year"]["central"] == round(60000 - 99000 + 1.8e+6 + 1.0e+6 + 200000 + 6e6)
 
 

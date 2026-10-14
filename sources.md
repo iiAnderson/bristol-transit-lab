@@ -1510,6 +1510,87 @@ heavy-rail vehicle, a BRT scheme or tram operation.
 - **Not costed anywhere yet:** works to existing railway (so the Portishead line's
   reopening costs only its two stations), track and power inside a tunnel, land.
 
+### Henbury cost reconciliation, item by item (P3c stop — decided, item 3; 2026-10-14)
+
+Source: WECA MetroWest Phase 2 FBC Stage 2 Update (Oct 2025) only, already opened. Both
+sides before contingency and before optimism bias, at 2025 prices. The business case's
+£72.0m is nominal over 2025/26–2027/28 (16.7 / 26.6 / 28.7) and excludes contingency
+(20%) and spend before Q3 2025; on its own 4% a year it is £68.8m at 2025/26 prices
+(× 0.9556). The library's index year is calendar 2025, one quarter earlier: about 1%.
+
+| What the £68.8m holds (§6.6.7–8, §7.13.3, §8.2.14) | Business case, 2025 prices | Library before this stop | Library now |
+|---|---|---|---|
+| Network Rail works, North Filton: two platforms, footbridge with lifts, drainage, Filton West Curve renewal, signalling | £24.8m (£5.2m contingency ÷ 20% = £26.0m nominal) | £19.0m (Ashley Down) | £19.0m, range to £24.8m |
+| Network Rail works, Henbury: one platform, bay line, turnout and crossover, buffer stop, signalling | £17.7m (£3.7m ÷ 20% = £18.5m nominal) | £19.0m | £19.0m |
+| Works held by the combined authority: Henbury's A4018 ramp, road and car park, walking and cycling link, public realm, staff, possessions | £27.7m (£5.8m ÷ 20% = £29.0m nominal) | nothing | **£27.8m** (`access_and_client_works`, £13.9m a station) |
+| Sum of the three derived bases | £70.2m (£73.5m nominal; 1.5 more than the £72.0m printed, unexplained) | | |
+| North Filton's car parks, ticket office, station square | built by the developer: in neither | not costed | not costed |
+| Land | not mentioned as a cost (agreements with the adjacent landowners) | not costed | not costed |
+| Design spent before Q3 2025 (£1.2m North Filton, £1.0m Henbury) | excluded as sunk | — | — |
+| **Total** | **£68.8m** | **£38.0m (45% low)** | **£65.8m (4% low)**; range £38.0–77.5m |
+
+- **The gap was one missing item, not the station rate.** Network Rail's two station
+  packages (£24.8m and £17.7m) bracket the library's £19.0m. What the library lacked was
+  the client's own works — road access, car park, walking links and programme costs —
+  which are 40% of the scheme. Added as `stations.heavy_rail.access_and_client_works`,
+  from 0 (Ashley Down, reached from an existing path, all-in at £18.2m) to £13.9m.
+- **The check is no longer independent.** The new item and the station's high value
+  come from this business case, so agreement within 4% is by construction. The library
+  has no independent check on station costs until a second scheme's breakdown is opened.
+- **Optimism bias, same stage.** The business case uplifts by 33% (Henbury, stage 2)
+  and 30% (North Filton, stage 3) — TAG's *rail* category — giving £94.6m nominal,
+  £90.4m at 2025/26 prices. The library uses TAG's *buildings* category for stations
+  (48% at stage 2, 44% at stage 3): one station at each, £96.3m. At the library's default
+  stage 1 (70%), £111.9m. The business case's choice of category is noted (§7.13.5 argues
+  the stations include highway and railway elements with lower uplifts), not adopted.
+- **Not a finding against the station rates:** after the item is added the gap is 4%,
+  under the 20% the decision set.
+
+### B2028: which outputs see the added trips in the AM (P3c stop — decided, item 8)
+
+The sentence cut off at the stop meant: **the AM skim hour (08:00–09:00) contains only
+trains timetabled today, but the AM period (07:00–10:00) contains one added trip each way**
+— the 07:04 from Temple Meads and the 06:47 from Filton Abbey Wood, extended from Henbury
+at about 06:38 and reaching Temple Meads at about 07:04. So:
+- **seen by** frequent-service coverage (AM departures counted over 07:00–10:00; no effect
+  at an hourly service) and the capacity check (hour 07 rows; counted on Filton Bank since
+  the fix of 2026-10-14);
+- **not seen by** the PT skims, and so not by the people figures, accessibility or the
+  comparison, whose AM is the 08:00–09:00 departure window. The inter-peak (10:00–16:00)
+  has no added trip.
+
+### Capacity check with the added trips counted (P3c stop — decided, item 5; 2026-10-14)
+
+Run `20261014T213831-scenario-capacity-d5f840`, B2028, all three offsets alike. Each added
+journey now runs the copied journey's Darwin timing points, moved by its shift (6 from
+Temple Meads, 5 back). **32 sections used (was 16, because Filton Bank is now counted),
+none over.**
+- **Filton Bank** (Dr Day's Junction to Filton Abbey Wood, both directions): every
+  section on modelled track capacity (12 trains an hour), busiest hours 2 to 11 trains.
+  The added trips show only in hour 07 (one train each way); Horfield – Filton Abbey Wood
+  is at 10 of 12 in the AM.
+- **Temple Meads east throat** (Temple Meads – Bristol East Junction, each way): 18 of 18
+  in the AM and PM peaks, and 17–18 in the inter-peak, **at a limit set by today's busiest
+  hour (the floor), not by modelled capacity (12)**. B2028 adds no train there in those
+  hours, so the check here reads "no busier than today", not "within capacity".
+- **Dr Day's Junction – Bristol East Junction:** 12 of 12 in the PM peak, on modelled
+  capacity.
+- **Parson Street – Pill**, each way: 2 of 2, on modelled single-track capacity.
+- Sections whose binding limit is today's floor: 2 (the east throat). The column
+  `limit_from` gives modelled capacity or the floor for every section (it was added at
+  the follow-up stop; asked for again at this one).
+
+### Disk and run records (P3c stop — decided, item 10; 2026-10-14)
+
+- **No superseded skims were deleted.** The rule was to delete only skims whose run
+  records are committed, and **no run record is committed**: `runs/` is in `.gitignore`
+  (only `runs/.gitkeep` is tracked). The earlier B2028 and no-Henbury skims also back
+  results still cited here (45,095 and the 33,228 slower pairs of the previous build).
+- **The router's heap is capped in config** (`router.java_mem: 6G`, `router.chunk_origins:
+  100`). Measured: a 100-origin chunk at 6G peaks at 4.6 GB resident and runs as fast as
+  at 10G (25 s a chunk). Chunk folders are deleted after each run and, during one, as
+  soon as an offset's skim is written.
+
 ## Phase status
 
 | phase | status |

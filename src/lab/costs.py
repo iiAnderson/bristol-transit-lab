@@ -255,8 +255,8 @@ def capex(services: list[dict], lib: Library, stage: int | None = None) -> tuple
                                     "shafts")):
                 if qty:
                     lines.append(_line(f"{tn}: {part.replace('_', ' ')}", qty, per, lib.unit(f"tunnel.{part}"), lib, stage))
-            lines.append(_line(f"{tn}: track, power and signalling", r["km"], "route-km",
-                               lib.unit("tunnel.track_and_power_in_tunnel"), lib, stage))
+            for part, what in (("track_per_track_km", "track"), ("electrification_per_track_km", "electrification")):
+                lines.append(_line(f"{tn}: {what}", 2 * r["km"], "track-km", lib.unit(f"tunnel.{part}"), lib, stage))
         counts: dict[str, int] = {}
         for s in q["new_stops"]:
             if mode == "heavy_rail":
@@ -272,6 +272,9 @@ def capex(services: list[dict], lib: Library, stage: int | None = None) -> tuple
                 continue
             lines.append(_line(f"{nm}: {n} new stations ({kind.replace('_', ' ')})", n, "stations",
                                lib.unit(f"stations.{mode}.{kind}"), lib, stage))
+            if mode == "heavy_rail" and kind == "surface":
+                lines.append(_line(f"{nm}: access and client works for {n} new stations", n, "stations",
+                                   lib.unit("stations.heavy_rail.access_and_client_works"), lib, stage))
         if mode in ("tram", "brt") and not q["is_extension"]:
             depot_modes.add(mode)
     for mode, fl in sorted(with_spares(services, lib).items()):

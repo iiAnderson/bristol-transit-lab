@@ -256,27 +256,64 @@ tunnel:
     tag: SOURCED
     source: "HS2 Ltd, A Guide to Tunnelling Costs (2015), §3.6: typically every 3 km"
   single_bore: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: "not sourced; a single-track tunnel is costed as twin bore until it is"}
-  track_and_power_in_tunnel: {value: null, unit: GBP per route-km, tag: PLACEHOLDER, note: "not sourced: track, overhead line or conductor rail and signalling inside a tunnel are NOT in the HS2 guide's rates"}
+  track_per_track_km:
+    value: null
+    unit: GBP per km of track laid in a tunnel (slab track, rails, drainage at track level)
+    tag: PLACEHOLDER
+    note: "not sourced; NOT in the HS2 guide's rates, which stop at the base slab. Twin bore: two km of track per route-km"
+  electrification_per_track_km:
+    value: null
+    unit: GBP per km of track electrified in a tunnel (overhead conductor rail or catenary, feeders)
+    tag: PLACEHOLDER
+    note: "not sourced; the RIA open-route rates (rail_works) are not for tunnels. Signalling inside the tunnel is not costed either"
 
 # ---------------------------------------------------------------- capital: stations
 stations:
   heavy_rail:
     surface:
       value: 18.2e+6
-      range: [18.2e+6, 32.9e+6]
-      unit: GBP per new station on an existing line, with its access works
+      range: [18.2e+6, 23.8e+6]
+      unit: GBP per new station on an existing line (platforms, footbridge, systems, track and signalling changes)
       price_year: 2023
       ob_category: buildings
       tag: SOURCED
       source: >-
         West of England Combined Authority, MetroWest Phase 2 Full Business Case Stage 2
         Update (WSP, Oct 2025). Central: §8.2.7, Ashley Down station delivered for £18.2m
-        (two platforms, opened 2024; outturn, taken as 2023 prices). High: Table 7-19 and
-        §7.13.3–4, £72.0m in nominal prices for North Filton (two platforms) and Henbury
-        (one platform) with highway access, parking and a walking and cycling link, before
-        the 20% contingency: £68.8m at 2025/26 prices on the document's own 4% a year,
-        £34.4m a station.
-      note: the high value is restated in 2023 prices (£34.4m × 137.4 ÷ 143.6 = £32.9m) so that one price year serves the entry
+        (two platforms, footbridge with lifts, opened 2024; outturn, taken as 2023 prices).
+        High: §8.2.14, Network Rail's contingency for North Filton, £5.2m, is 20% of its base
+        cost, so Network Rail's North Filton works are £26.0m in nominal prices (two
+        platforms, footbridge with lifts, drainage and Filton West Curve track renewal,
+        signalling); at 2025/26 prices on the document's own spend profile and 4% a year
+        (× 0.9556) £24.8m, restated in 2023 prices (× 137.4 ÷ 143.6) as £23.8m. Henbury's
+        works by the same arithmetic: £3.7m ÷ 20% = £18.5m nominal, £17.7m at 2025/26 prices.
+      note: >-
+        The high value is derived from a contingency and its stated percentage, not
+        printed as a cost (Tables 8-1 to 8-3 are redacted). Highway access, car parks,
+        walking links and the client's own costs are a separate item,
+        `access_and_client_works`.
+    access_and_client_works:
+      value: 13.9e+6
+      range: [0.0, 13.9e+6]
+      unit: GBP per new station on an existing line — highway access, car park, walking and cycling links, the client's programme costs
+      price_year: 2025
+      ob_category: buildings
+      tag: SOURCED
+      source: >-
+        WECA, MetroWest Phase 2 FBC Stage 2 Update (Oct 2025), §8.2.14: the combined
+        authority's own contingency, £5.8m, is 20% of its base cost, so the works it holds
+        are £29.0m in nominal prices for the two stations; £27.7m at 2025/26 prices (× 0.9556,
+        as above), £13.9m a station. By §6.6.8 and §7.13.3 they include Henbury's A4018
+        access ramp, turning circle, approach road and car park, the walking and cycling
+        link, public realm, and staff and possession costs.
+      note: >-
+        Low is nothing: Ashley Down, reached from an existing path, has no such item and
+        its £18.2m is all-in. Central is the Phase 2 average, which suits a station on a
+        new site with road access; it overstates one reached on foot. North Filton's car
+        parks, ticket office and station square are built by the developer and are in
+        neither figure. This item and the station's high value come from the scheme the
+        library is checked against, so that check is no longer independent
+        (sources.md, "Henbury cost reconciliation").
     underground_box:
       value: 234.0e+6
       unit: GBP per station built as an open box, main civil works contract only
