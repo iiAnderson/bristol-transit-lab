@@ -180,10 +180,12 @@ def build(compare_dir: Path, gap_dir: Path, scenarios_dir: Path, data_hash: str,
     x0, y0, x1, y1 = extent
     m = folium.Map(location=[(y0 + y1) / 2, (x0 + x1) / 2], tiles=None, control_scale=True)
     m.fit_bounds([[y0, x0], [y1, x1]])
-    folium.TileLayer("OpenStreetMap", control=False).add_to(m)
-    # the OSM raster is busy; mute it so the data reads
-    m.get_root().header.add_child(folium.Element(
-        "<style>.leaflet-tile-pane{filter:grayscale(1) contrast(.8) brightness(1.1);opacity:.55}</style>"))
+    # OSM's own tile servers refuse pages opened from disk (no Referer: HTTP 403), so the
+    # basemap is Esri's light grey canvas, which needs only attribution.
+    esri = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/{}/MapServer/tile/{{z}}/{{y}}/{{x}}"
+    attr = "Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors"
+    folium.TileLayer(esri.format("World_Light_Gray_Base"), attr=attr, control=False, max_zoom=16).add_to(m)
+    folium.TileLayer(esri.format("World_Light_Gray_Reference"), attr=attr, control=False, max_zoom=16).add_to(m)
     _oa_layer(g, "pt_jobs_45_AM_change", "Jobs within 45 min by PT, change (AM)", "jobs", True, not show_gap).add_to(m)
     _oa_layer(g, "pt_jobs_30_AM_change", "Jobs within 30 min by PT, change (AM)", "jobs", True, False).add_to(m)
     _oa_layer(g, "centre_change_min_AM", "Time to the centre, change (AM; blue = faster)", "min", False, False,
