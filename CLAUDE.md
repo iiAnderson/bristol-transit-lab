@@ -1,6 +1,7 @@
 # Bristol Transit Lab — CLAUDE.md
 
-Read `SPEC.md` in full before planning anything, then upstream's `sources.md` and
+v1 scope ends at P3 (see `README.md`); deferred work is in `docs/DEFERRED.md` and is not
+to be built unprompted. Read `SPEC.md` in full before planning anything, then upstream's `sources.md` and
 `GENERALISATION.md` (`~/Documents/Projects/subwaybuilder-bristol/`), then this repo's
 `sources.md`. Phase status is recorded at the end of `sources.md`.
 

@@ -9,17 +9,15 @@ from lab.cli import cli
 def test_help_works():
     r = CliRunner().invoke(cli, ["--help"])
     assert r.exit_code == 0
-    for cmd in ["build-baseline", "scenario", "run", "compare", "calibrate",
-                "export-viz", "view", "embed", "params"]:
+    for cmd in ["build-baseline", "scenario", "run", "compare", "params"]:
         assert cmd in r.output
     assert "sketch-planning" in r.output
     assert "game" not in r.output          # the bridge is SPEC §12 FUTURE
 
 
-def test_unbuilt_commands_fail_loudly():
-    r = CliRunner().invoke(cli, ["calibrate"])
-    assert r.exit_code != 0
-    assert "P5" in r.output
+def test_cut_commands_are_gone():
+    for cmd in ["calibrate", "export-viz", "view", "embed"]:
+        assert CliRunner().invoke(cli, [cmd]).exit_code != 0
 
 
 def test_run_needs_a_scenario_or_noop():
