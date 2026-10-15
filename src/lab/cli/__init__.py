@@ -18,7 +18,7 @@ import click
 from .. import FIDELITY_DISCLAIMER, __version__
 from ..config import LabConfig  # noqa: F401  (tests patch `lab.cli.LabConfig`)
 from ..coverage_cli import coverage
-from . import congestion, demand, reports, run, scenario, skims, spikes, supply
+from . import congestion, demand, maps, reports, run, scenario, skims, spikes, supply
 
 
 def _not_yet(phase: str) -> None:
@@ -44,9 +44,10 @@ cli.add_command(run.run)
 for _g in (demand.demand, demand.landuse, supply.supply, congestion.congestion,
            spikes.spike, skims.skims, coverage):
     cli.add_command(_g)
-for _c in vars(reports).values():
-    if isinstance(_c, click.Command):
-        cli.add_command(_c)
+for _mod in (reports, maps):
+    for _c in vars(_mod).values():
+        if isinstance(_c, click.Command):
+            cli.add_command(_c)
 
 
 def main() -> None:

@@ -12,6 +12,7 @@ dependencies:
   - python-duckdb=1.5.3   # same as upstream, so file formats match
   - geopandas
   - pyarrow
+  - folium              # `lab map`
   - pyogrio
   - shapely
   - numpy

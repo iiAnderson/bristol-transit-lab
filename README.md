@@ -14,6 +14,9 @@ and comparative only: good for ranking ideas and finding gaps, not for a busines
    capex/opex (low/central/high).
 
 `lab compare <scenario> <parent>` writes `compare.md`, `compare.json`, `change_oa.parquet`.
+`lab map [compare-run-id] [--show-gap] [--open]` turns that run into one HTML map: change in
+jobs within 30/45 minutes, time to the centre, 15-minute service, the baseline gap map, the
+new lines and stops, and a scorecard panel. Needs an internet connection for the tiles.
 
 ## Not in v1
 
