@@ -1,6 +1,6 @@
 """Bristol Transit Lab — a sketch-planning model. Outputs are indicative and comparative."""
 
-__version__ = "0.0.1"
+__version__ = "1.0.0"
 
 FIDELITY_DISCLAIMER = (
     "This is a sketch-planning model. Its outputs are indicative and comparative — good "
