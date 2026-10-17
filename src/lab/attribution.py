@@ -41,3 +41,27 @@ def compute(lab_db: Path, skims_scenario: Path, skims_against: Path, route_ids: 
                    coalesce(sum(jobs) FILTER (WHERE sel AND NOT ub AND t1 <= {limit_min}
                                               AND (ua OR t0 > {limit_min})), 0) AS jobs_new_within
             FROM s GROUP BY 1""").df()
+
+
+def zone_jobs(lab_db: Path) -> pd.DataFrame:
+    with duckdb.connect(str(lab_db), read_only=True) as con:
+        return con.execute("""SELECT d.LSOA21CD AS zone, coalesce(b.jobs, 0) AS jobs
+                              FROM skim_dest d LEFT JOIN nat_bres b USING (LSOA21CD)""").df()
+
+
+def reach(lab_db: Path, skims_scenario: Path, skims_against: Path, oas: list[str], min_gain: float,
+          period: str = "AM", limit_min: float = 45.0) -> pd.DataFrame:
+    """Per chosen OA, the destination zones that matter for a before-and-after reach picture:
+    inside `limit_min` before or after, or at least `min_gain` minutes faster. `t0` / `t1` are the
+    PT median minutes before (against) and after (scenario); NULL where unreachable."""
+    a, b = skims_against / f"{period}.parquet", skims_scenario / f"{period}.parquet"
+    ids = ", ".join("'" + o + "'" for o in oas)
+    with duckdb.connect(str(lab_db), read_only=True) as con:
+        return con.execute(f"""
+            SELECT a.from_id AS oa, a.to_id AS zone,
+                   CASE WHEN a.unreachable THEN NULL ELSE round(a.p50, 1) END AS t0,
+                   CASE WHEN b.unreachable THEN NULL ELSE round(b.p50, 1) END AS t1
+            FROM read_parquet('{a}') a JOIN read_parquet('{b}') b USING (from_id, to_id)
+            WHERE a.from_id IN ({ids})
+              AND ((NOT a.unreachable AND a.p50 <= {limit_min}) OR (NOT b.unreachable AND b.p50 <= {limit_min})
+                   OR (NOT b.unreachable AND (a.unreachable OR a.p50 - b.p50 >= {min_gain})))""").df()

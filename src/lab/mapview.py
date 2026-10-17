@@ -102,6 +102,80 @@ def _norm(s: pd.Series) -> pd.Series:
     return (s.abs() / _scale(s)).clip(upper=1.0)
 
 
+
+REACH_JS = """
+window.addEventListener("load", function () {
+  const Z = %(zones)s, R = %(reach)s, J = %(jobs)s, OAS = %(oas)s, THR = %(thr)s, LIM = %(lim)s;
+  const grp = %(grp)s, map = %(map)s;
+  const base = {weight: 0.4, color: "#888", fillOpacity: 0, opacity: 0.35};
+  const layers = [];
+  const zl = L.geoJSON(Z, {style: () => base, onEachFeature: (f, l) => { layers[f.properties.i] = l; }});
+  grp.addLayer(zl);
+  const info = document.getElementById("reach-info");
+  function colour(t0, t1) {
+    const in0 = t0 !== null && t0 <= LIM, in1 = t1 !== null && t1 <= LIM;
+    const faster = t0 !== null && t1 !== null && t0 - t1 >= THR;
+    if (in1 && (!in0 || t0 === null) && (t0 === null || t0 - t1 >= THR)) return ["%(gain)s", 0.75, "newly within"];
+    if (in1 && !in0) return ["%(neutral)s", 0.35, "tipped by under the threshold"];
+    if (in0 && !in1) return ["%(loss)s", 0.6, "no longer within"];
+    if (in0 && in1 && faster) return ["#6baed6", 0.5, "within, faster"];
+    if (in0 && in1) return ["#c6dbef", 0.3, "within, unchanged"];
+    return null;
+  }
+  function select(oa, name) {
+    layers.forEach(l => l.setStyle(base));
+    let before = 0, after = 0, gained = 0;
+    (R[oa] || []).forEach(([zi, t0, t1]) => {
+      const c = colour(t0, t1), j = J[zi];
+      if (t0 !== null && t0 <= LIM) before += j;
+      if (t1 !== null && t1 <= LIM) after += j;
+      if (c) { if (c[2] === "newly within") gained += j;
+        layers[zi].setStyle({fillColor: c[0], fillOpacity: c[1], color: c[0], weight: 0.8, opacity: 0.9}); }
+      layers[zi].bindTooltip(Z.features[zi].properties.n + ": " + (t0 === null ? "n/a" : t0) + " -> " + (t1 === null ? "n/a" : t1) + " min");
+    });
+    info.innerHTML = "<b>" + name + "</b><br>Jobs within " + LIM + " min by PT: " + before.toLocaleString() + " before, " +
+      after.toLocaleString() + " after (" + (after - before >= 0 ? "+" : "") + (after - before).toLocaleString() + ").<br>" +
+      "Dark blue: newly within " + LIM + " min by a real saving (" + gained.toLocaleString() + " jobs). Mid blue: within before and after, " +
+      THR + "+ min faster. Pale: within, unchanged. Grey: tipped inside by under " + THR + " min (not counted). Red: no longer within.";
+  }
+  OAS.forEach(o => {
+    const m = L.circleMarker([o[1], o[2]], {radius: 5, color: "#000", weight: 1, fillColor: "#fff", fillOpacity: 1})
+      .bindTooltip(o[0] + " (" + o[3].toLocaleString() + " residents): click for its reach");
+    m.on("click", () => select(o[0], o[0] + ", " + o[3].toLocaleString() + " residents"));
+    grp.addLayer(m);
+  });
+  map.on("overlayremove", e => { if (e.layer === grp) layers.forEach(l => l.setStyle(base)); });
+});
+"""
+
+
+def _reach_layer(m: folium.Map, sel: gpd.GeoDataFrame, zones: gpd.GeoDataFrame, reach: pd.DataFrame,
+                 jobs: pd.DataFrame, thr: float, limit: float = 45.0) -> None:
+    """Click an area marker: shade the zones reachable within `limit` minutes before and after."""
+    zones = zones.reset_index(drop=True)
+    idx = {z: i for i, z in enumerate(zones.LSOA21CD)}
+    zg = zones.copy()
+    zg["geometry"] = zg.geometry.simplify(0.0004)
+    feats = [{"type": "Feature", "geometry": json.loads(gpd.GeoSeries([r.geometry]).to_json())["features"][0]["geometry"],
+              "properties": {"i": i, "n": r.LSOA21NM}} for i, r in enumerate(zg.itertuples())]
+    jb = dict(zip(jobs.zone, jobs.jobs))
+    jobs_by_idx = [int(jb.get(z, 0)) for z in zones.LSOA21CD]
+    data: dict[str, list] = {}
+    for r in reach.itertuples():
+        if r.zone in idx:
+            data.setdefault(r.oa, []).append([idx[r.zone], None if pd.isna(r.t0) else float(r.t0),
+                                              None if pd.isna(r.t1) else float(r.t1)])
+    oas = [[r.OA21CD, round(r.geometry.y, 5), round(r.geometry.x, 5), int(r.residents)]
+           for r in sel.itertuples() if r.OA21CD in data]
+    fg = folium.FeatureGroup(name=f"Click an area: {limit:g}-minute reach before and after", show=False)
+    fg.add_to(m)
+    js = REACH_JS % {"zones": json.dumps({"type": "FeatureCollection", "features": feats}, separators=(",", ":")),
+                     "reach": json.dumps(data, separators=(",", ":")), "jobs": json.dumps(jobs_by_idx),
+                     "oas": json.dumps(oas, separators=(",", ":")), "thr": thr, "lim": limit,
+                     "grp": fg.get_name(), "map": m.get_name(), "gain": GAIN, "neutral": NEUTRAL, "loss": LOSS}
+    m.get_root().script.add_child(folium.Element(js))
+
+
 def _gap_layer(gap_dir: Path, show: bool) -> tuple[folium.FeatureGroup, dict]:
     od = pd.read_parquet(gap_dir / "gapmap_od.parquet")
     od = od[od.mapped & ~od.intrazonal & ~od.no_pt].copy()
@@ -203,6 +277,7 @@ def panel(c: dict, run_label: str, data_hash: str, gap_meta: dict, gap_run: str,
 <div style="color:#b2182b;margin:4px 0">{html.escape(FIDELITY_DISCLAIMER)}</div>
 <table style="border-collapse:collapse;width:100%">{trs}</table>
 {chart}
+<div id="reach-info" style="margin:6px 0;color:#333">Tick “Click an area” and click a white dot to see which zones come within 45 minutes.</div>
 <p style="margin:6px 0">Mean (min–max) over {pe['offsets']} timetable offsets, AM 08:00–09:00, {html.escape(str(c['modelled_date']))}.
 Blue = better, red = worse. Costs: {cost_note}</p>
 <details><summary>Gap map (baseline, car times indicative)</summary>
@@ -214,7 +289,8 @@ Car times failed their own P2 spot check, so read the ranking, not the minutes. 
 
 
 def build(compare_dir: Path, gap_dir: Path, scenarios_dir: Path, data_hash: str, extent: tuple,
-          attr: pd.DataFrame, show_gap: bool = False) -> str:
+          attr: pd.DataFrame, zones: gpd.GeoDataFrame, reach: pd.DataFrame, jobs: pd.DataFrame,
+          show_gap: bool = False) -> str:
     c = json.loads((compare_dir / "compare.json").read_text())
     g = gpd.read_parquet(compare_dir / "change_oa.parquet").merge(attr, on="OA21CD", how="left").fillna(
         {"jobs_faster": 0, "jobs_faster_via_scheme": 0, "jobs_new_within": 0})
@@ -258,6 +334,7 @@ def build(compare_dir: Path, gap_dir: Path, scenarios_dir: Path, data_hash: str,
         _dots(f15, "15-minute service, change", False, pd.Series(1.0, index=f15.index),
               lambda r: _colour(r.frequent_15_change, 1),
               lambda r: f"{r.OA21CD}: {r.frequent_15_change:+d}").add_to(m)
+    _reach_layer(m, g, zones, reach, jobs, thr)
     gl, meta = _gap_layer(gap_dir, show_gap)
     gl.add_to(m)
     _scheme_layer(scheme_files(scenarios_dir, c["scenario"], c["against"])).add_to(m)

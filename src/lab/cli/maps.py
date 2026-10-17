@@ -4,6 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import click
+import geopandas as gpd
 
 import json
 
@@ -44,7 +45,14 @@ def map_cmd(compare_run: str | None, gap_run: str | None, show_gap: bool, open_i
             mapview.scheme_routes(cfg.root / "scenarios", comp["scenario"], comp["against"]),
             float(comp["threshold_min"]))
         attr.to_parquet(out_dir / "attribution_oa.parquet")
-        page = mapview.build(cdir, gdir, cfg.root / "scenarios", data_hash, cfg.extent, attr, show_gap)
+        g = gpd.read_parquet(cdir / "change_oa.parquet")
+        saved = -g.jobs_time_change_min_AM.fillna(0)
+        sel = g[(saved >= mapview.MIN_SHOWN_MIN) | g.OA21CD.isin(attr.loc[attr.jobs_new_within > 0, "OA21CD"])]
+        reach = attribution.reach(cfg.lab_db, Path(comp["skims"]["scenario"]), Path(comp["skims"]["against"]),
+                                  list(sel.OA21CD), float(comp["threshold_min"]))
+        zones = gpd.read_file(cfg.root / "data" / "raw" / "ons_geo" / "lsoa21_bgc_internal.geojson")
+        page = mapview.build(cdir, gdir, cfg.root / "scenarios", data_hash, cfg.extent, attr, zones, reach,
+                             attribution.zone_jobs(cfg.lab_db), show_gap)
         (out_dir / "map.html").write_text(page)
     except Exception:
         runrecord.finish(cfg, rec, "failed")

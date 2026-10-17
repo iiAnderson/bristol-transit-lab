@@ -25,3 +25,20 @@ def test_gain_is_credited_only_to_a_route_the_old_itinerary_did_not_use(tmp_path
     assert r.jobs_faster == 10 + 20 + 80
     assert r.jobs_faster_via_scheme == 10 + 80
     assert r.jobs_new_within == 10 + 20 + 80     # Z1, Z2 and Z4 all end inside 45 by a real saving
+
+
+def test_reach_keeps_zones_inside_the_limit_or_clearly_faster(tmp_path):
+    db = tmp_path / "lab.duckdb"
+    duckdb.connect(str(db)).close()
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.mkdir(); new.mkdir()
+    _skim(old / "AM.parquet", [("A", "Z1", 50.0, False, "x"), ("A", "Z2", 30.0, False, "x"),
+                               ("A", "Z3", 90.0, False, "x"), ("A", "Z4", 90.0, False, "x"),
+                               ("B", "Z1", 10.0, False, "x")])
+    _skim(new / "AM.parquet", [("A", "Z1", 44.0, False, "x"),     # crosses 45: kept
+                               ("A", "Z2", 30.0, False, "x"),     # inside both: kept
+                               ("A", "Z3", 80.0, False, "x"),     # outside, 10 min faster: kept
+                               ("A", "Z4", 89.5, False, "x"),     # outside, 0.5 min faster: dropped
+                               ("B", "Z1", 10.0, False, "x")])    # another origin: not asked for
+    r = attribution.reach(db, new, old, ["A"], 2.0)
+    assert sorted(r.zone) == ["Z1", "Z2", "Z3"] and set(r.oa) == {"A"}
