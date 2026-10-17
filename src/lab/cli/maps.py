@@ -5,7 +5,9 @@ from pathlib import Path
 
 import click
 
-from .. import params, runrecord
+import json
+
+from .. import attribution, params, runrecord
 from ..config import LabConfig
 
 
@@ -36,7 +38,13 @@ def map_cmd(compare_run: str | None, gap_run: str | None, show_gap: bool, open_i
         {"name": f"{gdir.name}/gapmap_od.parquet", "sha256": params.file_hash(gdir / "gapmap_od.parquet")}])
     out_dir = runrecord.write(cfg, rec).parent
     try:
-        page = mapview.build(cdir, gdir, cfg.root / "scenarios", data_hash, cfg.extent, show_gap)
+        comp = json.loads((cdir / "compare.json").read_text())
+        attr = attribution.compute(
+            cfg.lab_db, Path(comp["skims"]["scenario"]), Path(comp["skims"]["against"]),
+            mapview.scheme_routes(cfg.root / "scenarios", comp["scenario"], comp["against"]),
+            float(comp["threshold_min"]))
+        attr.to_parquet(out_dir / "attribution_oa.parquet")
+        page = mapview.build(cdir, gdir, cfg.root / "scenarios", data_hash, cfg.extent, attr, show_gap)
         (out_dir / "map.html").write_text(page)
     except Exception:
         runrecord.finish(cfg, rec, "failed")

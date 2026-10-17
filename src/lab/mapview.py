@@ -24,6 +24,7 @@ from . import FIDELITY_DISCLAIMER
 
 # Diverging colours: gain (blue) and loss (red) read the same for the colour-blind.
 GAIN, LOSS, NEUTRAL = "#2166ac", "#b2182b", "#999999"
+MIN_SHOWN_MIN = 1.0      # [MODELLED] changes under a minute are within the noise of a network rebuild; not drawn
 GAP_LINES = 300          # [MODELLED] display cap: enough to show the pattern, light to open
 
 
@@ -45,44 +46,60 @@ def _scale(s: pd.Series, q: float = 0.98) -> float:
     return float(s.quantile(q)) if len(s) else 1.0
 
 
-def scheme_files(scenarios_dir: Path, scenario_id: str, against: str) -> list[Path]:
-    """Alignment and stop files of the scenario's own ops, up to (not including) `against`."""
-    out: list[Path] = []
+def _chain_ops(scenarios_dir: Path, scenario_id: str, against: str):
+    """Yield each op of the scenario and its ancestors, stopping at `against`."""
     sid: str | None = scenario_id
     while sid and sid != against:
         spec = yaml.safe_load((scenarios_dir / f"{sid}.yaml").read_text())
-
-        def walk(node):
-            if isinstance(node, dict):
-                for k, v in node.items():
-                    if k in ("alignment", "stops") and isinstance(v, str) and v.endswith(".geojson"):
-                        p = scenarios_dir / v
-                        if p not in out:
-                            out.append(p)
-                    else:
-                        walk(v)
-            elif isinstance(node, list):
-                for v in node:
-                    walk(v)
-        walk(spec.get("ops") or [])
+        yield from spec.get("ops") or []
         sid = spec.get("parent")
+
+
+def _walk(node, key_pred):
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if key_pred(k, v):
+                yield k, v
+            else:
+                yield from _walk(v, key_pred)
+    elif isinstance(node, list):
+        for v in node:
+            yield from _walk(v, key_pred)
+
+
+def scheme_files(scenarios_dir: Path, scenario_id: str, against: str) -> list[Path]:
+    """Alignment and stop files of the scenario's own ops, up to (not including) `against`."""
+    out: list[Path] = []
+    for op in _chain_ops(scenarios_dir, scenario_id, against):
+        for _, v in _walk(op, lambda k, v: k in ("alignment", "stops") and isinstance(v, str)
+                          and v.endswith(".geojson")):
+            if scenarios_dir / v not in out:
+                out.append(scenarios_dir / v)
     return out
 
 
-def _oa_layer(g: gpd.GeoDataFrame, col: str, name: str, unit: str, good_is_positive: bool,
-              show: bool, integer: bool = True) -> folium.FeatureGroup:
+def scheme_routes(scenarios_dir: Path, scenario_id: str, against: str) -> list[str]:
+    """Route ids the scenario's own ops add or change."""
+    out: list[str] = []
+    for op in _chain_ops(scenarios_dir, scenario_id, against):
+        for _, v in _walk(op, lambda k, v: k == "route_id" and isinstance(v, str)):
+            if v not in out:
+                out.append(v)
+    return out
+
+
+def _dots(g: gpd.GeoDataFrame, name: str, show: bool, size: pd.Series, colour, tip) -> folium.FeatureGroup:
+    """One dot per output area in `g`; size 0..1 from `size`, colour and tooltip from the row."""
     fg = folium.FeatureGroup(name=name, show=show)
-    d = g[g[col].fillna(0) != 0]
-    scale = _scale(d[col])
-    for r in d.itertuples():
-        v = getattr(r, col)
-        folium.CircleMarker(
-            [r.geometry.y, r.geometry.x], radius=4 + 5 * min(abs(v) / scale, 1.0) ** 0.5,
-            color=None, weight=0, fill=True, fill_opacity=0.85,
-            fill_color=_colour(v, scale, good_is_positive),
-            tooltip=f"{r.OA21CD} ({r.residents:,} residents): "
-                    + (f"{v:+,.0f} {unit}" if integer else f"{v:+.1f} {unit}")).add_to(fg)
+    for r in g.itertuples():
+        folium.CircleMarker([r.geometry.y, r.geometry.x], radius=3 + 6 * float(size[r.Index]) ** 0.5,
+                            color=None, weight=0, fill=True, fill_opacity=0.85,
+                            fill_color=colour(r), tooltip=tip(r)).add_to(fg)
     return fg
+
+
+def _norm(s: pd.Series) -> pd.Series:
+    return (s.abs() / _scale(s)).clip(upper=1.0)
 
 
 def _gap_layer(gap_dir: Path, show: bool) -> tuple[folium.FeatureGroup, dict]:
@@ -135,7 +152,28 @@ def _range(d: dict) -> str:
     return f"{d['mean']:,.0f} ({d['min']:,.0f}–{d['max']:,.0f})"
 
 
-def panel(c: dict, run_label: str, data_hash: str, gap_meta: dict, gap_run: str) -> str:
+BANDS = [(1, 2, "1–2 min"), (2, 5, "2–5 min"), (5, 10, "5–10 min"), (10, 1e9, "over 10 min")]
+
+
+def saved_bands(g: gpd.GeoDataFrame, col: str = "jobs_time_change_min_AM") -> tuple[list[tuple[str, int]], int, int]:
+    """Residents by minutes saved on average to jobs; (bands, unchanged under 1 min, slower by 1+)."""
+    saved = -g[col].fillna(0)
+    res = g.residents
+    bands = [(lab, int(res[(saved >= lo) & (saved < hi)].sum())) for lo, hi, lab in BANDS]
+    return bands, int(res[saved.abs() < 1].sum()), int(res[saved <= -1].sum())
+
+
+def _chart(bands, unchanged: int, slower: int) -> str:
+    top = max([n for _, n in bands] + [1])
+    rows = "".join(
+        f'<div style="display:flex;align-items:center;gap:6px;margin:2px 0"><span style="width:78px">{lab}</span>'
+        f'<span style="background:{GAIN};height:11px;width:{max(1, 170 * n / top):.0f}px;display:inline-block"></span>'
+        f'<span>{n:,}</span></div>' for lab, n in bands)
+    return (f"<div style='margin:6px 0'><b>Residents by average minutes saved to jobs (AM)</b>{rows}"
+            f"<div style='color:#555'>{unchanged:,} residents change by under a minute; {slower:,} are slower by a minute or more.</div></div>")
+
+
+def panel(c: dict, run_label: str, data_hash: str, gap_meta: dict, gap_run: str, chart: str = "") -> str:
     sid, ag = c["scenario"], c["against"]
     pe = c["people"]["AM"]
     cost = c["cost"].get(sid, {})
@@ -164,6 +202,7 @@ def panel(c: dict, run_label: str, data_hash: str, gap_meta: dict, gap_run: str)
 <b style="font-size:14px">{html.escape(sid)} against {html.escape(ag)}</b>
 <div style="color:#b2182b;margin:4px 0">{html.escape(FIDELITY_DISCLAIMER)}</div>
 <table style="border-collapse:collapse;width:100%">{trs}</table>
+{chart}
 <p style="margin:6px 0">Mean (min–max) over {pe['offsets']} timetable offsets, AM 08:00–09:00, {html.escape(str(c['modelled_date']))}.
 Blue = better, red = worse. Costs: {cost_note}</p>
 <details><summary>Gap map (baseline, car times indicative)</summary>
@@ -174,28 +213,57 @@ Car times failed their own P2 spot check, so read the ranking, not the minutes. 
 <div style="color:#555;margin-top:6px">compare run {html.escape(run_label)} · data {data_hash}</div></div>"""
 
 
-def build(compare_dir: Path, gap_dir: Path, scenarios_dir: Path, data_hash: str, extent: tuple, show_gap: bool = False) -> str:
+def build(compare_dir: Path, gap_dir: Path, scenarios_dir: Path, data_hash: str, extent: tuple,
+          attr: pd.DataFrame, show_gap: bool = False) -> str:
     c = json.loads((compare_dir / "compare.json").read_text())
-    g = gpd.read_parquet(compare_dir / "change_oa.parquet")
+    g = gpd.read_parquet(compare_dir / "change_oa.parquet").merge(attr, on="OA21CD", how="left").fillna(
+        {"jobs_faster": 0, "jobs_faster_via_scheme": 0, "jobs_new_within": 0})
+    thr = float(c["threshold_min"])
     x0, y0, x1, y1 = extent
     m = folium.Map(location=[(y0 + y1) / 2, (x0 + x1) / 2], tiles=None, control_scale=True)
     m.fit_bounds([[y0, x0], [y1, x1]])
     # OSM's own tile servers refuse pages opened from disk (no Referer: HTTP 403), so the
     # basemap is Esri's light grey canvas, which needs only attribution.
     esri = "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/{}/MapServer/tile/{{z}}/{{y}}/{{x}}"
-    attr = "Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors"
-    folium.TileLayer(esri.format("World_Light_Gray_Base"), attr=attr, control=False, max_zoom=16).add_to(m)
-    folium.TileLayer(esri.format("World_Light_Gray_Reference"), attr=attr, control=False, max_zoom=16).add_to(m)
-    _oa_layer(g, "pt_jobs_45_AM_change", "Jobs within 45 min by PT, change (AM)", "jobs reachable in 45 min", True, not show_gap).add_to(m)
-    _oa_layer(g, "pt_jobs_30_AM_change", "Jobs within 30 min by PT, change (AM)", "jobs reachable in 30 min", True, False).add_to(m)
-    _oa_layer(g, "centre_change_min_AM", "Time to the centre, change (AM; blue = faster)", "min", False, False,
-              integer=False).add_to(m)
+    attr_txt = "Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors"
+    for n in ("World_Light_Gray_Base", "World_Light_Gray_Reference"):
+        folium.TileLayer(esri.format(n), attr=attr_txt, control=False, max_zoom=16).add_to(m)
+
+    saved = -g.jobs_time_change_min_AM.fillna(0)            # minutes saved on average to jobs; + = faster
+    real = g[saved >= MIN_SHOWN_MIN]                          # sub-minute changes are noise: not drawn
+    sv = saved[real.index]
+    _dots(real, f"Minutes saved to jobs (average over all jobs, AM; under {MIN_SHOWN_MIN:g} min not drawn)",
+          not show_gap, _norm(sv), lambda r: GAIN,
+          lambda r: f"{r.OA21CD} ({r.residents:,} residents): {saved[r.Index]:.1f} min faster on average to jobs").add_to(m)
+    mostly = real.jobs_faster_via_scheme >= 0.5 * real.jobs_faster.clip(lower=1)
+    _dots(real, "Why: blue = saving is on a scheme route, orange = elsewhere (side effect or noise)", False,
+          _norm(sv), lambda r: GAIN if mostly[r.Index] else "#e08214",
+          lambda r: f"{r.OA21CD}: {saved[r.Index]:.1f} min faster; {r.jobs_faster:,.0f} jobs in zones "
+                    f"≥{thr:g} min faster, {100 * r.jobs_faster_via_scheme / max(r.jobs_faster, 1):.0f}% of them via a "
+                    f"scheme route").add_to(m)
+    new = g[g.jobs_new_within > 0]
+    _dots(new, f"Jobs newly within 45 min by PT, zones ≥{thr:g} min faster only", False,
+          _norm(new.jobs_new_within), lambda r: GAIN,
+          lambda r: f"{r.OA21CD} ({r.residents:,} residents): {r.jobs_new_within:+,.0f} jobs reachable in 45 min").add_to(m)
+    allc = g[g.pt_jobs_45_AM_change.fillna(0) != 0]
+    _dots(allc, "Jobs within 45 min, change, incl. tips under the threshold (misleading)", False,
+          _norm(allc.pt_jobs_45_AM_change), lambda r: _colour(r.pt_jobs_45_AM_change, 1),
+          lambda r: f"{r.OA21CD} ({r.residents:,} residents): {r.pt_jobs_45_AM_change:+,.0f} jobs reachable in 45 min").add_to(m)
+    cc = g[g.centre_change_min_AM.fillna(0).abs() >= MIN_SHOWN_MIN]
+    _dots(cc, "Time to the centre, change (AM)", False, _norm(cc.centre_change_min_AM),
+          lambda r: _colour(r.centre_change_min_AM, 1, good_is_positive=False),
+          lambda r: f"{r.OA21CD} ({r.residents:,} residents): {r.centre_change_min_AM:+.1f} min to the centre").add_to(m)
     if g["frequent_15_change"].fillna(0).ne(0).any():
-        _oa_layer(g, "frequent_15_change", "15-minute service, change", "(1 = gained)", True, False).add_to(m)
+        f15 = g[g.frequent_15_change.fillna(0) != 0]
+        _dots(f15, "15-minute service, change", False, pd.Series(1.0, index=f15.index),
+              lambda r: _colour(r.frequent_15_change, 1),
+              lambda r: f"{r.OA21CD}: {r.frequent_15_change:+d}").add_to(m)
     gl, meta = _gap_layer(gap_dir, show_gap)
     gl.add_to(m)
     _scheme_layer(scheme_files(scenarios_dir, c["scenario"], c["against"])).add_to(m)
     folium.LayerControl(collapsed=False, position="topleft").add_to(m)
-    m.get_root().html.add_child(folium.Element(panel(c, compare_dir.name, data_hash, meta, gap_dir.name)))
+    bands, unchanged, slower = saved_bands(g)
+    m.get_root().html.add_child(folium.Element(
+        panel(c, compare_dir.name, data_hash, meta, gap_dir.name, _chart(bands, unchanged, slower))))
     m.get_root().header.add_child(folium.Element(f"<title>{html.escape(c['scenario'])} against {html.escape(c['against'])}</title>"))
     return m.get_root().render()

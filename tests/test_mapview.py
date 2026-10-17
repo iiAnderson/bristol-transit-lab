@@ -1,6 +1,7 @@
 import json
 
 import geopandas as gpd
+import pandas as pd
 from shapely.geometry import Point
 
 from lab import mapview
@@ -27,11 +28,28 @@ def test_scheme_files_stop_at_the_comparison_scenario(tmp_path):
     assert sorted(p.name for p in mapview.scheme_files(tmp_path, "R", "P")) == ["A.geojson", "B.geojson"]
 
 
-def test_oa_layer_skips_unchanged_areas():
-    g = gpd.GeoDataFrame({"OA21CD": ["a", "b"], "residents": [10, 20], "x": [0, 5]},
+def test_dots_draws_one_marker_per_row():
+    g = gpd.GeoDataFrame({"OA21CD": ["a", "b"], "residents": [10, 20]},
                          geometry=[Point(-2.5, 51.4), Point(-2.6, 51.5)], crs=4326)
-    fg = mapview._oa_layer(g, "x", "x", "jobs", True, True)
-    assert len(fg._children) == 1
+    fg = mapview._dots(g, "x", True, pd.Series([0.2, 1.0], index=g.index), lambda r: "#000000",
+                       lambda r: r.OA21CD)
+    assert len(fg._children) == 2
+
+
+def test_scheme_routes_read_the_scenarios_own_ops(tmp_path):
+    (tmp_path / "P.yaml").write_text("id: P\nparent: null\nops:\n- add_line: {route_id: OLD}\n")
+    (tmp_path / "Q.yaml").write_text(
+        "id: Q\nparent: P\nops:\n- add_line: {route_id: NEW}\n- modify_route: {route_id: 'GW:X'}\n")
+    assert mapview.scheme_routes(tmp_path, "Q", "P") == ["NEW", "GW:X"]
+
+
+def test_saved_bands_count_residents_and_the_unchanged():
+    g = gpd.GeoDataFrame({"residents": [100, 200, 300, 400],
+                          "jobs_time_change_min_AM": [-0.4, -1.5, -3.0, 2.0]},
+                         geometry=[Point(0, 0)] * 4, crs=4326)
+    bands, unchanged, slower = mapview.saved_bands(g)
+    assert dict(bands) == {"1–2 min": 200, "2–5 min": 300, "5–10 min": 0, "over 10 min": 0}
+    assert unchanged == 100 and slower == 400
 
 
 def test_panel_states_the_disclaimer_and_the_run():
