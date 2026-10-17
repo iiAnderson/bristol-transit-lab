@@ -80,8 +80,8 @@ def _oa_layer(g: gpd.GeoDataFrame, col: str, name: str, unit: str, good_is_posit
             [r.geometry.y, r.geometry.x], radius=4 + 5 * min(abs(v) / scale, 1.0) ** 0.5,
             color=None, weight=0, fill=True, fill_opacity=0.85,
             fill_color=_colour(v, scale, good_is_positive),
-            tooltip=f"{r.OA21CD}: {v:+,.0f} {unit}" if integer else f"{r.OA21CD}: {v:+.1f} {unit}"
-                    f" ({r.residents:,} residents)").add_to(fg)
+            tooltip=f"{r.OA21CD} ({r.residents:,} residents): "
+                    + (f"{v:+,.0f} {unit}" if integer else f"{v:+.1f} {unit}")).add_to(fg)
     return fg
 
 
@@ -186,8 +186,8 @@ def build(compare_dir: Path, gap_dir: Path, scenarios_dir: Path, data_hash: str,
     attr = "Tiles © Esri — Esri, HERE, Garmin, © OpenStreetMap contributors"
     folium.TileLayer(esri.format("World_Light_Gray_Base"), attr=attr, control=False, max_zoom=16).add_to(m)
     folium.TileLayer(esri.format("World_Light_Gray_Reference"), attr=attr, control=False, max_zoom=16).add_to(m)
-    _oa_layer(g, "pt_jobs_45_AM_change", "Jobs within 45 min by PT, change (AM)", "jobs", True, not show_gap).add_to(m)
-    _oa_layer(g, "pt_jobs_30_AM_change", "Jobs within 30 min by PT, change (AM)", "jobs", True, False).add_to(m)
+    _oa_layer(g, "pt_jobs_45_AM_change", "Jobs within 45 min by PT, change (AM)", "jobs reachable in 45 min", True, not show_gap).add_to(m)
+    _oa_layer(g, "pt_jobs_30_AM_change", "Jobs within 30 min by PT, change (AM)", "jobs reachable in 30 min", True, False).add_to(m)
     _oa_layer(g, "centre_change_min_AM", "Time to the centre, change (AM; blue = faster)", "min", False, False,
               integer=False).add_to(m)
     if g["frequent_15_change"].fillna(0).ne(0).any():
