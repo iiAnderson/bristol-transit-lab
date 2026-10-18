@@ -78,6 +78,9 @@ Also: CSV export of any metric table for Datawrapper.
 
 ## 11b. v1.1 — External gateways (committed next scope)
 
+> **Rail part built 2026-10-18** (SPEC §6.1 amendment; `sources.md` "External rail gateways"), sized from the
+> ORR matrix with the census as pattern. The Road, Bus/coach and Park and ride items below remain deferred.
+
 Distinct from §12: this is committed, not speculative. It builds on the P1 demand
 table's `external_in` and `external_out` rows without rebuilding P1. Gateways work in
 **both directions**: inbound commuters arrive at them, and outbound residents leave

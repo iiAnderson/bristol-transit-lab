@@ -112,3 +112,51 @@ def landuse_build() -> None:
     rec["result"] = info | {"descriptor": str(out), "table": "lab.duckdb landuse"}
     click.echo(f"  {rec['result']}")
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
+
+
+@demand.command("external")
+@click.option("--base", default="p1-central", show_default=True,
+              help="HBW demand version whose external rows give the onward-leg pattern")
+@click.option("--landuse", default=None, help="land-use version for the fallback pattern "
+              "(default: the only one in the lab DB)")
+def demand_external(base: str, landuse: str | None) -> None:
+    """External rail gateways: ORR volumes at stations inside the extent, census pattern."""
+    import duckdb
+    from ..demand import external
+    cfg = LabConfig.load()
+    raw = cfg.root / "data" / "raw"
+    files = [raw / "orr" / "ODM_for_RDM_2024-25.csv", raw / "census2011" / "wu03ew" / "wu03ew_msoa.csv",
+             raw / "naptan" / "naptan_910_rail.csv"]
+    for p in files:
+        if not p.is_file():
+            raise click.ClickException(f"missing input {p}; see sources.md (external gateways)")
+    con = duckdb.connect(str(cfg.lab_db))
+    if landuse is None:
+        vs = [r[0] for r in con.execute("SELECT DISTINCT landuse_version FROM landuse").fetchall()]
+        if len(vs) != 1:
+            raise click.ClickException(f"pass --landuse; the DB holds {sorted(vs)}")
+        landuse = vs[0]
+    rec = runrecord.build(cfg, command="demand-external", demand_version=f"x1-{base.split('-', 1)[-1]}",
+                          inputs=[{"name": str(p), "sha256": params.file_hash(p)} for p in files])
+    runrecord.write(cfg, rec)
+    try:
+        b = external.run(cfg, con, base_version=base, landuse=landuse)
+    except Exception:
+        runrecord.finish(cfg, rec, "failed")
+        raise
+    finally:
+        con.close()
+    rec["result"] = b.summary
+    path = runrecord.finish(cfg, rec, "ok")
+    s = b.summary
+    click.echo(f"  {s['gateway_count']} gateways, {s['stations_with_points']} stations with points "
+               f"(Darwin reference {s['darwin_ref']})")
+    click.echo(f"  ORR gateway journeys {s['orr']['journeys']:,.0f} a year; "
+               f"{s['orr']['unlocated_share']:.4%} at a station with no NaPTAN point")
+    click.echo("  weekday trips   census share   basis     gateway")
+    for g in s["gateways"][:12]:
+        click.echo(f"  {g['weekday_trips']:>13,.0f}   {g['census_share']:>11.1%}   {g['basis']:<9} "
+                   f"{g['gateway']} {g['dir']}")
+    n = sum(1 for g in s["gateways"] if g["basis"] == "fallback")
+    click.echo(f"  {n} of {len(s['gateways'])} gateway directions use the fallback pattern")
+    click.echo(f"wrote {b.version} -> {path}")

@@ -70,6 +70,39 @@ def access_cmd(thresholds: str) -> None:
     click.echo(f"wrote {runrecord.finish(cfg, rec, 'ok')}")
 
 
+def _external_rail(cfg, raw, ps, base, A: dict, B: dict, pers: list[str], run_dir: Path, root_id: str) -> dict | None:
+    """External rail passengers' onward legs, scenario against the other side (src/lab/gateway.py).
+    None, with a reason in the report, if no gateway demand has been built; an error if it has
+    but either side lacks its gateway skims."""
+    import pandas as pd
+    from .. import gateway as gw, run as rn
+    from .gateway import DEFAULT_VERSION, demand_points, demand_trips, gateway_files
+    pts = demand_points(cfg, DEFAULT_VERSION)
+    if pts is None:
+        return None
+    key = pts[2]
+    dg = demand_trips(cfg, DEFAULT_VERSION)
+    out: dict = {"demand_version": DEFAULT_VERSION, "periods": {}}
+    for per in pers:
+        files = {}
+        for x in (A, B):
+            fs = gateway_files(cfg, raw, ps, base, x["b"], per, key, root_id)
+            miss = [f.name for f in fs if not f.is_file()]
+            if miss:
+                cmd = f"lab gateway skims {x['id']}" if x["b"] else "lab gateway skims"
+                raise click.ClickException(f"{x['id']} has no gateway-leg skim for {per} ({miss[0]}): run `{cmd}`")
+            files[x["id"]] = fs
+        try:
+            pairs, how = rn.offset_pairs(files[A["id"]], files[B["id"]])
+        except ValueError as e:
+            raise click.ClickException(f"{A['id']} against {B['id']}: {e}")
+        summ, by_gw = gw.over_offsets(pairs, dg)
+        summ["pairing"] = how
+        out["periods"][per] = summ
+        by_gw.to_csv(run_dir / f"external_rail_by_gateway_{per}.csv", index=False)
+    return out
+
+
 @click.command("compare")
 @click.argument("scenario_id")
 @click.argument("against")
@@ -162,6 +195,7 @@ def compare_cmd(scenario_id: str, against: str, periods: str, unrelated: bool) -
                 if col != "pt_car_ratio":
                     out_oa[f"{col}_{per}_change"] = oa_a[col] - oa_b[col]
             out_oa[f"pt_car_ratio_{per}"] = oa_a.get("pt_car_ratio")
+        external = _external_rail(cfg, raw, ps, base, A, B, pers, run_dir, root_id)
         hs = ps["coverage.frequent_headway_min"]
 
         def cov_sum(c: pd.DataFrame) -> dict:
@@ -188,7 +222,7 @@ def compare_cmd(scenario_id: str, against: str, periods: str, unrelated: bool) -
              "walk_speed_kmh": ps["routing.walk_speed_kmh"], "gradient": base["elevation"], "threshold_min": 2.0,
              "decay_beta": beta, "car_period": cper,
              "caveats": {A["id"]: A["caveats"], B["id"]: B["caveats"]},
-             "people": people, "connectivity": conn, "pt_skim_change": pairs,
+             "people": people, "external_rail": external, "connectivity": conn, "pt_skim_change": pairs,
              "coverage": {"scenario": ca, "against": cb, "difference": rn.diff(cb, ca)},
              "cost": cost, "cost_note": cost_note, "inherited": raw["inherited"],
              "not_yet_modelled": {A["id"]: A["later"], B["id"]: B["later"]},

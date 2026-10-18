@@ -1,0 +1,74 @@
+# External rail gateways (src/lab/demand/external.py; SPEC §11b as amended 2026-10-18).
+# Sources and access dates: sources.md, "External gateways".
+
+external:
+  weekday_factor:
+    value: 0.0027397
+    unit: weekday journeys per annual ORR journey (1/365)
+    tag: PLACEHOLDER
+    note: >-
+      Annual ÷ 365 treats a weekday like an average day. Weekdays carry more rail
+      journeys than weekends, so this understates gateway volumes. No sourced
+      annual-to-weekday factor for rail journeys has been found yet. Resolve before any
+      published output.
+
+  rail_share_min_n:
+    value: 10
+    unit: commuters (excluding home workers) in an external MSOA's 2011 flow to or from the extent
+    tag: MODELLED
+    reasoning: >-
+      Below this the MSOA's own train share is noise (record swapping alters small
+      counts). Same threshold as commute.ca_min_commuters.
+
+  distance_bands_km:
+    value: [5, 15, 50]
+    unit: km from the extent, band edges
+    tag: MODELLED
+    reasoning: >-
+      An MSOA with too few commuters takes the pooled train share of the MSOAs in its
+      band. Rail share rises with distance, so the pool is by distance from the extent.
+
+  origin_station_k:
+    value: 3
+    unit: stations
+    tag: MODELLED
+    reasoning: >-
+      The census gives an external MSOA, ORR gives stations, and there is no
+      MSOA-to-station table. An MSOA's rail commuters are shared over its nearest
+      stations that have ORR flow to a gateway. Three covers the nearest station being a
+      halt with little service.
+
+  distance_offset_km:
+    value: 1.0
+    unit: km
+    tag: MODELLED
+    reasoning: >-
+      Weight of a candidate origin station is its ORR flow to the gateways divided by
+      (distance + this)². The offset stops a station next to the MSOA centroid taking
+      all the weight; the square is a standard gravity decay for station access.
+
+  gateway_min_commuters:
+    value: 50
+    unit: census rail commuters allocated to a gateway and direction
+    tag: MODELLED
+    reasoning: >-
+      Fewer than this and the census pattern for a gateway is a handful of MSOAs, too
+      sparse to spread a gateway's volume; it falls back to the gravity below.
+
+  fallback_decay_km:
+    value: 5.0
+    unit: km
+    tag: MODELLED
+    reasoning: >-
+      Fallback onward-leg pattern: jobs (inbound) or residents (outbound) of each LSOA
+      times exp(−distance from the gateway ÷ this). About the distance most station
+      access and egress trips stay within.
+
+  max_unlocated_share:
+    value: 0.05
+    unit: share of gateway journeys
+    tag: MODELLED
+    reasoning: >-
+      An ORR station with no NaPTAN point cannot take part in the origin allocation. The
+      gateway totals are unaffected, but the census pattern is. Above this share the
+      build fails instead of carrying on.

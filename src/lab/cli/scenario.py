@@ -561,6 +561,13 @@ def _run_scenario(scenario_id: str, periods: list[str]) -> None:
             gen_routes = sorted({op.get("route_id") for op in b["report"]["by_offset"]["0"]["ops"]
                                  if op["type"] in ("add_line", "replace_route")} - {None})
             spread[per] = rn.offset_spread(frames, gen_routes)
+        # external rail passengers' onward legs on this scenario's networks (src/lab/gateway.py);
+        # skipped, and said so, until `lab demand external` has been run
+        from .gateway import DEFAULT_VERSION, build_skims as gateway_skims, demand_points
+        if demand_points(cfg, DEFAULT_VERSION) is None:
+            click.echo("  gateway legs: no gateway demand yet (`lab demand external`); not skimmed")
+        else:
+            gateway_skims(cfg, raw, ps, base, day, s.id, periods, DEFAULT_VERSION, lambda m: click.echo(m, err=True))
         # the parent's skims: the baseline's, or a scenario's that has been run
         def parent_skim(per: str) -> pd.DataFrame:
             if s.parent == root_id:

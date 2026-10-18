@@ -5,6 +5,7 @@
     lab run <scenario> [--periods AM,IP] | --noop
     lab compare <scenario> <against>
     lab access | gapmap | compare-dft | spotchecks* | params | network-change
+    lab gateway skims [<scenario>]
     lab demand | landuse | supply | skims | coverage | congestion (frozen) | spike
 
 Commands not yet built fail with a non-zero exit naming the phase that builds them.
@@ -18,7 +19,7 @@ import click
 from .. import FIDELITY_DISCLAIMER, __version__
 from ..config import LabConfig  # noqa: F401  (tests patch `lab.cli.LabConfig`)
 from ..coverage_cli import coverage
-from . import congestion, demand, maps, reports, run, scenario, skims, spikes, supply
+from . import congestion, demand, gateway, maps, reports, run, scenario, skims, spikes, supply
 
 
 def _not_yet(phase: str) -> None:
@@ -42,7 +43,7 @@ def build_baseline(baseline: str) -> None:
 cli.add_command(scenario.scenario)
 cli.add_command(run.run)
 for _g in (demand.demand, demand.landuse, supply.supply, congestion.congestion,
-           spikes.spike, skims.skims, coverage):
+           spikes.spike, skims.skims, coverage, gateway.gateway):
     cli.add_command(_g)
 for _mod in (reports, maps):
     for _c in vars(_mod).values():

@@ -1654,6 +1654,67 @@ the tram free interchange at Temple Meads except the walk; no fare or crowding i
 
 The disk filled at the last step of the S001 run (`No space left on device`). With the owner's approval the engine-test skims `data/interim/skims/T003-engine-test-tunnel` (2.5 GB) and `T004-null-retime` (0.4 GB) were deleted; their run records and scenario files remain and they can be rebuilt with `lab run`. Results still cited from those runs in this file are not reproducible from cached skims until they are.
 
+## External rail gateways — added 2026-10-18
+
+Promoted from `docs/DEFERRED.md` §11b at Robbie's request, rail only (road, bus, coach and park and ride stay
+deferred). `src/lab/demand/external.py`, `lab demand external`, `params/external.yaml`,
+`tests/test_external.py`.
+
+### Datasets
+
+| Dataset | URL | Accessed | Licence | Notes |
+|---|---|---|---|---|
+| ORR Origin Destination Matrix 2024-25 (`ODM_for_RDM_2024-25.csv`) | https://raildata.org.uk/ (Rail Data Marketplace; linked from https://dataportal.orr.gov.uk/station-usage) | 2026-10-18 | **not recorded: the ORR page states none and the dataset page was not opened** (a forum post says OGL; not relied on). Robbie to paste the licence text from the dataset page | 1,597,996 station pairs, 1,532,318,500 journeys, April 2024 – March 2025, published 4 Dec 2025 (next due Nov 2026). Annual, all purposes, both directions. Downloaded by Robbie after account approval; copied to `data/raw/orr/`. SHA-256 `07d41e44…` |
+| Census 2011 WU03EW, MSOA | https://www.nomisweb.co.uk/census/2011/bulk/rOD1 → `/output/census/2011/wu03ew_msoa.zip` | 2026-10-18 | not stated on the bulk page (links to Nomis terms and © Crown copyright); small counts altered by record swapping | 13.4 MB zip, SHA-256 `b8783e1e…`; `data/raw/census2011/wu03ew/wu03ew_msoa.csv`. Mode is the longest part of the journey by distance. UKDS catalogue page returned HTTP 403 and was not used |
+| Darwin reference (`*_ref_*.xml.gz`) | already held (P2) | — | — | TIPLOC → CRS. All three held reference files give the same 3,695 CRS codes, 2,652 of them with an active NaPTAN point; the first with the most is used (23 Sep 2026 `ref_v2`) |
+| NaPTAN rail access nodes | already held (P2) | — | OGL v3 | `9100<TIPLOC>` → point |
+
+### What the data said
+
+- **The census alone cannot size gateway flows.** With 2011 train shares applied to P1 `p1-central` externals
+  (2,171 rail commuters inbound, 1,848 outbound), the census explains **8.7–12% of ORR's gateway journeys** at
+  Temple Meads, Bath Spa and Newport and **5.4–8.9% at Parkway** (ORR annual ÷ 365). Even a generous weekday
+  uplift leaves most external rail travel unexplained: non-commute purposes, and 2021 flows in lockdown.
+  **Decision (Robbie, 2026-10-18): size gateways from the ORR ODM, take the onward-leg pattern from the census.**
+  This goes beyond SPEC §6.1's commute-only scope for externals; the external HBW rows stay tagged and out of
+  analysis, so nothing is counted twice.
+- **MSOA codes:** 98.9% of external commuters match WU03EW by code (no 2011 → 2021 lookup needed); the rest take
+  their distance band's pooled train share.
+- **Gateways:** 33 stations inside the extent, including three in the masked Welsh LADs (D8). 17.78m ORR journeys
+  a year have exactly one end at a gateway; pairs between two gateways
+  are internal and excluded. One ORR station has no NaPTAN point (0.0002% of gateway journeys); the build fails
+  above 5%.
+- **In and out totals are identical** by construction (ORR counts each station pair in both directions). The model
+  is daily; AM/PM direction waits for the period split (P4).
+- **Fallback:** 56 of 66 gateway directions have fewer than 50 census rail commuters and use the jobs (inbound)
+  or residents (outbound) gravity from the gateway. Only Temple Meads, Bath Spa, Newport, Parkway and Weston-super-Mare
+  use the census pattern.
+
+### Gateway legs in every comparison (2026-10-18)
+
+`src/lab/gateway.py`, `lab gateway skims [<scenario>]`, `tests/test_gateway.py`. The onward leg (gateway → workplace
+zone inbound, home zone → gateway outbound) is skimmed with the same r5r PT skim, on each scenario's own network and
+timetable offset, between the 33 gateways and the 729 zones that carry gateway demand (about a minute a period and
+offset). `lab run` builds these for every new scenario; `lab compare` reports external rail passengers (trips faster or
+slower by two minutes, newly reachable, mean change, person-hours saved a weekday) and writes
+`external_rail_by_gateway_<period>.csv`. Skim files are keyed by network version and by a hash of the gateway and zone
+points, so changing the gateways makes new ones. Backfilled for B2026, B2028, B2028-filton-stand, B2028-no-henbury,
+S001-bristol-supertram and S002-severn-beach-half-hourly.
+
+First figures (AM, both directions, trips a weekday 48,713): S001 against B2026 saves 2.75 min a trip on average,
+about 2,200 person-hours a weekday; S002 against B2028 saves 0.05 min, about 37 person-hours.
+
+Mode is fixed: these are time savings for people who travel anyway, not new demand, and no external trip changes
+mode or station. The weekday factor is still a `[PLACEHOLDER]`, so the person-hours scale with it.
+
+### Open
+
+- `external.weekday_factor` is **[PLACEHOLDER]** (annual ÷ 365). Resolve before any published output.
+- ODM licence text to be recorded.
+- The §9 station entries/exits gate is not built (v1 stops at P3). Station boardings are not assigned: gateways carry
+  the ORR volume as given, not a modelled count.
+- Through passengers (external ↔ external) are dropped, as in §6.1, which understates interchange at Temple Meads.
+
 ## Phase status
 
 | phase | status |

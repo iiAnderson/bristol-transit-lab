@@ -34,8 +34,11 @@ def offset_network(cfg, raw: dict, ps: dict, gtfs: dict[str, Path]) -> dict:
                    "r5r_net": Path(cfg.root) / raw["baseline"]["r5r"] / f"net-{v}"}
 
 
-def pt_skim(cfg, raw: dict, ps: dict, nw: dict, period: str, work: Path, day, log) -> pd.DataFrame:
-    """r5r PT skim for one period on one network (as ``lab skims pt``, for any feeds)."""
+def pt_skim(cfg, raw: dict, ps: dict, nw: dict, period: str, work: Path, day, log,
+            origins: pd.DataFrame | None = None, destinations: pd.DataFrame | None = None) -> pd.DataFrame:
+    """r5r PT skim for one period on one network (as ``lab skims pt``, for any feeds).
+    ``origins`` and ``destinations`` (columns id, lat, lon) replace the OA → LSOA grid,
+    for the gateway legs (src/lab/gateway.py)."""
     import duckdb
     net = nw["r5r_net"]
     work.mkdir(parents=True, exist_ok=True)
@@ -51,10 +54,14 @@ def pt_skim(cfg, raw: dict, ps: dict, nw: dict, period: str, work: Path, day, lo
     if nw["elevation"] and not ((net / "elevation.tif").is_file()
                                 and params.file_hash(net / "elevation.tif") == nw["hashes"]["dem_clip"]):
         shutil.copyfile(nw["tif"], net / "elevation.tif")
-    with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
-        con.execute("SELECT OA21CD id, lat, lon FROM int_oa_pwc ORDER BY 1").df().to_csv(work / "origins.csv", index=False)
-        con.execute("SELECT LSOA21CD id, lat, lon FROM skim_dest ORDER BY 1").df() \
-            .to_csv(work / "destinations.csv", index=False)
+    if origins is None or destinations is None:
+        with duckdb.connect(str(cfg.lab_db), read_only=True) as con:
+            con.execute("SELECT OA21CD id, lat, lon FROM int_oa_pwc ORDER BY 1").df().to_csv(work / "origins.csv", index=False)
+            con.execute("SELECT LSOA21CD id, lat, lon FROM skim_dest ORDER BY 1").df() \
+                .to_csv(work / "destinations.csv", index=False)
+    else:
+        origins.to_csv(work / "origins.csv", index=False)
+        destinations.to_csv(work / "destinations.csv", index=False)
     (work / "sample_ids.csv").write_text("id\n")              # no per-minute sample for scenario runs
     rcfg = {"net_dir": str(net), "origins": str(work / "origins.csv"), "destinations": str(work / "destinations.csv"),
             "departure": f"{day} {ps[f'skims.window_start.{period}']}", "window_min": ps["skims.departure_window_min"],

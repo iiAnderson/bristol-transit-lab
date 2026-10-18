@@ -40,6 +40,36 @@ def _money(v) -> str:
     return "no central figure" if v is None else (f"£{v / 1e6:,.1f}m" if abs(v) >= 1e6 else f"£{v / 1e3:,.0f}k")
 
 
+def _mean(v):
+    """A figure over offsets is {mean, min, max}; over one network, the number."""
+    return v["mean"] if isinstance(v, dict) else v
+
+
+def _external_rail_md(ext: dict | None) -> list[str]:
+    L = ["## External rail passengers", ""]
+    if ext is None:
+        return L + ["Not in this comparison: no gateway demand has been built (`lab demand external`).", ""]
+    L += ["People who live outside the extent and work inside it, and the reverse, cross it by rail and use a gateway "
+          "station inside it (`demand_gateway`, "
+          f"`{ext['demand_version']}`). Their main mode is fixed, so a scheme can only change the **onward leg** from "
+          "the station to the workplace zone, or from home to the station: this is time saved for people who travel "
+          "anyway, not new demand. Volumes are ORR's station-to-station matrix scaled to a weekday by a "
+          "`[PLACEHOLDER]` factor; where they go next follows the census commute pattern where it is rich enough and a "
+          "jobs or residents gravity otherwise. Each figure is the mean over the timetable offsets.", "",
+          "| Period | Direction | Trips a weekday | Mean change, min | Trips faster | Trips slower | Newly reachable | "
+          "Person-hours saved a weekday |", "|---|---|---|---|---|---|---|---|"]
+    for per, p in ext["periods"].items():
+        for d, label in (("external_in", "inbound (station to work)"), ("external_out", "outbound (home to station)"),
+                         ("all", "both")):
+            x = p.get(d)
+            if x is None:
+                continue
+            L.append(f"| {per} | {label} | {_n(_mean(x['trips']))} | {_signed(_mean(x['mean_change_min']), '')} | "
+                     f"{_n(_mean(x['trips_faster_by_threshold']))} | {_n(_mean(x['trips_slower_by_threshold']))} | "
+                     f"{_n(_mean(x['trips_newly_reachable']))} | {_signed(_mean(x['person_hours_saved_per_weekday']))} |")
+    return L + ["", "Faster and slower mean at least two minutes. Per gateway: `external_rail_by_gateway_<period>.csv`.", ""]
+
+
 def markdown(c: dict) -> str:
     a, b = c["scenario"], c["against"]
     L = [f"# {a} against {b}", "",
@@ -64,8 +94,9 @@ def markdown(c: dict) -> str:
                 cells += [_n(v["mean"]), f"{_n(v['min'])} to {_n(v['max'])}"] if isinstance(v, dict) else [_n(v), "one network"]
             L.append(f"| {per} | {label} | " + " | ".join(cells) + " |")
     L += ["", "Worse-off residents are reported beside better-off ones in every comparison: replacing or "
-          "re-timing a timetabled service moves its connections, and some of both columns is that and not the scheme.", "",
-          "## Job accessibility by public transport", "",
+          "re-timing a timetabled service moves its connections, and some of both columns is that and not the scheme.", ""]
+    L += _external_rail_md(c.get("external_rail"))
+    L += ["## Job accessibility by public transport", "",
           f"| Period | Measure | {a} | {b} | Difference |", "|---|---|---|---|---|"]
     for per, x in c["connectivity"].items():
         for key, m in x["scenario"].items():
@@ -116,6 +147,7 @@ def markdown(c: dict) -> str:
         L += ["", "`[PLACEHOLDER]` values — none of this may be published until each is resolved:", ""]
         L += [f"- {x}" for x in pb["PLACEHOLDER"]]
     L += ["", "## Files", "", "- `compare.json`: every figure above, the pair-level changes and the full parameter list",
+          "- `external_rail_by_gateway_<period>.csv`: external rail passengers' time change by gateway and direction",
           "- `change_oa.parquet` (GeoParquet, EPSG:4326): per output area, residents, the change in time to the centre and "
           "to jobs, jobs reachable, decay-weighted jobs and frequent-service status, by period",
           "", f"Runs: {a} skims {c['skims']['scenario']}; {b} skims {c['skims']['against']}."]

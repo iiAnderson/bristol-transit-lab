@@ -497,8 +497,14 @@ in flows ≤ 2).
 nearest internal LSOA centroid attached, tagged `external_in` or `external_out`. No
 clamping, no spreading; the 30 km cut is a v1.1 decision. External ↔ external flows
 (both ends outside after reclassification) are not lab trips and are dropped, counted.
-v1 excludes externals from mode choice, assignment and connectivity metrics; v1.1 adds
-them through gateways (§11b).
+v1 excludes externals from mode choice, assignment and connectivity metrics.
+
+*Amended 2026-10-18:* **rail** externals are now built as gateway demand (`lab demand
+external`, `demand_gateway`; `sources.md` "External rail gateways"). Volume per gateway and
+direction is ORR's origin–destination matrix (all purposes), because the census explains
+under a tenth of it; the census sets where the onward or access leg goes. Fixed mode, rail
+only. The `external_*` HBW rows above stay tagged and out of analysis, so nothing is counted
+twice. Road, bus, coach and park and ride remain deferred (§11b).
 
 ### 6.2–6.3 Other purposes, time periods — deferred
 
@@ -857,7 +863,9 @@ matter for the scenario being reported.
 12. **Single representative weekday** and AM/IP-centric modelling; PM as AM's transpose.
 13. **v1 omits external commuters** (14.1% of retained commuters upstream, 53,521).
     Scenarios serving Temple Meads, Parkway, Filton, the airport or park and ride are
-    under-credited; state this in any affected report.
+    under-credited; state this in any affected report. *Amended 2026-10-18:* external **rail**
+    demand is now built from ORR volumes (§6.1); road, bus, coach and park and ride external
+    trips are still omitted, so the caveat stands for those.
 
 **Cost and appraisal**
 

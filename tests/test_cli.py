@@ -34,4 +34,4 @@ def test_noop_run_writes_valid_run_json(tmp_cfg, monkeypatch):
     from lab import runrecord
     runrecord.validate(rec)
     assert rec["status"] == "ok" and rec["command"] == "noop"
-    assert set(rec["params"]) == {"base.yaml", "costs.yaml"}
+    assert set(rec["params"]) == {"base.yaml", "costs.yaml", "external.yaml"}
