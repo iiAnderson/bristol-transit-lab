@@ -1591,6 +1591,69 @@ none over.**
   at 10G (25 s a chunk). Chunk folders are deleted after each run and, during one, as
   soon as an offset's skim is written.
 
+## S001 Bristol Supertram, Line One (2001 scheme) — added 2026-10-17
+
+A historical scheme modelled as a test project on B2028 (`scenarios/S001-bristol-supertram.yaml`,
+drawing spec `scenarios/lines/supertram_line1.draw.yaml`). Accessed 2026-10-17; the scheme's own
+documents were **not** opened.
+
+**What the record gives** (Wikipedia, "Bristol Supertram", https://en.wikipedia.org/wiki/Bristol_Supertram
+and its route-diagram template, https://en.wikipedia.org/wiki/Template:Bristol_Supertram_map; CC BY-SA 4.0;
+an encyclopaedia summary citing Tramdev (Mar 2001), LRTA "Bristol Rapid Transit" (Mar 2001), BBC News
+"City tram project to be dropped" (30 May 2004), railwaysarchive.co.uk; also TRID item 727706 for the
+2002 northern-terminus dispute, LRTA *Tramways & Urban Transit* 65(775)): announced March 2001,
+cancelled March 2004; £194m, 20% private; "10.4 mi (16.7 km)", "The 10-mile journey would be completed
+in 30 minutes and make 16 stops"; city centre on "recessed rails", the Cross Country route beside the GWR
+line to Parkway, "purpose-built track" beyond.
+
+**Stops.** The diagram shows 17 stops; the prose names fewer and calls the University of the West of
+England an extension. Dropping UWE gives the quoted 16: Union Street, Quay Street, Prince Street, St Mary
+Redcliffe, Temple Meads, Lawrence Hill, Stapleton Road, Ashley Down, Bonnington Walk, Filton Abbey Wood,
+Parkway, Parkway North, Great Meadow, Savages Wood, Patchway Brook, Aztec West. The prose and the diagram
+order the three Bradley Stoke stops differently; the diagram's order (west along the map) is used.
+Positions: rail stations from the rail GTFS (NaPTAN); the street and Bradley Stoke stops from OSM Nominatim
+searches (© OpenStreetMap contributors, ODbL); Parkway North `[MODELLED]` (no source). **Finding:** the
+Nominatim point for Bonnington Walk is 344 m from any railway; the stop is placed on the track at the
+former Horfield station site instead.
+
+**Not found:** frequency, fleet, vehicle, speed, patronage. Filled from modern UK tramways, each
+`[MODELLED]`: 7 / 10 / 7 / 15 minutes (Edinburgh Trams "seven to ten minutes", "a seven-minute interval
+for most of the day"; NET peak 7, off-peak 10–15); 70 km/h (Edinburgh CAF Urbos 3, NET Citadis);
+acceleration 1.0 m/s², the fastest at which `scenario.profile_allowance` is fitted (+22.5%, fitted on heavy
+rail and used as the stand-in for street and junction delay); dwell 25 s; capacity 200 (NET Citadis 302
+table 202; the article's prose says 274, a conflict). Sources: Wikipedia "Edinburgh Trams" and "Nottingham
+Express Transit", read to the first 100,000 characters.
+
+**Alignment** drawn by `lab scenario draw-rail`: street legs straight through the stops (a lower bound),
+the Temple Meads – Parkway corridor along OSM railway ways as a separate tram formation
+(`at_grade_segregated`, so no train paths), new track drawn straight from Parkway. Length 16.1 km against
+the quoted 16.7 km to Almondsbury (Aztec West is short of it).
+
+**Check against the record:** modelled end to end 28.7 minutes (16.1 km, 16 stops, dwell included)
+against the quoted 30. A 4% shortfall: the borrowed tram parameters are not obviously wrong, and no
+parameter was fitted to make it so.
+
+**Costs.** The cost engine prices the alignment (tram, street and segregated, per route-km, 2021 prices
+from Edinburgh and Greater Manchester) and the fleet (WMCA tram price); the tram operating rate per
+vehicle-km is a `[PLACEHOLDER]`, so operating cost is listed as not costed. The £194m (2001) is not used.
+
+**Results** (`lab compare S001-bristol-supertram B2028`, run `20261018T085337-S001-bristol-supertram-7aa2e9`;
+AM, mean over three offsets with the range): residents 2+ minutes faster to the centre 196,041
+(162,724–218,896), to jobs 467,049 (433,485–491,891); nobody worse off; residents with a 15-minute
+service +18,203; capex 2025 prices with optimism bias £1,244m low and central, £2,364m high (raw £791m,
+£1,509m high); **operating cost not costed** (`opex.tram.per_vehicle_km` is a `[PLACEHOLDER]`; the report
+says so and the map shows "not costed", not £0). For scale, the 2001 announcement was £194m.
+**Findings.** (1) 97% of the jobs in zones that became 2+ minutes faster are reached on the tram route.
+(2) The effect is not local: 0–2 km from a stop the mean saving to jobs is 3.9 minutes, but 20 km and more
+away it is still 1.9. The mechanism is frequency: a 7-minute tram from Temple Meads to north Bristol's
+employment (Filton, UWE, Aztec West) replaces a wait for an hourly train or a bus. The offset range is wide
+(162,724–218,896 to the centre), so the 7-minute headway is sensitive to timetable phase. (3) The model gives
+the tram free interchange at Temple Meads except the walk; no fare or crowding is modelled.
+
+### Disk (2026-10-18)
+
+The disk filled at the last step of the S001 run (`No space left on device`). With the owner's approval the engine-test skims `data/interim/skims/T003-engine-test-tunnel` (2.5 GB) and `T004-null-retime` (0.4 GB) were deleted; their run records and scenario files remain and they can be rebuilt with `lab run`. Results still cited from those runs in this file are not reproducible from cached skims until they are.
+
 ## Phase status
 
 | phase | status |

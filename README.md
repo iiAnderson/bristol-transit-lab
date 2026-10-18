@@ -14,9 +14,11 @@ and comparative only: good for ranking ideas and finding gaps, not for a busines
    capex/opex (low/central/high).
 
 `lab compare <scenario> <parent>` writes `compare.md`, `compare.json`, `change_oa.parquet`.
-`lab map [compare-run-id] [--show-gap] [--open]` turns that run into one HTML map: change in
-jobs within 30/45 minutes, time to the centre, 15-minute service, the baseline gap map, the
-new lines and stops, and a scorecard panel. Needs an internet connection for the tiles.
+`lab map [scenario...] [--open]` builds one HTML map of the projects listed in `config/lab.yaml`
+`map.projects` (each the latest `lab compare` of a scenario against its baseline). A sidebar ticks
+projects on and off and picks the layer: minutes saved, why it improved, jobs newly within 45
+minutes, time to the centre, a click-an-area 45-minute reach, the baseline gap map and the lines.
+Needs an internet connection for the tiles.
 
 ## Not in v1
 

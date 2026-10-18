@@ -1,65 +1,85 @@
-"""`lab map`: one HTML map for a compare run."""
+"""`lab map`: one HTML map for one or more projects."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import click
 import geopandas as gpd
-
-import json
+import yaml
 
 from .. import attribution, params, runrecord
 from ..config import LabConfig
 
 
-def _latest(runs: Path, pattern: str, needs: str) -> Path:
+def _latest_run(runs: Path, pattern: str, needs: str) -> Path:
     found = sorted(p for p in runs.glob(pattern) if (p / needs).exists())
     if not found:
         raise click.ClickException(f"no run with {needs} under {runs}")
     return found[-1]
 
 
+def _compare_run(runs: Path, scenario: str, against: str) -> Path:
+    """The latest `lab compare` run of `scenario` against `against`."""
+    hits = []
+    for p in runs.glob("*/compare.json"):
+        c = json.loads(p.read_text())
+        if c.get("scenario") == scenario and c.get("against") == against:
+            hits.append(p.parent)
+    if not hits:
+        raise click.ClickException(f"no compare run of {scenario} against {against}: run `lab compare {scenario} {against}`")
+    return sorted(hits)[-1]
+
+
 @click.command("map")
-@click.argument("compare_run", required=False)
+@click.argument("scenarios", nargs=-1)
 @click.option("--gapmap", "gap_run", default=None, help="A `lab gapmap` run id (default: the latest).")
-@click.option("--show-gap", is_flag=True, help="Show the gap map layer when the page opens.")
 @click.option("--open", "open_it", is_flag=True, help="Open the page in the browser.")
-def map_cmd(compare_run: str | None, gap_run: str | None, show_gap: bool, open_it: bool) -> None:
-    """Write one self-contained HTML map for a `lab compare` run (default: the latest)."""
+def map_cmd(scenarios: tuple[str, ...], gap_run: str | None, open_it: bool) -> None:
+    """One HTML map of the projects in config/lab.yaml `map.projects` (or just the named scenarios)."""
     from .. import mapview
     cfg = LabConfig.load()
-    cdir = cfg.runs_dir / compare_run if compare_run else _latest(cfg.runs_dir, "*", "change_oa.parquet")
-    if not (cdir / "change_oa.parquet").exists():
-        raise click.ClickException(f"{cdir} is not a `lab compare` run (no change_oa.parquet)")
-    gdir = cfg.runs_dir / gap_run if gap_run else _latest(cfg.runs_dir, "*-gapmap-*", "gapmap_od.parquet")
-    data_hash = params.file_hash(cdir / "change_oa.parquet")[:12]
-    rec = runrecord.build(cfg, command="map", inputs=[
-        {"name": f"{cdir.name}/change_oa.parquet", "sha256": params.file_hash(cdir / "change_oa.parquet")},
-        {"name": f"{cdir.name}/compare.json", "sha256": params.file_hash(cdir / "compare.json")},
-        {"name": f"{gdir.name}/gapmap_od.parquet", "sha256": params.file_hash(gdir / "gapmap_od.parquet")}])
-    out_dir = runrecord.write(cfg, rec).parent
-    try:
+    raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
+    configured = raw["map"]["projects"]
+    chosen = [p for p in configured if not scenarios or p["scenario"] in scenarios]
+    unknown = set(scenarios) - {p["scenario"] for p in configured}
+    if unknown:
+        raise click.ClickException(f"not in config map.projects: {sorted(unknown)}")
+    gdir = cfg.runs_dir / gap_run if gap_run else _latest_run(cfg.runs_dir, "*-gapmap-*", "gapmap_od.parquet")
+    scn = cfg.root / "scenarios"
+    projects, inputs = [], []
+    for spec in chosen:
+        cdir = _compare_run(cfg.runs_dir, spec["scenario"], spec["against"])
         comp = json.loads((cdir / "compare.json").read_text())
-        attr = attribution.compute(
-            cfg.lab_db, Path(comp["skims"]["scenario"]), Path(comp["skims"]["against"]),
-            mapview.scheme_routes(cfg.root / "scenarios", comp["scenario"], comp["against"]),
-            float(comp["threshold_min"]))
-        attr.to_parquet(out_dir / "attribution_oa.parquet")
+        skims_s, skims_a = Path(comp["skims"]["scenario"]), Path(comp["skims"]["against"])
+        routes = mapview.scheme_routes(scn, spec["scenario"], spec["against"])
+        click.echo(f"{spec['title']}: {cdir.name}")
+        attr = attribution.compute(cfg.lab_db, skims_s, skims_a, routes, float(comp["threshold_min"]))
         g = gpd.read_parquet(cdir / "change_oa.parquet")
         saved = -g.jobs_time_change_min_AM.fillna(0)
         sel = g[(saved >= mapview.MIN_SHOWN_MIN) | g.OA21CD.isin(attr.loc[attr.jobs_new_within > 0, "OA21CD"])]
-        reach = attribution.reach(cfg.lab_db, Path(comp["skims"]["scenario"]), Path(comp["skims"]["against"]),
-                                  list(sel.OA21CD), float(comp["threshold_min"]))
+        sel = sel.loc[saved[sel.index].sort_values(ascending=False).index[:mapview.CLICKABLE]]
+        reach = attribution.reach(cfg.lab_db, skims_s, skims_a, list(sel.OA21CD), float(comp["threshold_min"]))
+        h = params.file_hash(cdir / "change_oa.parquet")
+        projects.append(mapview.Project(
+            id=spec["scenario"], title=spec["title"], against_title=spec.get("against_title", spec["against"]),
+            colour=spec["colour"], compare_dir=cdir, c=comp, g=g, attr=attr, reach=reach,
+            files=mapview.scheme_files(scn, spec["scenario"], spec["against"]), data_hash=h[:12]))
+        inputs += [{"name": f"{cdir.name}/change_oa.parquet", "sha256": h},
+                   {"name": f"{cdir.name}/compare.json", "sha256": params.file_hash(cdir / "compare.json")}]
+    inputs.append({"name": f"{gdir.name}/gapmap_od.parquet", "sha256": params.file_hash(gdir / "gapmap_od.parquet")})
+    rec = runrecord.build(cfg, command="map", inputs=inputs)
+    out_dir = runrecord.write(cfg, rec).parent
+    try:
         zones = gpd.read_file(cfg.root / "data" / "raw" / "ons_geo" / "lsoa21_bgc_internal.geojson")
-        page = mapview.build(cdir, gdir, cfg.root / "scenarios", data_hash, cfg.extent, attr, zones, reach,
-                             attribution.zone_jobs(cfg.lab_db), show_gap)
+        page = mapview.build(projects, gdir, cfg.extent, zones, attribution.zone_jobs(cfg.lab_db))
         (out_dir / "map.html").write_text(page)
     except Exception:
         runrecord.finish(cfg, rec, "failed")
         raise
-    rec["result"] = {"map": str(out_dir / "map.html"), "compare_run": cdir.name, "gapmap_run": gdir.name}
+    rec["result"] = {"map": str(out_dir / "map.html"), "projects": [p.id for p in projects], "gapmap_run": gdir.name}
     runrecord.finish(cfg, rec, "ok")
     click.echo(f"wrote {out_dir / 'map.html'} ({(out_dir / 'map.html').stat().st_size / 1e6:.1f} MB)")
     if open_it:
         import webbrowser
-        webbrowser.open(out_dir.joinpath("map.html").as_uri())
+        webbrowser.open((out_dir / "map.html").as_uri())

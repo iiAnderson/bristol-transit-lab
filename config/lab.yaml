@@ -343,3 +343,14 @@ router:
   java_mem: 6G
   chunk_origins: 100
 
+
+# `lab map`: the projects the sidebar offers, in order. `scenario` is compared with `against`
+# (the latest `lab compare <scenario> <against>` run is used); `title` is what the sidebar
+# shows; `colour` is the scheme's lines and stops. Titles and colours live here, not in the
+# scenario files, because a scenario file's hash keys the cached networks.
+map:
+  projects:
+    - {scenario: B2028, against: B2026, colour: "#1b7837",
+       title: "Portishead line and Henbury extension (due 2028)", against_title: "today's network"}
+    - {scenario: S001-bristol-supertram, against: B2028, colour: "#762a83",
+       title: "Bristol Supertram, Line One (2001 scheme)", against_title: "the 2028 network"}

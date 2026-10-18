@@ -1,0 +1,245 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5905,
+     51.45607
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-UNI",
+    "name": "Union Street",
+    "source": "OSM Nominatim, 'Union Street, Bristol, BS1' (Broadmead end, by the bus station); named as the city-centre terminus in the scheme descriptions"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.59551,
+     51.45571
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-QUA",
+    "name": "Quay Street",
+    "source": "OSM Nominatim, 'Quay Street, Bristol'"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5966,
+     51.45036
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-PRI",
+    "name": "Prince Street",
+    "source": "OSM Nominatim, 'Prince Street, Bristol' (by the harbour)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.58961,
+     51.44832
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-SMR",
+    "name": "St Mary Redcliffe",
+    "source": "OSM Nominatim, 'St Mary Redcliffe Church, Bristol'"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.581315,
+     51.449144
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-TMD",
+    "name": "Bristol Temple Meads",
+    "source": "Rail GTFS (NaPTAN) station BRI; a tram stop is a new stop beside the station"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.56443,
+     51.458011
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-LWH",
+    "name": "Lawrence Hill",
+    "source": "Rail GTFS (NaPTAN) station LWH; listed in the route diagram, not in the prose"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.566217,
+     51.467507
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-STR",
+    "name": "Stapleton Road",
+    "source": "Rail GTFS (NaPTAN) station SRD; listed in the route diagram, not in the prose"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5767,
+     51.47875
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-ASD",
+    "name": "Ashley Down",
+    "source": "Rail GTFS (NaPTAN) station ASD (the reopened Ashley Hill station)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.57,
+     51.4915
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-BON",
+    "name": "Bonnington Walk",
+    "source": "On the railway at the former Horfield station site: OSM track nodes (lon -2.5702 at lat 51.4910). The Nominatim point for Bonnington Walk (Lockleaze) is 344 m from any track"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.562431,
+     51.504939
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-FAW",
+    "name": "Filton Abbey Wood",
+    "source": "Rail GTFS (NaPTAN) station FIT"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.542163,
+     51.513801
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-BPW",
+    "name": "Bristol Parkway",
+    "source": "Rail GTFS (NaPTAN) station BPW"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5385,
+     51.5195
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-PKN",
+    "name": "Parkway North",
+    "source": "[MODELLED] M4 park and ride, placed about 650 m north of Bristol Parkway; no source gives its position"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.53806,
+     51.52708
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-GMD",
+    "name": "Great Meadow",
+    "source": "OSM Nominatim, 'Great Meadow Road, Bradley Stoke'"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.55432,
+     51.53342
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-SVW",
+    "name": "Savages Wood",
+    "source": "OSM Nominatim, 'Savages Wood Road, Bradley Stoke'"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.55648,
+     51.54167
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-PBK",
+    "name": "Patchway Brook",
+    "source": "OSM Nominatim, 'Patchway Brook, Bradley Stoke'"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.56715,
+     51.54294
+    ]
+   },
+   "properties": {
+    "stop_id": "ST-AZW",
+    "name": "Aztec West",
+    "source": "OSM Nominatim, 'Aztec West, Almondsbury' (M5 park and ride; the scheme's northern terminus after Bristol's 2003 revision was Parkway, the original Line One ended at Almondsbury)"
+   }
+  }
+ ]
+}

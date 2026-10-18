@@ -1,0 +1,21 @@
+# Drawing spec for `lab scenario draw-rail`: Bristol Supertram Line One (2001 scheme).
+# NOT the promoter's plan: its alignment drawings were not opened. This is a model alignment
+# through the stops named in the scheme descriptions (sources.md, S001), in three kinds of leg:
+#  1. city centre, "recessed rails" along streets (Wikipedia, "Bristol Supertram", citing
+#     Tramdev March 2001): straight legs through the stops and a harbour-bridge waypoint, so
+#     the length is a lower bound on the street route;
+#  2. Temple Meads to Parkway, "alongside the GWR line" on the Cross Country route: routed along
+#     OSM railway ways (the tram needs its own formation; the geometry is the corridor's);
+#  3. Parkway to Aztec West, "a purpose-built track": straight legs through the stops.
+# Stop points: Temple Meads, Lawrence Hill, Stapleton Road, Ashley Down, Filton Abbey Wood and
+# Parkway from the rail GTFS (NaPTAN); the rest from OSM Nominatim searches of the named
+# streets and places (17 Oct 2026), recorded in the stops file.
+out: supertram_line1.geojson
+kinds: [rail]
+legs:
+  - {via: [[-2.5905, 51.45607], [-2.59551, 51.45571]], alignment_type: at_grade_street, straight: true}
+  - {via: [[-2.59660, 51.45036]], alignment_type: at_grade_street, straight: true}
+  - {via: [[-2.59500, 51.44930], [-2.58961, 51.44832]], alignment_type: at_grade_street, straight: true}
+  - {via: [[-2.581315, 51.449144]], alignment_type: at_grade_street, straight: true}
+  - {via: [[-2.581315, 51.449144], [-2.56443, 51.458011], [-2.566217, 51.467507], [-2.5767, 51.47875], [-2.5700, 51.4915], [-2.562431, 51.504939], [-2.542163, 51.513801]], alignment_type: at_grade_segregated}
+  - {via: [[-2.5385, 51.5195], [-2.53806, 51.52708], [-2.55432, 51.53342], [-2.55648, 51.54167], [-2.56715, 51.54294]], alignment_type: at_grade_segregated, straight: true}

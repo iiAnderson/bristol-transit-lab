@@ -1,0 +1,56 @@
+# Bristol Supertram, Line One (the 2001 scheme), modelled as if opened on the 2028 network.
+# A historical proposal, cancelled in March 2004. Nothing here is the promoter's design:
+# the scheme's own documents (the Transport and Works Act papers, the Atkins evaluation) were
+# not opened. Everything is from public summaries, listed below, and the gaps are filled from
+# modern UK tramways, each marked.
+#
+# [SOURCED] (Wikipedia, "Bristol Supertram", an encyclopaedia summary citing Tramdev (Mar 2001),
+# LRTA "Bristol Rapid Transit" (Mar 2001), BBC News "City tram project to be dropped" (30 May
+# 2004), railwaysarchive.co.uk; and its route-diagram template "Bristol Supertram map"):
+# - Line One, city centre to the M5 park and ride beside Almondsbury Interchange: "10.4 mi
+#   (16.7 km)", "The 10-mile journey would be completed in 30 minutes and make 16 stops".
+# - Stops, city centre outward: Union Street, Quay Street, Prince Street, St Mary Redcliffe,
+#   Temple Meads, Lawrence Hill, Stapleton Road, Ashley Down, Bonnington Walk, Filton Abbey
+#   Wood, Bristol Parkway, Parkway North, Great Meadow, Savages Wood, Patchway Brook, Aztec West.
+#   That is 16. The route diagram also shows the University of the West of England, which
+#   the article text calls an extension, so it is left out. The prose and the diagram
+#   disagree on the order of the three Bradley Stoke stops; the diagram's order is used
+#   because it is the one that runs west along the map.
+# - Street running ("recessed rails") in the city centre, the Cross Country route to Parkway
+#   alongside the GWR line, "purpose-built track" from Parkway.
+# - Cost £194m (2001 announcement), not used: the cost engine prices the alignment itself.
+#
+# [MODELLED], from modern tramways (no frequency, fleet or speed was found for the scheme):
+# - Frequency: Edinburgh Trams "seven to ten minutes", "a seven-minute interval for most of
+#   the day"; Nottingham Express Transit "peak headway 7 minutes, off-peak 10–15"
+#   (Wikipedia, "Edinburgh Trams", "Nottingham Express Transit"). Here 7 / 10 / 7 / 15.
+# - Speed: 70 km/h, the top speed of Edinburgh's CAF Urbos 3 and Nottingham's Citadis.
+#   Acceleration 1.0 m/s², the fastest at which the allowance (below) is fitted; the run-time
+#   allowance +22.5% at 1.0 is fitted against heavy-rail working times, used here as the
+#   stand-in for signals, junctions and street delay. Dwell 25 s.
+# - Capacity 200: NET's Alstom Citadis 302 table (202; the article's prose says 274).
+# - Span 06:00 to 23:00.
+# Check on the run time: the scheme's own 30 minutes over 16.7 km (see sources.md, S001).
+#
+# The alignment is drawn by `lab scenario draw-rail` from lines/supertram_line1.draw.yaml.
+id: S001-bristol-supertram
+parent: B2028
+description: Bristol Supertram Line One (2001 scheme), Union Street to Aztec West via Temple Meads, the Filton Bank and Parkway, 16 stops, as a tram on the 2028 network
+landuse: L2026
+caveats:
+  - >-
+    A historical scheme, modelled from public summaries. The alignment is drawn through
+    the named stops (the scheme's own plans were not opened), the frequency, fleet and
+    speeds are borrowed from Edinburgh and Nottingham, and the tram runs on its own
+    formation beside the railway, so it takes no train paths.
+ops:
+  - add_line:
+      route_id: GEN-SUPERTRAM1
+      name: Bristol Supertram Line One
+      mode: tram
+      alignment: lines/supertram_line1.geojson
+      stops: stops/supertram_line1.geojson
+      speed_profile: {max_kmh: 70, accel_ms2: 1.0, dwell_s: 25}
+      headways_min: {AM: 7, IP: 10, PM: 7, OP: 15}
+      span: "06:00-23:00"
+      vehicle: {capacity: 200}
