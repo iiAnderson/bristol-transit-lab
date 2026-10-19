@@ -1,0 +1,9 @@
+# Drawing spec for `lab scenario draw-rail`: the Severn Beach branch beyond Avonmouth, track geometry
+# routed along OSM railway ways (the 26 Sep 2026 extract; © OpenStreetMap contributors, ODbL). Each leg is
+# `existing_rail` over the Darwin timing points a Severn Beach train is timed through today, so run times
+# are today's working times. Station points from the rail GTFS (NaPTAN): AVN, SAR, SVB.
+out: severn_beach_extension.geojson
+kinds: [rail]
+legs:
+  - {via: [[-2.699466, 51.500362], [-2.696313, 51.512771]], alignment_type: existing_rail, timing_points: [AVONMTH, SADWJN, SADWRD]}
+  - {via: [[-2.696313, 51.512771], [-2.664477, 51.560027]], alignment_type: existing_rail, timing_points: [SADWRD, HLSMTHJ, SVRNBCH]}

@@ -1,0 +1,44 @@
+# Severn Beach line, half-hourly to Severn Beach: every train that ends at Avonmouth today runs on to
+# St Andrews Road and Severn Beach, on the 2028 network. Today (B2026, MetroWest Phase 1 delivered in
+# December 2021) the line is half-hourly to Avonmouth and hourly beyond (WECA, MetroWest Phase 1
+# scheme summary, June 2019: "half hourly ... for all stations to Avonmouth (hourly for St. Andrews
+# Road and Severn Beach stations)"). Network Rail's Greater Bristol Rail Network Strategic Study (Feb
+# 2023) identifies the line as needing an uplift and suggests new or extended branch passing loops and
+# reinstated platforms; its text was not opened (secondary: Bristol Rail Campaign, 9 Mar 2023).
+#
+# What the model does: the four routes whose trips end or start at Avonmouth (Temple Meads and
+# Weston-super-Mare, both ways, 12 and 13 journeys a day) are extended over the branch, at
+# today's working times between the same Darwin timing points. Timetable phase, number of journeys and
+# the rest of the line are unchanged, so nothing is added on Narroways – Avonmouth; the new trains
+# are on the branch only, which is a single-track block (scenarios/infrastructure/capacity.yaml, Network
+# Rail Signalling Design Group report 139797, June 2015: one train working).
+#
+# NOT MODELLED, and said on every output: the level crossings at Avonmouth and St Andrews Road (the
+# signalling report notes extended closures that grow with every added train), the layover and
+# turnround at Severn Beach, the passing loops and platforms the strategic study suggests, and the signal
+# box (St Andrews, due to move to the Didcot ROC). The capacity check can say the branch block is at its
+# limit; it cannot say the timetable works.
+id: S002-severn-beach-half-hourly
+parent: B2028
+description: "Severn Beach line, every train to Severn Beach (half-hourly): the Avonmouth terminators run on over the branch to St Andrews Road and Severn Beach"
+landuse: L2026
+caveats:
+  - >-
+    The branch beyond Avonmouth is one single-track block, which the capacity check puts at 2 trains an hour
+    each way: this scheme runs 2 and so sits at the limit. Level-crossing closures, the layover at Severn
+    Beach and the signalling are not modelled, and the Network Rail strategic study suggests the line needs
+    passing loops and platforms for more service: read the result as an upper bound on what the branch
+    can carry.
+ops:
+  - modify_route:
+      route_id: "GW:BRI-AVN"
+      extend_to: {from_stop: AVN, alignment: lines/severn_beach_extension.geojson, stops: stops/severn_beach_extension.geojson}
+  - modify_route:
+      route_id: "GW:AVN-BRI"
+      extend_to: {from_stop: AVN, alignment: lines/severn_beach_extension.geojson, stops: stops/severn_beach_extension.geojson}
+  - modify_route:
+      route_id: "GW:WSM-AVN"
+      extend_to: {from_stop: AVN, alignment: lines/severn_beach_extension.geojson, stops: stops/severn_beach_extension.geojson}
+  - modify_route:
+      route_id: "GW:AVN-WSM"
+      extend_to: {from_stop: AVN, alignment: lines/severn_beach_extension.geojson, stops: stops/severn_beach_extension.geojson}

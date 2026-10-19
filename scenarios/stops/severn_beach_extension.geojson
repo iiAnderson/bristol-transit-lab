@@ -1,0 +1,56 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.699466,
+     51.500362
+    ]
+   },
+   "properties": {
+    "stop_id": "AVN",
+    "name": "Avonmouth",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station AVN",
+    "tiploc": "AVONMTH"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.696313,
+     51.512771
+    ]
+   },
+   "properties": {
+    "stop_id": "SAR",
+    "name": "St Andrews Road",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station SAR",
+    "tiploc": "SADWRD"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.664477,
+     51.560027
+    ]
+   },
+   "properties": {
+    "stop_id": "SVB",
+    "name": "Severn Beach",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station SVB",
+    "tiploc": "SVRNBCH"
+   }
+  }
+ ]
+}
