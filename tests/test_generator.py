@@ -113,7 +113,7 @@ def test_remove_route_and_unbuilt_ops_fail_loudly(tmp_path):
     assert out["bus"]["trips"].empty and out["bus"]["stop_times"].empty and rep[0]["trips_removed"] == 72
     assert "R" not in set(out["bus"]["routes"].route_id) and len(f["bus"]["trips"]) == 72      # input untouched
     for kind, op in (("reroute", {"route_id": "R"}), ("add_stop", {"route_id": "R"}),
-                     ("modify_route", {"route_id": "R", "truncate_at": "b"}),
+                     ("reroute", {"route_id": "R"}),
                      ("modify_route", {"route_id": "R", "stopping_pattern": {"add": ["x"]}})):
         with pytest.raises(gen.GeneratorError):
             gen.apply(f, [(kind, op)], tmp_path, ctx(), 0.0)
@@ -318,3 +318,125 @@ def test_fill_span_runs_a_route_for_longer_at_its_own_phase_and_stand_holds_trai
     east = out2["bus"]["stop_times"][out2["bus"]["stop_times"].trip_id == "t0_0"]
     assert east.arrival_time.iloc[2] == "08:14:00" and east.departure_time.iloc[2] == "08:19:36"    # stands 5.6 min
     assert rep2[0]["extend_to"]["stand_at_from_stop_s"] == 336
+
+
+# ---- works, several routes in one replacement, and what re-timed journeys copy (G1, G8, G9)
+
+def test_works_changes_no_timetable_and_reaches_the_report():
+    f = bus_feed()
+    w = {"name": "W", "track": [{"sections": ["TA-TB"], "was": 1, "tracks": 2, "length_km": 2.0}]}
+    out, rep = gen.apply(f, [("works", w)], None, ctx(), 0.0)
+    assert all(out["bus"][k].equals(f["bus"][k]) for k in f["bus"])
+    assert rep[0]["works"] == w and rep[0]["type"] == "works"
+
+
+def test_replace_route_over_several_routes_takes_them_all(geo):
+    f = bus_feed(15)
+    t2 = f["bus"]["trips"][f["bus"]["trips"].route_id == "R"].assign(route_id="R2", trip_id=lambda d: "x" + d.trip_id,
+                                                                     original_trip_id=lambda d: "x" + d.original_trip_id)
+    s2 = f["bus"]["stop_times"][f["bus"]["stop_times"].trip_id.isin(set(f["bus"]["trips"].trip_id))].assign(
+        trip_id=lambda d: "x" + d.trip_id)
+    f["bus"]["trips"] = pd.concat([f["bus"]["trips"], t2], ignore_index=True)
+    f["bus"]["stop_times"] = pd.concat([f["bus"]["stop_times"], s2], ignore_index=True)
+    f["bus"]["routes"] = pd.concat([f["bus"]["routes"], pd.DataFrame([{"route_id": "R2", "agency_id": "X", "route_type": "3"}])],
+                                   ignore_index=True)
+    op = LINE | {"route_ids": ["R", "R2"], "new_route_id": "R-new", "headways_min": {"AM": 10}}
+    del op["name"], op["route_id"]
+    out, rep = gen.apply(f, [("replace_route", op)], geo, ctx(), 0.0)
+    assert not out["bus"]["trips"].route_id.isin(["R", "R2"]).any()
+    assert rep[0]["replaces"] == ["R", "R2"] and rep[0]["journeys_removed"] == 2 * 72
+    assert "replaces R, R2" in out["generated"]["routes"].route_desc.iloc[0]
+
+
+def test_retimed_journeys_say_what_they_copy_and_what_they_replace():
+    f = bus_feed(15)
+    out, rep = gen.apply(f, [("modify_route", {"route_id": "R", "headways_min": {"IP": 10}})], None, ctx(), 0.0)
+    h = rep[0]["headways"]
+    new_ids = set(out["bus"]["trips"].trip_id)
+    assert len(h["copies"]) == 72 and all(c["new"] in new_ids for c in h["copies"])
+    assert all(c["of"].startswith("t") and not c["of"].startswith("gen") for c in h["copies"])   # an original journey
+    assert len(h["removed"]) == 48 and {r["trip"] for r in h["removed"]} <= set(f["bus"]["trips"].trip_id)
+
+
+def test_a_copy_of_a_copy_resolves_to_the_original_journey_and_the_total_shift():
+    f = bus_feed(60, start=484, end=1210)                                  # hourly at :04
+    ops = [("modify_route", {"route_id": "R", "fill_span": "05:30-23:30"}),
+           ("modify_route", {"route_id": "R", "headways_min": {"AM": 30}})]
+    out, rep = gen.apply(f, ops, None, ctx(), 0.0)
+    originals = set(f["bus"]["trips"].trip_id)
+    copies = rep[1]["headways"]["copies"]
+    assert copies and all(c["of"] in originals for c in copies)             # never a fill: or gen: id
+    fill = {c["new"]: c for c in rep[0]["fill_span"]["copies"]}
+    # the fill copy at 07:04 (an hour before the first journey) is a template for the AM re-timing
+    assert any(abs(c["shift_min"]) >= 30 for c in copies)
+    assert all(c["new"] in set(out["bus"]["trips"].trip_id) for c in copies)
+    assert fill                                                              # the first op reported its copies too
+
+
+# ---- truncate_at (R1: through trains end at Temple Meads)
+
+def test_truncate_keep_before_ends_trips_at_the_stop_and_keep_after_starts_them_there():
+    f = bus_feed(15)                                           # R: a–b–c eastbound (0), c–b–a westbound (1)
+    out, rep = gen.apply(f, [("modify_route", {"route_id": "R", "truncate_at": {"stop": "b", "tiploc": "TB", "keep": "before"}})],
+                         None, ctx(), 0.0)
+    st = out["stop_times"] if False else out["bus"]["stop_times"]
+    t = out["bus"]["trips"].set_index("trip_id")
+    east = st[st.trip_id.isin(t.index[t.direction_id == "0"])].groupby("trip_id").stop_id.agg("".join)
+    west = st[st.trip_id.isin(t.index[t.direction_id == "1"])].groupby("trip_id").stop_id.agg("".join)
+    assert set(east) == {"ab"}                                  # eastbound stops at b
+    assert set(west) == {"cb"}                                  # westbound also ends at b
+    r = rep[0]["truncate"]
+    assert r["tiploc"] == "TB" and r["keep"] == "before" and len(r["trips"]) == 72 and r["trips_dropped"] == []
+    out2, _ = gen.apply(f, [("modify_route", {"route_id": "R", "truncate_at": {"stop": "b", "tiploc": "TB", "keep": "after"}})],
+                        None, ctx(), 0.0)
+    st2, t2 = out2["bus"]["stop_times"], out2["bus"]["trips"].set_index("trip_id")
+    assert set(st2[st2.trip_id.isin(t2.index[t2.direction_id == "0"])].groupby("trip_id").stop_id.agg("".join)) == {"bc"}
+    assert st2.groupby("trip_id").stop_sequence.apply(lambda s: list(s) == ["1", "2"]).all()   # renumbered
+
+
+def test_truncate_drops_trips_left_with_one_call_and_leaves_other_trips_alone():
+    f = bus_feed(15)
+    out, rep = gen.apply(f, [("modify_route", {"route_id": "R", "truncate_at": {"stop": "a", "tiploc": "TA", "keep": "before"}})],
+                         None, ctx(), 0.0)
+    r = rep[0]["truncate"]
+    t = f["bus"]["trips"]
+    # eastbound trips start at a: one call is left, so they go; westbound end at a and keep all three calls
+    assert len(r["trips_dropped"]) == 36 and set(r["trips_dropped"]) == set(t.trip_id[t.direction_id == "0"])
+    assert len(out["bus"]["trips"]) == 36 and out["bus"]["trips"].direction_id.eq("1").all()
+
+
+def test_truncating_where_no_trip_calls_is_an_error():
+    with pytest.raises(gen.GeneratorError, match="nothing to truncate"):
+        gen.apply(bus_feed(), [("modify_route", {"route_id": "R", "truncate_at": {"stop": "zz", "tiploc": "TZ", "keep": "before"}})],
+                  None, ctx(), 0.0)
+
+
+def test_a_feature_may_carry_its_own_speed_profile_for_the_legs_on_it(tmp_path):
+    # two legs, each its own feature: the first has a slow profile of its own, the second takes the route's
+    (tmp_path / "l.geojson").write_text(fc(
+        line([[-2.60, 51.45], [-2.59, 51.45]], alignment_type="existing_rail",
+             speed_profile={"max_kmh": 36, "accel_ms2": 1.0, "dwell_s": 30}),
+        line([[-2.59, 51.45], [-2.57, 51.45]], alignment_type="tunnel")))
+    (tmp_path / "s.geojson").write_text(fc(point(-2.60, 51.45, stop_id="A"), point(-2.59, 51.45, stop_id="B"),
+                                           point(-2.57, 51.45, stop_id="C")))
+    op = LINE | {"alignment": "l.geojson", "stops": "s.geojson"}
+    out, rep = gen.apply(bus_feed(), [("add_line", op)], tmp_path, ctx(), 0.0)
+    l1, l2 = rep[0]["legs"]
+    assert l1["fwd_s"] == pytest.approx(gen.leg_time_s(l1["dist_m"], 36, 1.0), abs=0.1)    # the feature's 36 km/h
+    assert l2["fwd_s"] == pytest.approx(gen.leg_time_s(l2["dist_m"], 72, 1.0), abs=0.1)    # the route's 72 km/h
+    assert l1["fwd_s"] > gen.leg_time_s(l1["dist_m"], 72, 1.0)
+
+
+def test_retiming_the_evening_and_early_period_touches_only_those_hours():
+    # hourly all day at :45 from 05:45; OP is before 07:00 and from 19:00. Re-time OP to 30 minutes.
+    f = bus_feed(60, start=345, end=1440)
+    out, rep = gen.apply(f, [("modify_route", {"route_id": "R", "headways_min": {"OP": 30}})], None, ctx(), 0.0)
+    t = out["bus"]["trips"].merge(out["bus"]["stop_times"][out["bus"]["stop_times"].stop_sequence == "1"])
+    east = sorted(gen.mins(t[t.direction_id == "0"].departure_time))
+    day = [x for x in east if 420 <= x < 1140]
+    assert day == list(range(465, 1140, 60))                       # AM, IP, PM untouched (hourly at :45)
+    assert [x for x in east if x < 420] == [345, 375, 405]         # the early hours, every 30 minutes
+    assert [x for x in east if x >= 1140] == [x for x in range(1155, 1440, 30)] or len([x for x in east if x >= 1140]) >= 9
+    assert len(east) == len(set(east))                              # never two journeys at the same minute
+    # before the fix the OP window ran from the first to the last OP journey, across the whole day
+    assert len(east) < 40

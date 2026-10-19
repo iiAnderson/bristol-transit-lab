@@ -42,6 +42,9 @@ def map_cmd(scenarios: tuple[str, ...], gap_run: str | None, open_it: bool) -> N
     raw = yaml.safe_load((cfg.root / "config" / "lab.yaml").read_text())
     configured = raw["map"]["projects"]
     chosen = [p for p in configured if not scenarios or p["scenario"] in scenarios]
+    for p in [p for p in chosen if p.get("pending")]:
+        click.echo(f"{p['title']}: pending (built, not yet skimmed and compared): not on the map", err=True)
+    chosen = [p for p in chosen if not p.get("pending")]
     unknown = set(scenarios) - {p["scenario"] for p in configured}
     if unknown:
         raise click.ClickException(f"not in config map.projects: {sorted(unknown)}")
@@ -61,10 +64,27 @@ def map_cmd(scenarios: tuple[str, ...], gap_run: str | None, open_it: bool) -> N
         sel = sel.loc[saved[sel.index].sort_values(ascending=False).index[:mapview.CLICKABLE]]
         reach = attribution.reach(cfg.lab_db, skims_s, skims_a, list(sel.OA21CD), float(comp["threshold_min"]))
         h = params.file_hash(cdir / "change_oa.parquet")
+        cost_rows = None
+        if spec.get("cost_from"):                       # a project whose cost is the phases', each against its own parent
+            phases = []
+            for sid in spec["cost_from"]:
+                ph = next(x for x in configured if x["scenario"] == sid and not x.get("id"))
+                pc = json.loads((_compare_run(cfg.runs_dir, sid, ph["against"]) / "compare.json").read_text())
+                kk = pc["cost"].get(sid, {})
+                ob, opx = kk.get("capex", {}).get("with_optimism_bias", {}), kk.get("opex_per_year", {})
+                phases.append((ph["title"].split(":")[0], ob, opx, kk.get("complete", True)))
+            m_ = lambda x: "no central figure" if x is None else f"£{x / 1e6:,.0f}m"
+            cost_rows = [
+                ("Capex by phase, with optimism bias (low / central / high)",
+                 "; ".join(f"{n}: {m_(o.get('low'))} / {m_(o.get('central'))} / {m_(o.get('high'))}" for n, o, _, _ in phases)
+                 + ". All incomplete: see each phase for what is not costed."),
+                ("Opex a year by phase (low / central / high)",
+                 "; ".join(f"{n}: " + (f"{m_(x.get('low'))} / {m_(x.get('central'))} / {m_(x.get('high'))}" if x.get("central") is not None else "n/a")
+                           + ("" if ok else " (units not costed)") for n, _, x, ok in phases))]
         projects.append(mapview.Project(
-            id=spec["scenario"], title=spec["title"], against_title=spec.get("against_title", spec["against"]),
+            id=spec.get("id", spec["scenario"]), title=spec["title"], against_title=spec.get("against_title", spec["against"]),
             colour=spec["colour"], compare_dir=cdir, c=comp, g=g, attr=attr, reach=reach,
-            files=mapview.scheme_files(scn, spec["scenario"], spec["against"]), data_hash=h[:12]))
+            files=mapview.scheme_files(scn, spec["scenario"], spec["against"]), data_hash=h[:12], cost_rows=cost_rows))
         inputs += [{"name": f"{cdir.name}/change_oa.parquet", "sha256": h},
                    {"name": f"{cdir.name}/compare.json", "sha256": params.file_hash(cdir / "compare.json")}]
     inputs.append({"name": f"{gdir.name}/gapmap_od.parquet", "sha256": params.file_hash(gdir / "gapmap_od.parquet")})

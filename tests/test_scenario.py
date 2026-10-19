@@ -36,7 +36,7 @@ GOOD_OPS = [
                   "headways_min": {"AM": 7.5, "IP": 10}, "span": "05:30-00:00",
                   "vehicle": {"capacity": 250}, "fare": {"type": "flat", "gbp": 2.0}}},
     {"modify_route": {"route_id": "R1", "headways_min": {"IP": 20},
-                      "stopping_pattern": {"remove": ["s3"], "add": ["s4"]}, "truncate_at": "s2"}},
+                      "stopping_pattern": {"remove": ["s3"], "add": ["s4"]}, "truncate_at": {"stop": "s2", "tiploc": "TPA", "keep": "before"}}},
     {"modify_route": {"route_id": "R2", "extend_to": {"from_stop": "s4", "alignment": "lines/ext.geojson",
                                                       "stops": "stops/ext.geojson"}}},
     {"reroute": {"route_id": "R1", "from_stop": "s1", "to_stop": "s2", "alignment": "lines/rr.geojson",
@@ -135,7 +135,7 @@ CASES = [
     ("fare", lambda d: write(d, broken(7, ["gbp"], -1))),
     ("file-missing", lambda d: write(d, broken(0, ["alignment"], "lines/none.geojson"))),
     ("file-missing", lambda d: write(d, broken(8, ["file"], "deltas/none.yaml"))),
-    ("stop-not-on-route", lambda d: write(d, broken(1, ["truncate_at"], "s3"))),       # removed by the same op
+    ("stop-not-on-route", lambda d: write(d, broken(1, ["truncate_at", "stop"], "s3"))),       # removed by the same op
     ("stop-not-on-route", lambda d: write(d, broken(3, ["to_stop"], "s3"))),      # removed by op 2
     ("stop-id", lambda d: write(d, broken(1, ["stopping_pattern", "add"], ["zz"]))),
     ("stop-id", lambda d: write(d, broken(5, ["stop", "stop_id"], "s1"))),

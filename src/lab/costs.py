@@ -234,6 +234,39 @@ def _line(item: str, qty: float, unit_name: str, u: dict, lib: Library, stage: i
     return row
 
 
+def works_capex(works: list[dict], lib: Library, stage: int | None = None) -> tuple[list[dict], list[str]]:
+    """Capital lines for a scenario's ``works`` ops (plans/heavy-rail-programme-log.md G1). Each item is
+    priced from ``rail_works`` (or the heavy-rail bay platform) by the quantity the op states:
+    electrification per single-track km (tracks × length, at the stated complexity), track added per
+    km (added tracks × length), junctions, passing loops and bay platforms each. An item whose
+    unit cost has no value is a line with no cost, and the result is marked incomplete."""
+    lines, notes = [], []
+    for w in works:
+        nm = w["name"]
+        for g in w.get("electrify") or []:
+            n = len(g["sections"])
+            lines.append(_line(f"{nm}: electrify {n} section{'s' * (n != 1)} ({g['tracks']} track{'s' * (g['tracks'] != 1)}, "
+                               f"{g['complexity']})", g["tracks"] * g["length_km"], "single-track km",
+                               lib.unit(f"rail_works.electrification_{g['complexity']}"), lib, stage))
+        for g in w.get("track") or []:
+            n = len(g["sections"])
+            lines.append(_line(f"{nm}: {g['tracks'] - g['was']} track added over {n} section{'s' * (n != 1)}",
+                               (g["tracks"] - g["was"]) * g["length_km"], "km of track added",
+                               lib.unit("rail_works.track_doubling"), lib, stage))
+        for g in w.get("loops") or []:
+            lines.append(_line(f"{nm}: passing loop at {g['at']}", 1, "loops", lib.unit("rail_works.passing_loop"), lib, stage))
+        for g in w.get("junctions") or []:
+            lines.append(_line(f"{nm}: grade-separated junction at {g['at']}", 1, "junctions",
+                               lib.unit("rail_works.grade_separated_junction"), lib, stage))
+        for g in w.get("platforms") or []:
+            lines.append(_line(f"{nm}: {g['count']} bay platform{'s' * (g['count'] != 1)} at {g['at']}", g["count"], "platforms",
+                               lib.unit("stations.heavy_rail.bay_platform"), lib, stage))
+    if works:
+        notes.append("works to existing railway: only the items listed are costed. Signalling, structures, land, "
+                     "possessions and utilities are not.")
+    return lines, notes
+
+
 def capex(services: list[dict], lib: Library, stage: int | None = None) -> tuple[list[dict], list[str]]:
     """Capital lines for the scenario's services (each ``service_quantities`` with its
     ``fleet`` under ``"fleet"`` and a ``name``), and notes on what is not in them."""
@@ -246,8 +279,8 @@ def capex(services: list[dict], lib: Library, stage: int | None = None) -> tuple
             if k <= 0:
                 continue
             if t == "existing_rail":
-                notes.append(f"{nm}: {k:.2f} km on existing railway: no works costed there (electrification, "
-                             "doubling and junction works are not scenario ops yet)")
+                notes.append(f"{nm}: {k:.2f} km on existing railway: no works costed there unless a `works` op "
+                             "lists them (electrification, doubling, loops, junctions, bay platforms)")
             elif t == "tunnel":
                 continue
             else:
@@ -322,10 +355,15 @@ def opex(km_parent: pd.Series, km_scenario: pd.Series, services: list[dict], lib
         lines.append(_line(f"{m}: change in vehicle-km ({v:+,.0f} a weekday)", v * year, "vehicle-km a year",
                            lib.unit(path), lib, None, "opex"))
     rail = with_spares(services, lib).get("heavy_rail", {})
-    units, crews = rail.get("with_spares", 0), rail.get("in_service", 0)
+    crews = rail.get("in_service", 0)
+    # the sourced lease is for a diesel unit: other traction takes the placeholder line, so it is not costed
+    units = with_spares([q for q in services if q.get("traction", "diesel") == "diesel"], lib).get("heavy_rail", {}).get("with_spares", 0)
+    n_other = with_spares([q for q in services if q.get("traction", "diesel") != "diesel"], lib).get("heavy_rail", {}).get("with_spares", 0)
     stations = sum(len(q["new_stops"]) for q in services if ALIAS.get(q["mode"], q["mode"]) == "heavy_rail")
     tunnel = sum(r["km"] for q in services for r in q["tunnel_runs"])
     for name, qty, per, path in (("heavy rail: units leased", units, "units", "opex.heavy_rail.lease_per_unit_year"),
+                                 ("heavy rail: electric and bi-mode units leased", n_other, "units",
+                                  "opex.heavy_rail.lease_per_unit_year_electric"),
                                  ("heavy rail: train crew", crews, "units in service", "opex.heavy_rail.staff_per_unit_year"),
                                  ("heavy rail: new stations", stations, "stations", "opex.heavy_rail.station_per_year"),
                                  ("tunnel maintenance", tunnel, "km", "opex.tunnel_maintenance_per_km_year")):

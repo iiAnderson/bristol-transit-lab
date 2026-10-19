@@ -422,6 +422,43 @@ ops:
       floor at today's busiest hour (where the check measures "busier than today", not
       capacity). Trips added by `fill_span` are counted over an extension but not over
       the track the copied journey already uses; the summary says how many.
+  - **As built at the heavy-rail programme engine stop (2026-10-18; plans/heavy-rail-programme-log.md):**
+    - *`works` op* (G1): `track` (sections, `was`, `tracks`, `length_km`), `electrify` (sections, `tracks`,
+      `length_km`, `complexity: simple|complex`, no default), `loops` (a passing loop at a timing point),
+      `junctions` (`grade_separated`), `platforms` (`bay`). It changes no timetable. The capacity check applies
+      the chain's `works` to `capacity.yaml` (`capacity.apply_works`: no track count may fall; `was` must
+      match; a loop must lie inside one single-track block) and the cost engine prices each item from
+      `rail_works` / `stations.heavy_rail.bay_platform` (`costs.works_capex`); an item with no unit cost is a
+      line with no cost and the result is incomplete. Lengths are given with the op (from
+      `lab scenario draw-rail`), not read from the infrastructure files: junction timing points have no
+      coordinates. One rule per failure: `works-section`, `works-tracks`, `works-length`,
+      `works-complexity`, `works-point`, `works-kind`.
+    - *Single-track blocks* (G2): `capacity.yaml` `blocks` lists consecutive timing points between passing
+      places; a block's limit is `⌊60 ÷ (2 × (summed Darwin median run time + station dwell inside) + 2 ×
+      margin)⌋` per direction, not per station pair. Severn Beach line: Narroways – Clifton Down 3 tph,
+      Clifton Down – Avonmouth 2 tph against 2 tph run today. `[MODELLED]`, from secondary sources.
+    - *`route_ids`* (G9): `replace_route` takes several routes and replaces them with one service;
+      `modify_route` over `route_ids` becomes one op per route (not with `extend_to`, `fill_span`,
+      `truncate_at`).
+    - *Re-timed journeys are counted* (G8): `fill_span` and re-timing reports say which Darwin journey each new
+      journey copies, through any chain of copies, and the capacity check counts it over that journey's
+      timing points; the journeys re-timing replaced leave the base. Before this a re-timed route was
+      counted at today's paths, so a `headways_min` increase added no trains.
+    - *`timing_points` on any alignment type* (G4) are checked against the known sections, not only for
+      `existing_rail`.
+  - **As built at the heavy-rail programme build (2026-10-18; plans/heavy-rail-programme-log.md §7):**
+    - *`truncate_at`* is built: `{stop, tiploc, keep: before|after}`. `before` ends each trip at the stop, `after`
+      starts it there; trips that do not call there are untouched and a trip left with one call goes. `tiploc` names the
+      timing point so the capacity check stops counting the part that no longer runs (the cut trip is counted
+      again by `copied_use` with a `trim`); only Darwin journeys can be truncated.
+    - *A feature may carry its own `speed_profile`* in the alignment GeoJSON; the legs it mostly covers use it in
+      place of the route's (a branch kept at its parent's profile while a tunnel gets an electric unit's).
+    - *`traction`* now reaches the cost engine: only `diesel` (the default) is leased at the sourced rate;
+      `electric` and `bi_mode` take `opex.heavy_rail.lease_per_unit_year_electric`, a `[PLACEHOLDER]`, so their units are
+      listed as not costed. Train crew is priced for every unit.
+    - *A generated route replaced by a later op* adds nothing to the capacity check (it no longer runs).
+    - *`map.projects`* entries in `config/lab.yaml`: `pending: true` keeps a built-but-not-compared scenario out of `lab map`,
+      with a message; `id` lets two projects share a scenario; `cost_from` shows a project's cost as its phases' side by side.
 - Validate every op: stops within 50 m of the alignment, alignment within the extent,
   headways positive, `route_id` exists for modify/remove. Fail loudly.
 - `spec_hash` = hash of the YAML plus referenced files, stored on `scenario`.

@@ -24,7 +24,8 @@ MODES = {"light_rail", "tram", "brt", "metro", "bus", "heavy_rail"}
 ALIGNMENT_TYPES = {"at_grade_street", "at_grade_segregated", "elevated", "tunnel", "existing_rail"}
 FARE_TYPES = {"flat"}
 OPS = {"add_line", "modify_route", "replace_route", "reroute", "remove_route", "add_stop",
-       "road_speed_factor", "fare_change", "landuse_delta"}
+       "road_speed_factor", "fare_change", "landuse_delta", "works"}
+COMPLEXITY = {"simple", "complex"}                        # RIA electrification rates (params/costs.yaml rail_works)
 #: ops that are validated and recorded but change nothing yet, and the phase that will act on them
 NOT_YET_MODELLED = {"fare_change": "P5"}
 TOP_KEYS = {"id", "parent", "description", "landuse", "ops", "offsets", "sources", "caveats"}
@@ -147,12 +148,19 @@ def _alignment(p: Path, cat: Catalogue, where: str):
             bx0, by0, bx1, by1 = g.bounds
             if bx0 < x0 or by0 < y0 or bx1 > x1 or by1 > y1:
                 raise ScenarioError("outside-extent", f"{where}: feature {i} of {p.name} leaves the extent")
-        if t == "existing_rail":
-            tp = (f.get("properties") or {}).get("timing_points")
+        if (f.get("properties") or {}).get("speed_profile") is not None:
+            _profile(f["properties"]["speed_profile"], cat, f"{where}: feature {i} of {p.name}")
+        tp = (f.get("properties") or {}).get("timing_points")
+        if t == "existing_rail" and not (isinstance(tp, list) and len(tp) >= 2):
+            raise ScenarioError("existing-rail-section",
+                                f"{where}: feature {i} of {p.name} is existing_rail and needs "
+                                "`timing_points` (two or more, in order)")
+        if tp is not None:
+            # any alignment type may name timing points (a tunnel or new line the capacity check
+            # should see); each consecutive pair must be a known section, so a typo fails here
             if not (isinstance(tp, list) and len(tp) >= 2):
-                raise ScenarioError("existing-rail-section",
-                                    f"{where}: feature {i} of {p.name} is existing_rail and needs "
-                                    "`timing_points` (two or more, in order)")
+                raise ScenarioError("existing-rail-section", f"{where}: feature {i} of {p.name}: `timing_points` "
+                                                             "needs two or more points, in order")
             for a, b in zip(tp, tp[1:]):
                 if (a, b) not in cat.sections and (b, a) not in cat.sections:
                     raise ScenarioError("existing-rail-section",
@@ -206,6 +214,21 @@ def _route(cat: Catalogue, op: dict, where: str) -> str:
     return rid
 
 
+def _routes(cat: Catalogue, op: dict, where: str) -> list[str]:
+    """The route or routes an op names: `route_id` or a list in `route_ids`, not both."""
+    if "route_ids" not in op:
+        return [_route(cat, op, where)]
+    if "route_id" in op:
+        raise ScenarioError("route-ids", f"{where}: give `route_id` or `route_ids`, not both")
+    ids = op["route_ids"]
+    if not (isinstance(ids, list) and ids and all(isinstance(r, str) for r in ids)) or len(set(ids)) != len(ids):
+        raise ScenarioError("route-ids", f"{where}: route_ids must be a list of different route ids")
+    for r in ids:
+        if r not in cat.routes:
+            raise ScenarioError("unknown-route", f"{where}: route {r!r} does not exist at this point in the ops")
+    return ids
+
+
 def _on_route(cat: Catalogue, rid: str, stop: str, where: str) -> None:
     if stop not in cat.routes[rid]:
         raise ScenarioError("stop-not-on-route", f"{where}: stop {stop!r} is not served by route {rid!r}")
@@ -255,6 +278,76 @@ SERVICE_KEYS = {"route_id", "name", "mode", "alignment", "stops", "speed_profile
                 "vehicle", "fare", "traction", "operator"}
 
 
+def _points(cat: Catalogue) -> set[str]:
+    return {p for pair in cat.sections for p in pair}
+
+
+def _works_sections(grp: dict, cat: Catalogue, where: str) -> list[str]:
+    secs = grp.get("sections")
+    if not (isinstance(secs, list) and secs and all(isinstance(x, str) for x in secs)):
+        raise ScenarioError("works-section", f"{where}: `sections` must be a list of FROM-TO timing-point pairs")
+    for key in secs:
+        a, _, b = key.partition("-")
+        if not b or ((a, b) not in cat.sections and (b, a) not in cat.sections):
+            raise ScenarioError("works-section", f"{where}: {key!r} is not a known section between timing points")
+    seen = {frozenset(k.split("-")) for k in secs}
+    if len(seen) != len(secs):
+        raise ScenarioError("works-section", f"{where}: a section is named twice (a section and its reverse are one track)")
+    return secs
+
+
+def _positive(grp: dict, key: str, where: str, rule: str, whole: bool = False) -> None:
+    v = grp.get(key)
+    ok = isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 and (not whole or v == int(v))
+    if not ok:
+        raise ScenarioError(rule, f"{where}: `{key}` must be a positive {'whole ' if whole else ''}number, got {v!r}")
+
+
+def _check_works(op: dict, cat: Catalogue, where: str) -> None:
+    """Works to existing railway (plans/heavy-rail-programme-log.md G1). Each item names timing-point
+    sections that exist in the infrastructure files; lengths are given in km (from
+    `lab scenario draw-rail`) because junction timing points have no coordinates."""
+    _known(op, {"name", "track", "electrify", "loops", "junctions", "platforms"}, where)
+    _req(op, ["name"], where)
+    if not any(k in op for k in ("track", "electrify", "loops", "junctions", "platforms")):
+        raise ScenarioError("empty-op", f"{where}: works changes nothing")
+    pts = _points(cat)
+    for g in op.get("track") or []:
+        _known(g, {"sections", "was", "tracks", "length_km", "note"}, f"{where}.track")
+        _works_sections(g, cat, where)
+        _positive(g, "was", where, "works-tracks", whole=True)
+        _positive(g, "tracks", where, "works-tracks", whole=True)
+        if g["tracks"] <= g["was"]:
+            raise ScenarioError("works-tracks", f"{where}: tracks ({g['tracks']}) must exceed was ({g['was']}); "
+                                                "works add track, they never remove it")
+        _positive(g, "length_km", where, "works-length")
+    for g in op.get("electrify") or []:
+        _known(g, {"sections", "tracks", "length_km", "complexity", "note"}, f"{where}.electrify")
+        _works_sections(g, cat, where)
+        _positive(g, "tracks", where, "works-tracks", whole=True)
+        _positive(g, "length_km", where, "works-length")
+        if g.get("complexity") not in COMPLEXITY:
+            raise ScenarioError("works-complexity", f"{where}: electrify needs complexity, one of {sorted(COMPLEXITY)} "
+                                                    "(it picks the RIA rate; there is no default)")
+    for g in op.get("loops") or []:
+        _known(g, {"at", "note"}, f"{where}.loops")
+        if g.get("at") not in pts:
+            raise ScenarioError("works-point", f"{where}: a passing loop at {g.get('at')!r}: not a known timing point")
+    for g in op.get("junctions") or []:
+        _known(g, {"at", "type", "note"}, f"{where}.junctions")
+        if g.get("at") not in pts:
+            raise ScenarioError("works-point", f"{where}: a junction at {g.get('at')!r}: not a known timing point")
+        if g.get("type") != "grade_separated":
+            raise ScenarioError("works-kind", f"{where}: junction type {g.get('type')!r}; only grade_separated is costed")
+    for g in op.get("platforms") or []:
+        _known(g, {"at", "kind", "count", "note"}, f"{where}.platforms")
+        if g.get("at") not in pts and g.get("at") not in cat.stops:
+            raise ScenarioError("works-point", f"{where}: platforms at {g.get('at')!r}: not a known timing point or stop")
+        if g.get("kind") != "bay":
+            raise ScenarioError("works-kind", f"{where}: platform kind {g.get('kind')!r}; only bay is costed")
+        _positive(g, "count", where, "works-tracks", whole=True)
+
+
 def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, where: str,
               files: list[Path]) -> None:
     if kind == "add_line":
@@ -266,8 +359,8 @@ def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, whe
         cat.routes[op["route_id"]] = [s["stop_id"] for s in stops]
         cat.stops.update({s["stop_id"]: (s["lon"], s["lat"]) for s in stops})
     elif kind == "replace_route":
-        _known(op, SERVICE_KEYS | {"new_route_id", "periods"}, where)
-        rid = _route(cat, op, where)
+        _known(op, (SERVICE_KEYS - {"route_id"}) | {"route_id", "route_ids", "new_route_id", "periods"}, where)
+        rids = _routes(cat, op, where)
         _req(op, ["new_route_id"], where)
         if op["new_route_id"] in cat.routes:
             raise ScenarioError("duplicate-route", f"{where}: route {op['new_route_id']!r} already exists")
@@ -278,7 +371,8 @@ def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, whe
         cat.routes[op["new_route_id"]] = [s["stop_id"] for s in stops]
         cat.stops.update({s["stop_id"]: (s["lon"], s["lat"]) for s in stops})
         if not op.get("periods"):
-            del cat.routes[rid]                    # replaced all day
+            for rid in rids:
+                del cat.routes[rid]                # replaced all day
     elif kind == "modify_route":
         _known(op, {"route_id", "headways_min", "stopping_pattern", "extend_to", "truncate_at", "fill_span"}, where)
         rid = _route(cat, op, where)
@@ -300,7 +394,17 @@ def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, whe
                     raise ScenarioError("stop-id", f"{where}: route {rid!r} already calls at {s!r}")
             cat.routes[rid] = [s for s in cat.routes[rid] if s not in pat.get("remove", [])] + pat.get("add", [])
         if "truncate_at" in op:
-            _on_route(cat, rid, op["truncate_at"], where)
+            tr = op["truncate_at"]
+            if not isinstance(tr, dict):
+                raise ScenarioError("truncate", f"{where}: truncate_at is a mapping: stop, tiploc, keep (before or after)")
+            _known(tr, {"stop", "tiploc", "keep"}, f"{where}.truncate_at")
+            _req(tr, ["stop", "tiploc", "keep"], f"{where}.truncate_at")
+            _on_route(cat, rid, tr["stop"], where)
+            if tr["keep"] not in ("before", "after"):
+                raise ScenarioError("truncate", f"{where}: keep must be 'before' (the trip ends at the stop) or 'after' "
+                                                f"(it starts there), got {tr['keep']!r}")
+            if tr["tiploc"] not in _points(cat):
+                raise ScenarioError("truncate", f"{where}: tiploc {tr['tiploc']!r} is not a known timing point")
         if "extend_to" in op:
             ext = op["extend_to"]
             _known(ext, {"from_stop", "alignment", "stops", "speed_profile", "stand_at_from_stop_s"}, f"{where}.extend_to")
@@ -322,6 +426,8 @@ def _check_op(kind: str, op: dict, base: Path, cat: Catalogue, tol_m: float, whe
                                                           f"from_stop {ext['from_stop']!r}")
             cat.routes[rid] += [s["stop_id"] for s in stops if s["stop_id"] not in cat.routes[rid]]
             cat.stops.update({s["stop_id"]: (s["lon"], s["lat"]) for s in stops})
+    elif kind == "works":
+        _check_works(op, cat, where)
     elif kind == "reroute":
         _known(op, {"route_id", "from_stop", "to_stop", "alignment", "stops", "speed_profile"}, where)
         rid = _route(cat, op, where)
@@ -459,7 +565,20 @@ def load(path: Path, cat: Catalogue, *, stop_tolerance_m: float, offset_count: i
             raise ScenarioError("op", f"{sid} op {i + 1}: unknown op {kind!r}; one of {sorted(OPS)}")
         if not isinstance(body, dict):
             raise ScenarioError("op", f"{sid} op {i + 1} ({kind}): the op's body must be a mapping")
-        _check_op(kind, body, base, work, stop_tolerance_m, f"{sid} op {i + 1} ({kind})", files)
+        where = f"{sid} op {i + 1} ({kind})"
+        if kind == "modify_route" and "route_ids" in body:
+            # one modify_route over several routes is one op per route, so every later stage
+            # (generator, capacity, cost) sees the same list of ops
+            ids = _routes(work, body, where)
+            bad = [k for k in ("extend_to", "fill_span", "truncate_at") if k in body]
+            if bad:
+                raise ScenarioError("route-ids", f"{where}: {bad} differ by route and cannot be given with route_ids")
+            for rid in ids:
+                one = {k: v for k, v in body.items() if k != "route_ids"} | {"route_id": rid}
+                _check_op(kind, one, base, work, stop_tolerance_m, where, files)
+                ops.append((kind, one))
+            continue
+        _check_op(kind, body, base, work, stop_tolerance_m, where, files)
         ops.append((kind, body))
         if kind in NOT_YET_MODELLED:
             later.append(f"op {i + 1} ({kind}): recorded, not yet modelled (arrives in {NOT_YET_MODELLED[kind]})")

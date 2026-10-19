@@ -14,6 +14,41 @@ defaults:
   # enters, so trains per hour per direction = 60 ÷ (2 × run time + 2 × margin).
   single_track_margin_min: 3
   single_track_default_tph: 2
+  # [MODELLED] Time a train stands at each station inside a single-track block, in minutes
+  # (Darwin's median section run times exclude it). Used by `blocks` below.
+  block_station_dwell_min: 0.5
+# Single-track BLOCKS (plans/heavy-rail-programme-log.md G2): consecutive timing points between
+# passing places. Trains in opposite directions cannot pass inside one, so a block carries one
+# train pair per round trip over its whole length, not per station pair: the limit is
+# 60 ÷ (2 × (summed run time + dwell inside) + 2 × margin) per direction, from today's Darwin
+# median run times (`capacity.block_limits`). Redoubling and passing loops (the `works` op)
+# split or remove them for a scenario and its children.
+#
+# SEVERN BEACH LINE. [MODELLED] from published descriptions; the layout of the Narroways –
+# Avonmouth part is secondary, the part beyond Avonmouth is primary:
+# - Bristol Rail Campaign, "How could Severn Beach Line capacity be improved?" (9 Mar 2023) and
+#   Wikipedia, "Severn Beach line": single track from Narroways Hill Junction to Severn Beach, with
+#   double-tracked loops and two platforms at Clifton Down and at Avonmouth. Passing places:
+#   Clifton Down and Avonmouth.
+# - Network Rail Signalling Design Group, Signalling Feasibility Report 139797 v1.1 (June 2015),
+#   Appendix H of the MetroWest Phase 2 GRIP 1/2 report (travelwest.info), §2.1 and the Hallen Marsh
+#   junction notes: "The single line from St Andrews Road to Severn Beach is dual operated by both
+#   panels"; "alterations would be required to the one train working to Severn Beach"; the single
+#   line is worked tokenless with sequential track circuits. That is one train on the branch at a time,
+#   which is what a single block does. The passenger line from Avonmouth to Severn Beach is
+#   controlled from St Andrews signal box.
+# Network Rail's Sectional Appendix has not been opened. NOT MODELLED: level-crossing closure
+# times at Avonmouth and St Andrews Road (the signalling report: extended closures, and an increase
+# with every added train), the layover at Severn Beach, and the 300 m the campaign describes as single
+# through the St Andrews Road crossing north of a double Avonmouth station (inside the block here).
+# On today's timetable the long blocks are full or nearly so; see sources.md.
+blocks:
+  severn-beach-narroways-clifton-down:
+    points: [STPLNAR, MONPELR, REDLAND, CLFDOWN]
+  severn-beach-clifton-down-avonmouth:
+    points: [CLFDOWN, SEMILLS, SHAMPTN, PTWYPR, AVONMTH]
+  severn-beach-avonmouth-severn-beach:
+    points: [AVONMTH, SADWJN, SADWRD, HLSMTHJ, SVRNBCH]
 sections:
   # [MODELLED] The Portishead branch is taken as single track throughout. No source for its
   # track layout has been opened; the MetroWest Phase 1 documents would settle it.

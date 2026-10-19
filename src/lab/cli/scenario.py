@@ -235,15 +235,19 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
     for f in sorted(idir.glob("*.yaml")):
         sections += (yaml.safe_load(f.read_text()) or {}).get("sections") or [] if f.name != "capacity.yaml" else []
     capd = yaml.safe_load((idir / "capacity.yaml").read_text())
+    tp_runs = cp.section_run_times(tp)
     periods = cov.parse_periods({k: ps[f"periods.{k}"] for k in ps["scenario.headway_periods"]})
     parent_rail = gen.read_feed(cfg.root / raw["rail"]["out"])
     tables, summary = [], {}
     for k, off in b["report"]["by_offset"].items():
         feeds_k = {f.stem: gen.read_feed(f) for f in sorted((b["dir"] / f"offset_{k}").glob("*.zip"))}
-        # today's trains no longer in the scenario's rail feed have been removed or re-timed
+        # today's trains no longer in the scenario's rail feed have been removed or re-timed away
         gone = set(parent_rail["trips"].trip_id) - set(feeds_k["rail"]["trips"].trip_id)
+        # journeys cut short (`truncate_at`): counted again below, but only the part that still runs
+        cut = [(t, op["truncate"]) for op in off["ops"] if "truncate" in op for t in op["truncate"]["trips"]]
+        gone |= {t for t, _ in cut}
         retimed = sorted({r for r in feeds_k["rail"]["trips"].route_id[feeds_k["rail"]["trips"].trip_id.str.startswith("gen")]})
-        base = cp.base_use(tp, gone if not retimed else set())
+        base = cp.base_use(tp, gone)
         run_min = {}
         for op in off["ops"]:
             for holder in (op, op.get("extend_to", {})):
@@ -252,8 +256,14 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
                     for a, c in zip(tps, tps[1:]):
                         share = 1 / max(len(tps) - 1, 1)
                         run_min[(a, c)], run_min[(c, a)] = lg["fwd_s"] / 60 * share, lg["rev_s"] / 60 * share
-        lim = cp.limits(sections, capd, cp.base_use(tp), run_min)      # limits from today's timetable, untouched
-        copies = [c for op in off["ops"] for c in (op.get("fill_span") or {}).get("copies", [])]
+        # works to existing railway in this scenario's chain: redoubling, passing loops
+        capk = cp.apply_works(capd, [op["works"] for op in off["ops"] if "works" in op])
+        lim = cp.limits(sections, capk, cp.base_use(tp), run_min, tp_runs)    # limits from today's timetable, untouched
+        # journeys added as copies of today's (fill_span, and re-timing), unless a later op took them away
+        in_feed = set(feeds_k["rail"]["trips"].trip_id)
+        copies = [c for op in off["ops"] for key in ("fill_span", "headways") for c in (op.get(key) or {}).get("copies", [])
+                  if c.get("new") in in_feed]
+        copies += [{"of": t, "shift_min": 0.0, "new": t, "trim": {"tiploc": u["tiploc"], "keep": u["keep"]}} for t, u in cut if t in in_feed]
         try:
             added = cp.copied_use(tp, copies)
         except ValueError as e:
@@ -267,7 +277,7 @@ def _capacity(cfg, raw, ps, b: dict, tp) -> dict:
                       "over": chk[chk.over][["from", "to", "period", "total_tph", "limit_tph", "limit_from"]].to_dict("records") if len(chk) else [],
                       "at_the_limit": at[["from", "to", "limit_tph", "limit_from", "modelled_track_tph"]].drop_duplicates().to_dict("records") if len(chk) else [],
                       "sections_where_todays_floor_is_the_limit": int(chk[chk.limit_from.str.startswith("today")][["from", "to"]].drop_duplicates().shape[0]) if len(chk) else 0,
-                      "rail_routes_retimed_counted_at_todays_paths": retimed,
+                      "rail_routes_retimed_counted_over_the_timing_points_they_copy": retimed,
                       # trips added by `fill_span`: counted on the track of the journey each copies
                       "trips_added_to_todays_routes_counted_on_todays_track": {
                           op["route_id"]: sum(len(v) for v in op["fill_span"]["added"].values())
@@ -343,6 +353,7 @@ def _scenario_cost(b: dict, stage: int | None = None) -> dict:
         if kind in ("add_line", "replace_route"):
             q = costs.service_quantities(rep, op["mode"], stops_of(op["stops"]), op["headways_min"])
             q["name"] = rep["route_id"]
+            q["traction"] = op.get("traction", "diesel")
         elif kind == "modify_route" and "extend_to" in rep:
             routes = pd.concat([f["routes"] for f in mine.values()])
             rt = routes.set_index("route_id").route_type.get(op["route_id"])
@@ -365,6 +376,8 @@ def _scenario_cost(b: dict, stage: int | None = None) -> dict:
         seen.add(key)
         build.append(q)
     cap, notes = costs.capex(build, lib, stage)
+    wcap, wnotes = costs.works_capex([rep["works"] for (kind, _), rep in zip(s.ops, reps) if kind == "works"], lib, stage)
+    cap, notes = cap + wcap, notes + wnotes
     op_lines, op_notes = costs.opex(km_p, km_s, build, lib)
     out = costs.summarise(cap, op_lines, notes + op_notes, lib, stage)
     out["services"] = [{k: q[k] for k in ("name", "mode", "km_by_type", "tunnel_runs", "one_way_min", "fleet")}
@@ -446,6 +459,7 @@ def scenario_draw_rail(spec: str) -> None:
             r["coords"] = [feats[-1]["geometry"]["coordinates"][-1]] + r["coords"]
         feats.append({"type": "Feature", "geometry": {"type": "LineString", "coordinates": r["coords"]},
                       "properties": {"alignment_type": leg["alignment_type"], "timing_points": leg.get("timing_points"),
+                                     **({"speed_profile": leg["speed_profile"]} if leg.get("speed_profile") else {}),
                                      "length_m": r["length_m"], "osm_railway_m": r["kinds_m"],
                                      "source": f"OSM ways via `lab scenario draw-rail {sp.name}`; extract {raw['osm']['extract_date']}"}})
         click.echo(f"  leg {i + 1}: {r['length_m'] / 1000:.2f} km, waypoints {r['snap_m']} m from the track used, {r['kinds_m']}")

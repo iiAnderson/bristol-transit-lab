@@ -382,8 +382,9 @@ rail_works:
     ob_category: rail
     tag: SOURCED
     source: "Railway Industry Association, Electrification Cost Challenge (March 2019), RIA presentation of 24 April 2019: \"Complex projects £1m to £1.5m/stk\""
-  track_doubling: {value: null, unit: GBP per km, tag: PLACEHOLDER, note: not sourced}
+  track_doubling: {value: null, unit: GBP per route-km of track added, tag: PLACEHOLDER, note: not sourced}
   grade_separated_junction: {value: null, unit: GBP each, tag: PLACEHOLDER, note: not sourced}
+  passing_loop: {value: null, unit: GBP each, tag: PLACEHOLDER, note: "not sourced; a loop on a single-track line (the `works` op's `loops`)"}
 
 # ---------------------------------------------------------------- capital: depot and fleet
 depot:
@@ -466,6 +467,11 @@ opex:
       index: gdp
       tag: SOURCED
       source: "WECA, MetroWest Phase 2 FBC Stage 2 Update (Oct 2025), Tables 8-5 and 8-7: lease £606,000 a year for one unit"
+    lease_per_unit_year_electric:
+      value: null
+      unit: GBP per electric or bi-mode unit per year
+      tag: PLACEHOLDER
+      note: "not sourced. The sourced lease above is for a three-car diesel unit; a scenario service with `traction: electric` or `bi_mode` takes this line, so its units are listed as not costed, not priced at the diesel rate"
     staff_per_unit_year:
       value: 630000.0
       unit: GBP per unit in service per year (5.0 drivers and 3.8 conductors)

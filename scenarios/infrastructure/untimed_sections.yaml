@@ -29,3 +29,34 @@ sections:
   - {from: HENBURY, to: NRHFILT, timed: false}
   - {from: HENBURY, to: HLNMOOR, timed: false}
   - {from: HLNMOOR, to: HENBURY, timed: false}
+
+# --- R2 / R3 city tunnel and northern link (heavy-rail programme, plans/heavy-rail-programme.md §3-4).
+# HAND-AUTHORED, [MODELLED]: none of these points exists. The ids are invented timing points so that the
+# speed-profile rule and the capacity check reach the new track (plans/heavy-rail-programme-log.md G4). Positions
+# are read off Robbie's sketch and are approximate; the junction onto the Bath line is snapped to the OSM
+# track (the brief's point is 220 m south of it) and joins the Bath line's existing timing points at
+# North Somerset Junction (NSMRSTJ, the first point east of Bristol East Junction), whose own position is not
+# in the data. New track is double track (the capacity default).
+#   TNLSPTL  south portal, on the old four-track formation between Parson Street and Bedminster
+#   TNLNSTR  North Street (Southville), underground       TNLCNTR  Centre (College Green), underground
+#   TNLBRDM  Broadmead, underground                       TNLTMEE  Temple Meads East (Anvil Street), underground
+#   TNLEPTL  east portal, St Philip's Marsh               SPMJCT   St Philip's Marsh junction, grade separated
+  - {from: PARSNST, to: TNLSPTL, timed: false}
+  - {from: TNLSPTL, to: PARSNST, timed: false}
+  - {from: TNLSPTL, to: TNLNSTR, timed: false}
+  - {from: TNLNSTR, to: TNLSPTL, timed: false}
+  - {from: TNLNSTR, to: TNLCNTR, timed: false}
+  - {from: TNLCNTR, to: TNLNSTR, timed: false}
+  - {from: TNLCNTR, to: TNLBRDM, timed: false}
+  - {from: TNLBRDM, to: TNLCNTR, timed: false}
+  - {from: TNLBRDM, to: TNLTMEE, timed: false}
+  - {from: TNLTMEE, to: TNLBRDM, timed: false}
+  - {from: TNLTMEE, to: TNLEPTL, timed: false}
+  - {from: TNLEPTL, to: TNLTMEE, timed: false}
+  - {from: TNLEPTL, to: SPMJCT, timed: false}
+  - {from: SPMJCT, to: TNLEPTL, timed: false}
+  - {from: SPMJCT, to: NSMRSTJ, timed: false}
+  - {from: NSMRSTJ, to: SPMJCT, timed: false}
+  # R3's northern link: St Philip's Marsh junction to the Filton Bank slow pair at Lawrence Hill
+  - {from: SPMJCT, to: LAWRNCH, timed: false}
+  - {from: LAWRNCH, to: SPMJCT, timed: false}

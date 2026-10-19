@@ -111,7 +111,8 @@ def _to_m():
 
 def read_alignment(path: Path):
     """The alignment as one projected line, with the stretch of it each feature covers
-    (start chainage, end chainage, alignment_type, timing_points)."""
+    (start chainage, end chainage, alignment_type, timing_points, speed_profile): a feature may carry its own
+    `speed_profile`, which the legs on it use in place of the route's."""
     from shapely.geometry import shape
     from shapely.ops import linemerge, transform, unary_union
     to_m = _to_m()
@@ -124,7 +125,7 @@ def read_alignment(path: Path):
     for f, g in zip(feats, geoms):
         a, b = sorted((line.project(g.interpolate(0)), line.project(g.interpolate(g.length))))
         pr = f.get("properties") or {}
-        parts.append((a, b, pr["alignment_type"], pr.get("timing_points")))
+        parts.append((a, b, pr["alignment_type"], pr.get("timing_points"), pr.get("speed_profile")))
     return line, parts
 
 
@@ -146,7 +147,7 @@ def read_stops(path: Path, line) -> pd.DataFrame:
 def leg_types(parts, a: float, b: float) -> dict[str, float]:
     """Metres of each alignment type between two chainages."""
     out: dict[str, float] = {}
-    for s, e, t, _ in parts:
+    for s, e, t, *_ in parts:
         ov = min(b, e) - max(a, s)
         if ov > 0:
             out[t] = out.get(t, 0.0) + ov
@@ -208,8 +209,12 @@ def legs(stops: pd.DataFrame, parts, mode: str, profile: dict | None, ctx: dict,
         if mode in ("bus", "brt") and any(t in STREET_TYPES for t in types):
             raise GeneratorError(f"{where}: an on-street {mode} leg needs the bus_speed_ratio run-time rule, which "
                                  "is not built yet (the ratio is fitted: params scenario.bus_speed_ratio)")
+        # a feature's own speed profile applies to the legs it mostly covers
+        over = [(min(b.chainage_m, e0) - max(a.chainage_m, s0), sp_) for s0, e0, _, _, sp_ in parts if sp_]
+        over = [x for x in over if x[0] > 0.5 * dist]
+        leg_profile = max(over, key=lambda x: x[0])[1] if over else None
         tps: list[str] = []
-        for s0, e0, _, tp in sorted(parts, key=lambda q: q[0]):
+        for s0, e0, _, tp, *_ in sorted(parts, key=lambda q: q[0]):
             # a feature belongs to the leg if it covers most of the leg or the leg covers most
             # of it: stops sit a few metres off the feature ends, which must not count
             if tp and min(b.chainage_m, e0) - max(a.chainage_m, s0) > 0.5 * min(dist, e0 - s0):
@@ -227,9 +232,10 @@ def legs(stops: pd.DataFrame, parts, mode: str, profile: dict | None, ctx: dict,
                 if not profile:
                     raise GeneratorError(f"{where}: no train is timed {x.stop_id} → {y.stop_id} today and the op "
                                          "has no speed_profile to fall back on")
-                al = allowance_for(ctx, profile["accel_ms2"], where)
+                lp = leg_profile or profile
+                al = allowance_for(ctx, lp["accel_ms2"], where)
                 nj = sum(t.endswith(("J", "JN", "JCN")) for t in tps[1:-1])
-                plain = leg_time_s(dist, profile["max_kmh"], profile["accel_ms2"])
+                plain = leg_time_s(dist, lp["max_kmh"], lp["accel_ms2"])
                 run = (1 + al["pct"]) * plain + al["per_junction_s"] * nj
                 rec[f"{d}_rule"] = "speed profile" + (f" + {al['pct']:.0%} allowance" if al["pct"] else "")
                 rec[f"{d}_profile_s"] = round(plain, 1)
@@ -404,7 +410,8 @@ def _journeys(feed: dict, route_id: str) -> pd.DataFrame:
     return j
 
 
-def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, offset: float) -> dict:
+def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, offset: float,
+            src: dict | None = None) -> dict:
     """Replace a route's journeys, period by period, with journeys at a new headway.
 
     Per direction and stop pattern (the dominant pattern only; journeys on other
@@ -414,7 +421,8 @@ def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, of
     route reproduces its stop times exactly."""
     j = _journeys(feed, route_id)
     st_all = feed["stop_times"]
-    report = {"route_id": route_id, "periods": {}, "journeys_removed": 0, "journeys_added": 0}
+    report = {"route_id": route_id, "periods": {}, "journeys_removed": 0, "journeys_added": 0,
+              "copies": [], "removed": []}
     anchored: dict = {}
     new_trips, new_st, drop = [], [], set()
     base_trips = feed["trips"].set_index("trip_id")
@@ -431,7 +439,13 @@ def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, of
                 old = main[~main.start.map(lambda t: any(a <= t < b for a, b in named))]
                 if old.empty:
                     continue
-                wins = [(old.start.min(), old.start.max() + 1e-6)]
+                # OP is the hours outside the named periods, within the span the old journeys cover: an
+                # early window and a late one, not one window from the first to the last (which spans the day)
+                lo_m, hi_m = int(old.start.min()), int(old.start.max()) + 1
+                span = f"{lo_m // 60 % 24:02d}:{lo_m % 60:02d}-{hi_m // 60 % 24:02d}:{hi_m % 60:02d}"
+                wins = period_windows(ctx["periods"] | {"OP": (0, 0)}, span).get("OP", [])
+                if not wins:
+                    continue
             else:
                 old = main[(main.start >= lo) & (main.start < hi)]
                 wins = [(lo, hi)]
@@ -447,6 +461,7 @@ def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, of
                 jid = f"{tag}:{route_id}:{direction}:{per}:{n}"
                 for k, tid in enumerate(tmpl.trip_ids):
                     new_id = jid if len(tmpl.trip_ids) == 1 else f"{jid}#{k}"
+                    report["copies"].append(_copy_record(tid, new_id, shift, src))
                     row = base_trips.loc[tid].to_dict() | {"trip_id": new_id}
                     if "original_trip_id" in row:
                         row["original_trip_id"] = jid
@@ -458,6 +473,7 @@ def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, of
                     new_st.append(s)
             for ids in old.trip_ids:
                 drop |= set(ids)
+                report["removed"] += [{"trip": t} for t in ids]
             report["periods"].setdefault(per, {})[str(direction)] = {"journeys_before": int(len(old)),
                                                                      "journeys_after": len(deps), "headway_min": hw}
             report["journeys_removed"] += int(len(old))
@@ -470,7 +486,18 @@ def _retime(feed: dict, route_id: str, headways: dict[str, float], ctx: dict, of
     return report
 
 
-def _fill_span(feed: dict, route_id: str, span: str) -> dict:
+def _copy_record(template: str, new_id: str, shift: float, src: dict | None) -> dict:
+    """What a new journey copies: the Darwin journey (``of``) at the end of any chain of copies, and
+    the total ``shift_min`` from it, so the capacity check can count it over that journey's
+    timing points. ``src`` maps each copy made so far to (Darwin journey, shift)."""
+    src = src if src is not None else {}
+    of, base = src.get(template, (template, 0.0))
+    total = round(float(shift) + base, 3)
+    src[new_id] = (of, total)
+    return {"of": of, "shift_min": total, "new": new_id}
+
+
+def _fill_span(feed: dict, route_id: str, span: str, src: dict | None = None) -> dict:
     """Run a timetabled route for longer in the day without changing its phase: journeys
     are added before its first and after its last departure, at its own headway and the
     same minutes past the hour, as far as ``span`` allows (by departure from the route's
@@ -499,9 +526,9 @@ def _fill_span(feed: dict, route_id: str, span: str) -> dict:
             jid = f"fill:{route_id}:{direction}:{n}"
             # what each added journey copies, and how far it is moved: the capacity check
             # counts it on the copied journey's track (plans/P3.md §8, P3c stop — decided, 5)
-            rep_["copies"] += [{"of": tid, "shift_min": round(float(shift), 3)} for tid in tmpl.trip_ids]
             for k, tid in enumerate(tmpl.trip_ids):
                 new_id = jid if len(tmpl.trip_ids) == 1 else f"{jid}#{k}"
+                rep_["copies"].append(_copy_record(tid, new_id, shift, src))
                 row = base_trips.loc[tid].to_dict() | {"trip_id": new_id}
                 if "original_trip_id" in row:
                     row["original_trip_id"] = jid
@@ -519,6 +546,35 @@ def _fill_span(feed: dict, route_id: str, span: str) -> dict:
         feed["stop_times"] = pd.concat([feed["stop_times"], *new_st], ignore_index=True)
     rep_["uses_offsets"] = False
     return rep_
+
+
+def _truncate(feed: dict, route_id: str, cut: dict) -> dict:
+    """End a route's trips at a stop (`keep: before`: the trip stops there) or start them there
+    (`keep: after`). A trip that does not call at the stop is untouched; a trip left with fewer than two
+    calls goes. Times of the calls that stay do not change. The report names the trips and the timing
+    point so the capacity check can stop counting the part that no longer runs."""
+    tr = set(feed["trips"].trip_id[feed["trips"].route_id == route_id])
+    st = feed["stop_times"]
+    mine = st[st.trip_id.isin(tr)].copy()
+    mine["seq"] = mine.stop_sequence.astype(int)
+    mine = mine.sort_values(["trip_id", "seq"])
+    at = mine[mine.stop_id == cut["stop"]].drop_duplicates("trip_id").set_index("trip_id").seq
+    if at.empty:
+        raise GeneratorError(f"route {route_id}: no trip calls at {cut['stop']}, so there is nothing to truncate")
+    mine["cut"] = mine.trip_id.map(at)
+    on = mine.cut.notna()
+    keep = (mine.seq <= mine.cut) if cut["keep"] == "before" else (mine.seq >= mine.cut)
+    kept = mine[~on | keep].copy()
+    n_kept = kept.groupby("trip_id").size()
+    dropped = set(n_kept[n_kept < 2].index)
+    kept = kept[~kept.trip_id.isin(dropped)].copy()
+    kept["stop_sequence"] = (kept.groupby("trip_id").cumcount() + 1).astype(str)
+    feed["stop_times"] = pd.concat([st[~st.trip_id.isin(tr)], kept[st.columns]], ignore_index=True)
+    if dropped:
+        remove_journeys(feed, dropped)
+    return {"route_id": route_id, "stop": cut["stop"], "tiploc": cut["tiploc"], "keep": cut["keep"],
+            "trips": sorted(set(at.index) - dropped), "trips_dropped": sorted(dropped),
+            "trips_untouched": len(tr) - len(at)}
 
 
 def _remove_calls(feed: dict, route_id: str, stops: list[str]) -> dict:
@@ -559,7 +615,7 @@ def _extend(feeds: dict, route_id: str, ext: dict, base: Path, ctx: dict, where:
         if stops.stop_id.iloc[-1] != ext["from_stop"]:
             raise GeneratorError(f"{where}: from_stop {ext['from_stop']} is not at an end of the extension")
         stops = stops.iloc[::-1].assign(chainage_m=lambda d: d.chainage_m.max() - d.chainage_m).reset_index(drop=True)
-        parts = [(stops.chainage_m.max() - b, stops.chainage_m.max() - a, t, tp) for a, b, t, tp in parts]
+        parts = [(stops.chainage_m.max() - b, stops.chainage_m.max() - a, t, tp, sp) for a, b, t, tp, sp in parts]
     lg = legs(stops, parts, mode, ext.get("speed_profile"), ctx, operator, where)
     dwell = _dwell(ext.get("speed_profile"), ctx, operator)
     stand = float(ext.get("stand_at_from_stop_s", dwell))       # how long trains stand at from_stop
@@ -629,6 +685,7 @@ def apply(feeds: dict[str, dict], ops: list[tuple[str, dict]], base: Path, ctx: 
     creates a route — and one report per op."""
     feeds = {n: {k: v.copy() for k, v in f.items()} for n, f in feeds.items()}
     reports = []
+    src: dict = {}          # copied journey → (Darwin journey it copies, total shift in minutes), for the capacity check
 
     def gen() -> dict:
         if "generated" not in feeds:
@@ -647,45 +704,48 @@ def apply(feeds: dict[str, dict], ops: list[tuple[str, dict]], base: Path, ctx: 
             feeds[name]["routes"] = feeds[name]["routes"][feeds[name]["routes"].route_id != op["route_id"]]
             rep = {"route_id": op["route_id"], "trips_removed": len(ids)}
         elif kind == "replace_route":
-            name = find_feed(feeds, op["route_id"])
-            j = _journeys(feeds[name], op["route_id"])
+            rids = op.get("route_ids") or [op["route_id"]]
             pers = op.get("periods")
-            if pers:
-                keep = j.start.map(lambda t: not any(ctx["periods"][p][0] <= t < ctx["periods"][p][1] for p in pers))
-                j = j[~keep]
-            ids = {t for ids_ in j.trip_ids for t in ids_}
-            # where the old service started from, and when, by period: (stop, period) → starts
-            st_old = feeds[name]["stop_times"]
-            st_old = st_old[st_old.trip_id.isin(ids)].assign(seq=lambda d: d.stop_sequence.astype(int))
-            first = st_old.sort_values(["trip_id", "seq"]).drop_duplicates("trip_id")
-            first = first.assign(t=mins(first.departure_time)).drop_duplicates(["stop_id", "t"])
             old_starts: dict = {}
-            for r_ in first.itertuples():
-                for per, (lo, hi) in ctx["periods"].items():
-                    if lo <= r_.t < hi:
-                        old_starts.setdefault((r_.stop_id, per), []).append(r_.t)
-                        break
-                else:
-                    old_starts.setdefault((r_.stop_id, "OP"), []).append(r_.t)
-            remove_journeys(feeds[name], ids)
-            if not pers:
-                feeds[name]["routes"] = feeds[name]["routes"][feeds[name]["routes"].route_id != op["route_id"]]
+            n_old = 0
+            for old_rid in rids:                         # one or several routes become one new service
+                name = find_feed(feeds, old_rid)
+                j = _journeys(feeds[name], old_rid)
+                if pers:
+                    keep = j.start.map(lambda t: not any(ctx["periods"][p][0] <= t < ctx["periods"][p][1] for p in pers))
+                    j = j[~keep]
+                ids = {t for ids_ in j.trip_ids for t in ids_}
+                # where the old service started from, and when, by period: (stop, period) → starts
+                st_old = feeds[name]["stop_times"]
+                st_old = st_old[st_old.trip_id.isin(ids)].assign(seq=lambda d: d.stop_sequence.astype(int))
+                first = st_old.sort_values(["trip_id", "seq"]).drop_duplicates("trip_id")
+                first = first.assign(t=mins(first.departure_time)).drop_duplicates(["stop_id", "t"])
+                for r_ in first.itertuples():
+                    for per, (lo, hi) in ctx["periods"].items():
+                        if lo <= r_.t < hi:
+                            old_starts.setdefault((r_.stop_id, per), []).append(r_.t)
+                            break
+                    else:
+                        old_starts.setdefault((r_.stop_id, "OP"), []).append(r_.t)
+                remove_journeys(feeds[name], ids)
+                if not pers:
+                    feeds[name]["routes"] = feeds[name]["routes"][feeds[name]["routes"].route_id != old_rid]
+                n_old += int(len(j))
             sub = dict(op)
             if pers:
                 sub["headways_min"] = {p: h for p, h in op["headways_min"].items() if p in pers}
             rep = _service(gen(), op["new_route_id"], sub, base, ctx, offset, where,
-                           desc=f"replaces {op['route_id']}" + (f" in {', '.join(pers)}" if pers else ""),
+                           desc=f"replaces {', '.join(rids)}" + (f" in {', '.join(pers)}" if pers else ""),
                            old_starts=old_starts)
-            rep |= {"replaces": op["route_id"], "journeys_removed": int(len(j)), "periods": pers or "all day"}
+            rep |= {"replaces": rids[0] if len(rids) == 1 else rids, "journeys_removed": n_old, "periods": pers or "all day"}
         elif kind == "modify_route":
             rid = op["route_id"]
             name = find_feed(feeds, rid)
             rep = {"route_id": rid}
-            if "truncate_at" in op:
-                raise GeneratorError(f"{where}: `truncate_at` is not built: which side of the stop is kept needs "
-                                     "defining first")
             if "fill_span" in op:                       # before any extension: by today's first stop
-                rep["fill_span"] = _fill_span(feeds[name], rid, op["fill_span"])
+                rep["fill_span"] = _fill_span(feeds[name], rid, op["fill_span"], src)
+            if "truncate_at" in op:                     # after fill_span, before any extension
+                rep["truncate"] = _truncate(feeds[name], rid, op["truncate_at"])
             if "stopping_pattern" in op:
                 pat = op["stopping_pattern"]
                 if pat.get("add"):
@@ -698,9 +758,13 @@ def apply(feeds: dict[str, dict], ops: list[tuple[str, dict]], base: Path, ctx: 
                 rep["extend_to"] = _extend(feeds, rid, op["extend_to"], base, ctx, where, mode,
                                            rt.get("agency_id") if mode == "heavy_rail" else None)
             if "headways_min" in op:
-                rep["headways"] = _retime(feeds[name], rid, op["headways_min"], ctx, offset)
+                rep["headways"] = _retime(feeds[name], rid, op["headways_min"], ctx, offset, src)
         elif kind in ("fare_change", "landuse_delta"):
             rep = {"recorded": True, "effect_on_network": "none"}
+        elif kind == "works":
+            # works to existing railway change no timetable. The capacity check and the cost
+            # engine read them from this report (capacity.apply_works, costs.works_capex).
+            rep = {"works": op, "name": op["name"], "effect_on_network": "none (capacity and cost only)"}
         elif kind in NOT_BUILT:
             raise GeneratorError(f"{where}: not built yet — {NOT_BUILT[kind]}")
         else:

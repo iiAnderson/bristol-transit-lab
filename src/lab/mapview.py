@@ -26,7 +26,7 @@ from . import FIDELITY_DISCLAIMER
 
 # Diverging colours: gain (blue) and loss (red) read the same for the colour-blind.
 GAIN, LOSS, NEUTRAL, OTHER = "#2166ac", "#b2182b", "#999999", "#e08214"
-CLICKABLE = 800          # [MODELLED] areas offered in the reach view per project: the page size grows with it
+CLICKABLE = 500          # [MODELLED] areas offered in the reach view per project: the page size grows with it
 MIN_SHOWN_MIN = 1.0      # [MODELLED] changes under a minute are within the noise of a network rebuild; not drawn
 GAP_LINES = 300          # [MODELLED] display cap: enough to show the pattern, light to open
 LIMIT_MIN = 45.0         # the reach view's cut-off, minutes
@@ -46,6 +46,7 @@ class Project:
     reach: pd.DataFrame          # attribution.reach, for the areas that can be clicked
     files: list[Path]            # the scenario's own alignment and stop files
     data_hash: str = ""
+    cost_rows: list | None = None     # replaces the capex and opex rows (a project whose cost is the sum of other scenarios')
 
 
 def _colour(value: float, scale: float, good_is_positive: bool = True) -> str:
@@ -215,6 +216,26 @@ def _chart(bands, unchanged: int, slower: int, colour: str = GAIN) -> str:
             f"<div style='color:#555'>{unchanged:,} residents change by under a minute; {slower:,} are slower by a minute or more.</div></div>")
 
 
+def _mean(v):
+    return v["mean"] if isinstance(v, dict) else v
+
+
+def _external_rows(c: dict) -> list[tuple[str, str]]:
+    """External rail passengers (people who cross the extent by rail, SPEC §6.1 amendment 2026-10-18): their
+    onward leg is the only thing a scheme changes for them. AM, both directions."""
+    ext = c.get("external_rail")
+    if not ext:
+        return [("External rail passengers (AM)", "not in this comparison")]
+    x = ext["periods"].get("AM", {}).get("all")
+    if not x:
+        return [("External rail passengers (AM)", "no figures")]
+    return [("External rail passengers, 2+ min faster (AM)",
+             f"{_mean(x['trips_faster_by_threshold']):,.0f} of {_mean(x['trips']):,.0f} a weekday "
+             f"({_mean(x['mean_change_min']):+.2f} min a trip)"),
+            ("External rail, person-hours saved a weekday (AM)",
+             f"{_mean(x['person_hours_saved_per_weekday']):,.0f} (the weekday factor is a placeholder)")]
+
+
 def card(p: Project) -> str:
     """One project's scorecard: the headline figures, the chart, costs, caveats."""
     c = p.c
@@ -231,11 +252,15 @@ def card(p: Project) -> str:
          f"{pe['to_the_centre']['residents_slower_by_threshold']['mean']:,.0f} / "
          f"{pe['to_jobs_weighted_mean_time']['residents_slower_by_threshold']['mean']:,.0f}"),
         ("Change in residents with a 15-min service", f"{cov['frequent_15']['residents']:+,}"),
+        *_external_rows(c),
+        *(p.cost_rows or [
         ("Capex, 2025 prices, with optimism bias (low / central / high)",
-         f"{_m(ob.get('low'))} / {_m(ob.get('central'))} / {_m(ob.get('high'))}"),
+         f"{_m(ob.get('low'))} / {_m(ob.get('central'))} / {_m(ob.get('high'))}" if any(ob.get(k) for k in ("low", "central", "high"))
+         else "nothing costed: existing track, no works or extra units priced"),
         ("Opex a year (low / central / high)",
          f"{_m(opx.get('low'))} / {_m(opx.get('central'))} / {_m(opx.get('high'))}" if cost.get("complete", True)
          else "not costed: a rate is a placeholder"),
+        ]),
     ]
     trs = "".join(f"<tr><td style='padding:1px 4px 1px 0'>{html.escape(a)}</td><td>{html.escape(b)}</td></tr>"
                   for a, b in rows)
