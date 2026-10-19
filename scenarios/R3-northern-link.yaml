@@ -1,0 +1,57 @@
+# R3: the northern link (heavy-rail programme phase 3, plans/heavy-rail-programme.md §4), on R2.
+# A link of about 1 km of new double track from St Philip's Marsh junction to the Filton Bank slow pair at Lawrence
+# Hill (a flyover, abutments built in R2) sends Portishead trains through the city tunnel to Parkway and Yate:
+# Portishead – Pill – Parson Street – North Street – Centre – Broadmead – Temple Meads East – Lawrence Hill –
+# Stapleton Road – Ashley Down – Filton Abbey Wood – Bristol Parkway – Yate, 30 / 30 / 30 / 60 (1 → 2 tph, through the
+# centre). B2028's Portishead service is replaced; Bedminster keeps what the Weston-line stoppers still give it
+# (closure is not assumed: the residents affected are reported in plans/heavy-rail-programme-log.md).
+# The Yate-line stoppers already run about 2 tph (measured: 31 and 33 journeys a day at Yate), so the brief's
+# `modify_route` to 2 tph is not needed.
+#
+# [MODELLED] throughout (Robbie's design): frequencies, calling pattern, the link's position, and:
+# - W18 "passing loop for 2 tph and electrification" on the Portishead branch. The capacity data has the
+#   branch as two single-track sections (not a block: moving it to one would change B2028's result, an open
+#   decision), and a `loops` item needs a block. So the loop is modelled as a second track over both sections
+#   (`track`, was 1, tracks 2): GENEROUS for capacity (a loop is cheaper than a second track) and its length
+#   is the whole branch. The track-doubling rate is a placeholder, so nothing is priced from it.
+# - the tunnel and its approaches are R2's and typed `existing_rail` in this alignment, so they are not costed again.
+id: R3-northern-link
+parent: R2-city-tunnel
+description: "R3: a northern link from the tunnel to Filton Bank sends Portishead trains through the centre to Parkway and Yate at 2 tph"
+landuse: L2026
+caveats:
+  - >-
+    The Portishead passing loop (W18) is modelled as a second track over the whole branch: generous for capacity,
+    and not priced (no track-doubling rate). Moving the branch to a single-track block is an open decision.
+  - >-
+    The northern link is drawn straight (0.77 km against the brief's about 1 km), a lower bound on its length.
+    Run times on existing track are today's diesel and bi-mode working times. Not modelled: platform occupation
+    at Temple Meads, junction conflicts, freight beyond the allowance, the Henbury and Avonmouth loop variant.
+ops:
+  - replace_route:
+      route_id: GEN-PORTISHEAD
+      new_route_id: GEN-R3-PORTISHEAD-YATE
+      mode: heavy_rail
+      operator: GW
+      traction: electric
+      alignment: lines/r3_portishead_yate.geojson
+      stops: stops/r3_portishead_yate.geojson
+      speed_profile: {max_kmh: 100, accel_ms2: 0.7, dwell_s: 60}
+      headways_min: {AM: 30, IP: 30, PM: 30, OP: 60}
+      span: "06:00-23:00"
+  - works:
+      name: "W17 electrify Filton Abbey Wood – Bristol Parkway – Yate"
+      electrify:
+        - {sections: [FILTNEW-BRSTPWY, BRSTPWY-WSTLGHJ, WSTLGHJ-YATE], tracks: 2, length_km: 11.98, complexity: simple,
+           note: "length: legs 14 and 15 of lines/r3_portishead_yate.geojson (2.09 + 9.89 km, OSM); open route, simple [MODELLED]"}
+  - works:
+      name: "W18 Portishead branch: electrification, and the passing loop modelled as a second track"
+      electrify:
+        - {sections: [PRTSHD-PILL, PILL-PARSNST], tracks: 2, length_km: 14.74, complexity: simple,
+           note: "two tracks to match the doubling below; length: B2028's drawn branch, 5.13 + 9.61 km (lines/portishead.geojson) [MODELLED]"}
+      track:
+        - {sections: [PRTSHD-PILL, PILL-PARSNST], was: 1, tracks: 2, length_km: 14.74,
+           note: "a passing loop for 2 tph modelled as a second track over both sections: generous for capacity, upper bound on length [MODELLED]"}
+  - works:
+      name: "W19 Temple Meads: a third east-facing bay"
+      platforms: [{at: BRSTLTM, kind: bay, count: 1, note: "or more through-running instead, per the brief [MODELLED]"}]

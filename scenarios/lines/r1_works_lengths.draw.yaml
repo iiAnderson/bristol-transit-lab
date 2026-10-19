@@ -1,0 +1,12 @@
+# Lengths for R1's `works` items (plans/heavy-rail-programme.md §2), measured along OSM railway ways (26 Sep 2026
+# extract; © OpenStreetMap contributors, ODbL) with `lab scenario draw-rail`. This is the length of the corridor
+# in route-km, one line of it; the op multiplies by tracks. A record, not a service alignment.
+# Narroways Hill Junction has no coordinates in the data: the point is the OSM junction node where the path
+# from Stapleton Road to Montpelier leaves the Filton Bank (3-way node, 560 m along), [MODELLED].
+out: r1_works_lengths.geojson
+kinds: [rail]
+legs:
+  - {via: [[-2.58132, 51.44914], [-2.56443, 51.45801], [-2.56622, 51.46751], [-2.5767, 51.47875], [-2.56243, 51.50494]], alignment_type: existing_rail}
+  - {via: [[-2.572387, 51.471733], [-2.58869, 51.46835], [-2.59912, 51.46839], [-2.61174, 51.46455]], alignment_type: existing_rail}
+  - {via: [[-2.61174, 51.46455], [-2.64995, 51.47999], [-2.67928, 51.48435], [-2.68756, 51.48811], [-2.69947, 51.50036]], alignment_type: existing_rail}
+  - {via: [[-2.69947, 51.50036], [-2.69631, 51.51277], [-2.66448, 51.56003]], alignment_type: existing_rail}

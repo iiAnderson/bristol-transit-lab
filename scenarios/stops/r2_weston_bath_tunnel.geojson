@@ -1,0 +1,222 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.971662,
+     51.34432
+    ]
+   },
+   "properties": {
+    "stop_id": "WSM",
+    "name": "Weston-super-Mare",
+    "tiploc": "WSMARE",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station WSM"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.942386,
+     51.348471
+    ]
+   },
+   "properties": {
+    "stop_id": "WNM",
+    "name": "Weston Milton",
+    "tiploc": "WMILTON",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station WNM"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.909622,
+     51.358036
+    ]
+   },
+   "properties": {
+    "stop_id": "WOR",
+    "name": "Worle",
+    "tiploc": "WORLE",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station WOR"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.827779,
+     51.391014
+    ]
+   },
+   "properties": {
+    "stop_id": "YAT",
+    "name": "Yatton",
+    "tiploc": "YATTON",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station YAT"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.750634,
+     51.419408
+    ]
+   },
+   "properties": {
+    "stop_id": "NLS",
+    "name": "Nailsea & Backwell",
+    "tiploc": "NAILSEA",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station NLS"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.607742,
+     51.433319
+    ]
+   },
+   "properties": {
+    "stop_id": "PSN",
+    "name": "Parson Street",
+    "tiploc": "PARSNST",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station PSN"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.6048,
+     51.441
+    ]
+   },
+   "properties": {
+    "stop_id": "XNS",
+    "name": "North Street",
+    "tiploc": "TNLNSTR",
+    "source": "[MODELLED] position read off Robbie's sketch (plans/heavy-rail-programme.md \u00a73), approximate; underground station, type left to the library default (the dearer of mined and box)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.6,
+     51.4525
+    ]
+   },
+   "properties": {
+    "stop_id": "XCT",
+    "name": "Centre",
+    "tiploc": "TNLCNTR",
+    "source": "[MODELLED] position read off Robbie's sketch (plans/heavy-rail-programme.md \u00a73), approximate; underground station, type left to the library default (the dearer of mined and box)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5905,
+     51.456
+    ]
+   },
+   "properties": {
+    "stop_id": "XBM",
+    "name": "Broadmead",
+    "tiploc": "TNLBRDM",
+    "source": "[MODELLED] position read off Robbie's sketch (plans/heavy-rail-programme.md \u00a73), approximate; underground station, type left to the library default (the dearer of mined and box)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5795,
+     51.4528
+    ]
+   },
+   "properties": {
+    "stop_id": "XTM",
+    "name": "Temple Meads East",
+    "tiploc": "TNLTMEE",
+    "source": "[MODELLED] position read off Robbie's sketch (plans/heavy-rail-programme.md \u00a73), approximate; underground station, type left to the library default (the dearer of mined and box)"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.495629,
+     51.417977
+    ]
+   },
+   "properties": {
+    "stop_id": "KYN",
+    "name": "Keynsham",
+    "tiploc": "KEYNSHM",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station KYN"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.380508,
+     51.379231
+    ]
+   },
+   "properties": {
+    "stop_id": "OLF",
+    "name": "Oldfield Park",
+    "tiploc": "OLDFLDP",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station OLF"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.357018,
+     51.377686
+    ]
+   },
+   "properties": {
+    "stop_id": "BTH",
+    "name": "Bath Spa",
+    "tiploc": "BATHSPA",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station BTH"
+   }
+  }
+ ]
+}

@@ -1,0 +1,113 @@
+# R1: the surface electric network (heavy-rail programme phase 1, plans/heavy-rail-programme.md §2).
+# Electric local services on Filton Bank, the Severn Beach line and the Henbury line, and a stopping
+# Weston-super-Mare – Bath Spa service through Temple Meads, on the 2028 network.
+#
+# [MODELLED] throughout: the frequencies, calling patterns and works are Robbie's design choices
+# (plans/heavy-rail-programme.md); nothing here is a published scheme. The brief's costs are not used.
+#
+# What the ops do, against today's timetable (23 Sep 2026, measured on B2028's feeds; plans/heavy-rail-programme-log.md):
+# - Six routes run through Temple Meads between the Severn Beach line and the Weston and Bath lines (28 of the
+#   Severn Beach line's 70 journeys a day). They are cut back to end or start at Temple Meads (`truncate_at`), so the
+#   Weston and Bath stoppers they were are unchanged and the Severn Beach line is left to the new services.
+# - The five routes that end at Temple Meads (42 journeys a day) are replaced by Temple Meads – Severn Beach at
+#   30 / 30 / 30 / 60 (1 → 2 tph beyond Avonmouth), and Temple Meads – Avonmouth is added at the same headway
+#   (2 → 4 tph to Avonmouth). The span is today's first and last start.
+# - Henbury is re-timed to 2 tph (B2028 runs 1): 30 divides 60, so it keeps its phase.
+# - Weston-super-Mare – Bath Spa at every station, 30 / 30 / 30 / 60, is ADDED on top of today's services (brief §5
+#   decision 1, default): today's 11 limited-stop journeys a day each way stay. Today's bi-mode fleet.
+# - works W1, W2, W3, W5. W4 (Henbury turnback and signalling), W7 (tunnel development) have no op and are not costed.
+#
+# Run times on existing track are today's diesel and bi-mode working times (SPEC §11 item 23): the electric
+# units' better acceleration is not credited.
+id: R1-suburban-electric
+parent: B2028
+description: "R1: electric surface network. Severn Beach line 4 tph to Avonmouth and 2 to Severn Beach, Henbury 2 tph, and a stopping Weston-super-Mare – Bath Spa service at 2 tph"
+landuse: L2026
+caveats:
+  - >-
+    Frequencies, calling patterns and works are one person's design (plans/heavy-rail-programme.md), not a
+    published scheme. Run times on existing track are today's diesel and bi-mode working times, so the
+    electric units' acceleration is not credited.
+  - >-
+    Not modelled: platform occupation and turnback times at Temple Meads, junction conflicts, freight beyond the
+    allowance, level-crossing closures on the Severn Beach branch, Henbury turnback and signalling (W4), tunnel
+    development (W7). The Avonmouth – Severn Beach branch stays single track and is run at its modelled limit.
+  - >-
+    Today's through trains between the Severn Beach line and the Weston and Bath lines are cut back at Temple
+    Meads; their Weston and Bath halves are unchanged. The existing limited-stop Weston – Bath service stays.
+ops:
+  # --- the through trains end or start at Temple Meads
+  - modify_route: {route_id: "GW:WSM-SVB", truncate_at: {stop: BRI, tiploc: BRSTLTM, keep: before}}
+  - modify_route: {route_id: "GW:WSM-AVN", truncate_at: {stop: BRI, tiploc: BRSTLTM, keep: before}}
+  - modify_route: {route_id: "GW:WSM-CFN", truncate_at: {stop: BRI, tiploc: BRSTLTM, keep: before}}
+  - modify_route: {route_id: "GW:SVB-WSM", truncate_at: {stop: BRI, tiploc: BRSTLTM, keep: after}}
+  - modify_route: {route_id: "GW:AVN-WSM", truncate_at: {stop: BRI, tiploc: BRSTLTM, keep: after}}
+  - modify_route: {route_id: "GW:SVB-TRO", truncate_at: {stop: BRI, tiploc: BRSTLTM, keep: after}}
+  # --- the Severn Beach line: 2 tph to Severn Beach, 2 more turning at Avonmouth
+  - replace_route:
+      route_ids: ["GW:SVB-BRI", "GW:BRI-SVB", "GW:BRI-AVN", "GW:AVN-BRI", "GW:CFN-BRI"]
+      new_route_id: GEN-R1-SVB
+      mode: heavy_rail
+      operator: GW
+      traction: electric
+      alignment: lines/r1_severn_beach.geojson
+      stops: stops/r1_severn_beach.geojson
+      headways_min: {AM: 30, IP: 30, PM: 30, OP: 60}
+      span: "05:10-23:10"
+  - add_line:
+      route_id: GEN-R1-AVN
+      name: Bristol Temple Meads – Avonmouth (R1)
+      mode: heavy_rail
+      operator: GW
+      traction: electric
+      alignment: lines/r1_avonmouth.geojson
+      stops: stops/r1_avonmouth.geojson
+      headways_min: {AM: 30, IP: 30, PM: 30, OP: 60}
+      span: "05:10-23:10"
+  # --- the Henbury line to 2 tph
+  - modify_route: {route_ids: ["GW:BRI-FIT", "GW:FIT-BRI"], headways_min: {AM: 30, IP: 30, PM: 30, OP: 60}}
+  # --- Weston-super-Mare – Bath Spa, stopping, added on top of today's services
+  - add_line:
+      route_id: GEN-R1-WESTON-BATH
+      name: Weston-super-Mare – Bath Spa (R1, stopping)
+      mode: heavy_rail
+      operator: GW
+      traction: bi_mode
+      alignment: lines/r1_weston_bath.geojson
+      stops: stops/r1_weston_bath.geojson
+      headways_min: {AM: 30, IP: 30, PM: 30, OP: 60}
+      span: "06:00-23:00"
+  # --- works to existing railway
+  - works:
+      name: "W1 electrify Filton Bank (slow pair) and the Henbury line"
+      electrify:
+        - {sections: [BRSTLTM-BRSTLEJ, BRSTLEJ-DRDAYSJ, DRDAYSJ-LAWRNCH, LAWRNCH-STPLTNR, STPLTNR-STPLNAR, STPLNAR-ASHYDN, ASHYDN-HORFDJN, HORFDJN-FILTNEW],
+           tracks: 2, length_km: 7.28, complexity: complex,
+           note: "length: lines/r1_works_lengths.geojson leg 1 (OSM, one line of the corridor); complex: an urban cutting, bridges and a tunnel [MODELLED]"}
+        - {sections: [FILTNEW-FILTNWJ, FILTNWJ-NRHFILT, NRHFILT-HENBURY],
+           tracks: 2, length_km: 5.47, complexity: simple,
+           note: "length: B2028's drawn extension, 2.27 + 3.20 km (lines/henbury_extension.geojson); twin-tracked per the MetroWest Phase 2 GRIP report (2015); open route, simple [MODELLED]"}
+  - works:
+      name: "W2 electrify the Severn Beach line"
+      electrify:
+        - {sections: [STPLNAR-MONPELR, MONPELR-REDLAND, REDLAND-CLFDOWN],
+           tracks: 2, length_km: 2.96, complexity: complex,
+           note: "two tracks once W3 has redoubled it; length: lines/r1_works_lengths.geojson leg 2; Clifton Down tunnel and cuttings, complex [MODELLED]"}
+        - {sections: [CLFDOWN-SEMILLS, SEMILLS-SHAMPTN, SHAMPTN-PTWYPR, PTWYPR-AVONMTH],
+           tracks: 2, length_km: 8.26, complexity: simple,
+           note: "two tracks once W3 has redoubled it; length: leg 3; open route along the Avon, simple [MODELLED]"}
+        - {sections: [AVONMTH-SADWJN, SADWJN-SADWRD, SADWRD-HLSMTHJ, HLSMTHJ-SVRNBCH],
+           tracks: 1, length_km: 7.23, complexity: simple,
+           note: "stays single track; length: leg 4 [MODELLED]"}
+  - works:
+      name: "W3 redouble the Severn Beach line from Narroways Hill Junction to Avonmouth"
+      track:
+        - {sections: [STPLNAR-MONPELR, MONPELR-REDLAND, REDLAND-CLFDOWN], was: 1, tracks: 2, length_km: 2.96,
+           note: "Narroways Hill Junction to Clifton Down; length from lines/r1_works_lengths.geojson leg 2; Narroways Hill Junction is the OSM junction node 560 m from Stapleton Road [MODELLED]"}
+        - {sections: [CLFDOWN-SEMILLS, SEMILLS-SHAMPTN, SHAMPTN-PTWYPR, PTWYPR-AVONMTH], was: 1, tracks: 2, length_km: 8.26,
+           note: "Clifton Down to Avonmouth; length: leg 3. Single today per Bristol Rail Campaign (Mar 2023) and Wikipedia; Avonmouth to Severn Beach stays single (Network Rail SDG report, June 2015)"}
+  - works:
+      name: "W5 Temple Meads: two east-facing bays (0 and 1) and the west-end bay"
+      platforms:
+        - {at: BRSTLTM, kind: bay, count: 3,
+           note: "bays 0 and 1 (6-car) are in the Temple Quarter plans per the brief; the west-end bay is reinstated [MODELLED]"}

@@ -1,0 +1,175 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.581315,
+     51.449144
+    ]
+   },
+   "properties": {
+    "stop_id": "BRI",
+    "name": "Bristol Temple Meads",
+    "tiploc": "BRSTLTM",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station BRI; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.56443,
+     51.458011
+    ]
+   },
+   "properties": {
+    "stop_id": "LWH",
+    "name": "Lawrence Hill",
+    "tiploc": "LAWRNCH",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station LWH; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.566217,
+     51.467507
+    ]
+   },
+   "properties": {
+    "stop_id": "SRD",
+    "name": "Stapleton Road",
+    "tiploc": "STPLTNR",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station SRD; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.588686,
+     51.468349
+    ]
+   },
+   "properties": {
+    "stop_id": "MTP",
+    "name": "Montpelier",
+    "tiploc": "MONPELR",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station MTP; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.599123,
+     51.468386
+    ]
+   },
+   "properties": {
+    "stop_id": "RDA",
+    "name": "Redland",
+    "tiploc": "REDLAND",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station RDA; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.611741,
+     51.464545
+    ]
+   },
+   "properties": {
+    "stop_id": "CFN",
+    "name": "Clifton Down",
+    "tiploc": "CLFDOWN",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station CFN; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.649949,
+     51.479993
+    ]
+   },
+   "properties": {
+    "stop_id": "SML",
+    "name": "Sea Mills",
+    "tiploc": "SEMILLS",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station SML; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.679275,
+     51.48435
+    ]
+   },
+   "properties": {
+    "stop_id": "SHH",
+    "name": "Shirehampton",
+    "tiploc": "SHAMPTN",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station SHH; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.687559,
+     51.488108
+    ]
+   },
+   "properties": {
+    "stop_id": "PRI",
+    "name": "Portway Park and Ride",
+    "tiploc": "PTWYPR",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station PRI; every station to Avonmouth, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.699466,
+     51.500362
+    ]
+   },
+   "properties": {
+    "stop_id": "AVN",
+    "name": "Avonmouth",
+    "tiploc": "AVONMTH",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station AVN; every station to Avonmouth, an existing stop"
+   }
+  }
+ ]
+}

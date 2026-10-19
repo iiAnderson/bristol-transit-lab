@@ -1,0 +1,53 @@
+# R2: the city tunnel (heavy-rail programme phase 2, plans/heavy-rail-programme.md §3), on R1.
+# A twin-bore tunnel of about 4.5 km under the centre carries Weston-super-Mare – Bath Spa at 4 tph:
+# south portal on the old four-track formation between Parson Street and Bedminster, stations at North Street,
+# Centre, Broadmead and Temple Meads East, east portal at St Philip's Marsh, then a grade-separated junction onto the
+# Bath line. R1's surface Weston – Bath service is replaced (so Bedminster is no longer called by it; today's
+# Weston and Portishead stoppers still serve Bedminster), 15 / 15 / 15 / 30.
+#
+# [MODELLED] throughout (Robbie's design, plans/heavy-rail-programme.md): the frequencies, calling pattern and the
+# positions of the portals and stations (read off a sketch, approximate), the speed profile (100 km/h, 0.7 m/s²: an
+# electric unit; the allowance fitted at 0.7 applies), the 60 s dwell at the new stations. The brief's costs are not used.
+# The new stations are underground and take the library's default type, the dearer of mined and box: the library
+# has upper bounds only for them, so R2 has no central cost (plans/P3.md §8).
+#
+# Not built, with no op: W13 on the Bath line (battery charging or part wiring, and a passing loop for 4 tph
+# stoppers among fast trains) and W15 (land, property, development): not costed. The capacity check counts trains
+# per section and has no overtaking model, so it will not see what W13's loop is for.
+id: R2-city-tunnel
+parent: R1-suburban-electric
+description: "R2: a twin-bore city tunnel (North Street, Centre, Broadmead, Temple Meads East) carrying Weston-super-Mare – Bath Spa at 4 tph"
+landuse: L2026
+caveats:
+  - >-
+    Portals, stations and frequencies are one person's design read off a sketch (plans/heavy-rail-programme.md);
+    the junction onto the Bath line is snapped to the OSM track. Run times on existing track are today's diesel and
+    bi-mode working times; the tunnel and new track use a speed profile for an electric unit.
+  - >-
+    Underground station costs exist only as upper bounds, so this scheme has no central capital figure. Not
+    modelled: platform occupation at Temple Meads, junction conflicts, freight beyond the allowance, an overtaking
+    loop on the Bath line (W13), land and property (W15).
+ops:
+  - replace_route:
+      route_id: GEN-R1-WESTON-BATH
+      new_route_id: GEN-R2-WESTON-BATH-TUNNEL
+      mode: heavy_rail
+      operator: GW
+      traction: electric
+      alignment: lines/r2_weston_bath_tunnel.geojson
+      stops: stops/r2_weston_bath_tunnel.geojson
+      speed_profile: {max_kmh: 100, accel_ms2: 0.7, dwell_s: 60}
+      headways_min: {AM: 15, IP: 15, PM: 15, OP: 30}
+      span: "06:00-23:00"
+  - works:
+      name: "W10 Parson Street: grade-separated junction (tunnel portal and the Portishead branch)"
+      junctions: [{at: PARSNST, type: grade_separated}]
+  - works:
+      name: "W11 St Philip's Marsh: grade-separated junction onto the Bath line, abutments for R3's link built now"
+      junctions: [{at: SPMJCT, type: grade_separated}]
+  - works:
+      name: "W12 electrify the Weston line, Parson Street – Weston-super-Mare (both tracks)"
+      electrify:
+        - {sections: [NAILSEA-PARSNST, YATTON-NAILSEA, WORLE-YATTON, WORLEJ-WORLE, WMILTON-WORLEJ, WSMARE-WMILTON],
+           tracks: 2, length_km: 27.67, complexity: simple,
+           note: "length: sum of the five Weston line legs of lines/r2_weston_bath_tunnel.geojson (OSM); open route, simple [MODELLED]"}

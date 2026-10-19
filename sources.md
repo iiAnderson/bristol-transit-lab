@@ -1654,6 +1654,25 @@ the tram free interchange at Temple Meads except the walk; no fare or crowding i
 
 The disk filled at the last step of the S001 run (`No space left on device`). With the owner's approval the engine-test skims `data/interim/skims/T003-engine-test-tunnel` (2.5 GB) and `T004-null-retime` (0.4 GB) were deleted; their run records and scenario files remain and they can be rebuilt with `lab run`. Results still cited from those runs in this file are not reproducible from cached skims until they are.
 
+### Heavy-rail programme: engine work (2026-10-18)
+
+Approved designs in plans/heavy-rail-programme-log.md G1, G2, G4, G8, G9 are built (SPEC §5 "as built at the
+heavy-rail programme engine stop"). Tests: `tests/test_capacity_blocks.py`, `test_works_ops.py`,
+`test_costs_works.py`, additions to `test_generator.py`; 263 pass.
+
+**Findings.**
+- B2028's capacity result is unchanged (32 sections used, none over, 2 on today's floor): its services use no
+  Severn Beach section and its re-timing is none.
+- **T002 now fails the capacity check, where it passed before.** It re-times `GW:SVB-BRI` to every 30 minutes in
+  the inter-peak. Before, the extra trains were counted at today's paths and the Severn Beach sections were
+  per-station-pair; now Clifton Down – Avonmouth (a 2 tph block) carries 3 in the inter-peak and is over. Its
+  earlier "none over" is withdrawn.
+- Block limits from Darwin 23 Sep 2026 (median run times plus 0.5 min a station dwell, margin 3 min):
+  Narroways – Clifton Down 6.0 + 1.0 min → 3 tph; Clifton Down – Avonmouth 10.5 + 1.5 min → 2 tph.
+- Not modelled, open: Avonmouth – Severn Beach (kept per section), and the Portishead branch, which is still
+  the per-section rule. Moving Portishead to a block would put B2028's 1 tph plus its freight allowance over a
+  1 tph block: a change to B2028's result that needs a decision before R3.
+
 ## External rail gateways — added 2026-10-18
 
 Promoted from `docs/DEFERRED.md` §11b at Robbie's request, rail only (road, bus, coach and park and ride stay
@@ -1714,6 +1733,82 @@ mode or station. The weekday factor is still a `[PLACEHOLDER]`, so the person-ho
 - The §9 station entries/exits gate is not built (v1 stops at P3). Station boardings are not assigned: gateways carry
   the ORR volume as given, not a modelled count.
 - Through passengers (external ↔ external) are dropped, as in §6.1, which understates interchange at Temple Meads.
+
+### Heavy-rail programme R1–R3 built, not skimmed (2026-10-18)
+
+`scenarios/R1-suburban-electric.yaml`, `R2-city-tunnel.yaml`, `R3-northern-link.yaml` (each on the last), from
+plans/heavy-rail-programme.md; alignments drawn by `lab scenario draw-rail` (`lines/r1_*.draw.yaml`,
+`r2_weston_bath_tunnel.draw.yaml`, `r3_portishead_yate.draw.yaml`); new timing points in
+`scenarios/infrastructure/untimed_sections.yaml`. Full account: plans/heavy-rail-programme-log.md §7.
+
+**What the data said**
+- Local services are through services and route ids are origin–destination pairs (28 of the Severn Beach line's 70 journeys
+  a day run through Temple Meads). R1 therefore cuts the six through routes back at Temple Meads (`truncate_at`) and
+  replaces the five that end there. The existing "Weston – Bath" services (11 journeys a day each way) are limited-stop (7
+  calls); R1's stopping service is added on top of them (the brief's §5 default).
+- **Capacity (modelled limits, three offsets alike).** The Severn Beach line works once W3 redoubles Narroways – Avonmouth:
+  the branch beyond Avonmouth sits at its limit (2 of 2). **R1 over:** Temple Meads east throat (Bristol East Junction –
+  Temple Meads) 23–24 trains an hour against a floor of 18 set by today's busiest hour, and Bristol East Junction – North
+  Somerset Junction 13 against 12 on the Bath line. **R2 over:** the throat, AM only, 21–22 against 18 (the tunnel takes the
+  Weston – Bath trains off the Bath line). **R3 over:** the throat again (21–22) and Horfield – Filton Abbey Wood, AM, 13
+  against 12 once Yate trains run through.
+- **Cost (2025 prices, with optimism bias, stage 1). All three are incomplete.** R1: electrification only, £63m–£76m–£89m raw and
+  £99m–£119m–£139m with optimism bias; not costed: redoubling, three bay platforms, 14 electric and bi-mode units' lease. R2: **no central figure**
+  (underground stations are upper bounds only): low £0.9bn, high £7.7bn with optimism bias; tunnel track and electrification,
+  both junctions, the at-grade approaches and the units are not costed. R3: £85m–£99m–£114m, only electrification; the link
+  (`elevated` rate), the Portishead second track and a bay are not costed. The brief's own ranges were not used.
+- **Bedminster (R3).** Calls at Bedminster in the AM hour, both directions: B2028 5, R1 9, R2 5, **R3 3** (Portishead trains
+  move into the tunnel; the Weston-line stoppers keep serving it, about one an hour each way). 16,063 residents live within
+  800 m of the station; 12,035 of them are outside 800 m of Parson Street and Temple Meads. Closure is not assumed.
+- **External rail passengers (the gateway work, fb7b0a9).** Of 48,713 external rail trips a weekday, Temple Meads carries 39.3%,
+  Bath Spa 25.0%, Newport 13.3%, Parkway 10.9%, Weston-super-Mare 2.3%. The phases touch gateways carrying 72% (R1), 70% (R2)
+  and 53% (R3) of them. The tunnel stations are not gateways (no ORR volume), so those passengers' rail leg and station do not
+  change; only the onward leg from their gateway does. No external figure for R1–R3 yet: it comes with the skims.
+
+**Known artefacts, stated on the scenarios**
+- The engine gives Temple Meads the operator's median dwell, 390 s, dominated by terminating trains; it applies to R1's
+  through-running Weston – Bath service and lengthens it by about 5 minutes.
+- R2 and R3 use an electric unit's profile (100 km/h, 0.7 m/s²) for the tunnel and new track; R3's Portishead legs keep
+  B2028's own (80 km/h, 0.5), checked equal to B2028 (5.2 and 9.2 minutes). Run times on existing track are today's.
+- Positions of portals, stations and the junction are read off a sketch. The junction is snapped to the OSM Bath line (the
+  brief's point was 220 m south of it); the east portal is 190 m from the nearest OSM track.
+- The northern link is drawn straight, 0.77 km against "about 1 km". The Portishead passing loop (W18) is modelled as a second
+  track over the branch (generous for capacity, not priced).
+
+**Bug found and fixed while skimming R1–R3 (2026-10-18).** `generator._retime` built the OP window (the hours outside the
+named periods) as one window from the first to the last off-peak journey, which spans the whole day when the route has early
+and late journeys. A `headways_min` that included OP therefore added OP-spaced journeys across AM, IP and PM as well: Henbury
+(re-timed to 30 / 30 / 30 / 60) got 43 journeys a direction, not about 37, with duplicate departures, and R5 failed in
+`StopSequence.transferTime` (a Java `IllegalStateException`) on the same origin in every phase. Found by bisecting R1's ops
+with temporary scenarios (Severn Beach and truncation alone ran; Henbury alone failed) and then the origin (E00073145, near
+Montpelier). Now OP uses an early and a late window (`period_windows`), tested. No earlier scenario re-timed OP, so no earlier
+result is affected. **The capacity figures for R1–R3 above were computed with the duplicated Henbury journeys and are
+superseded** (the Filton Bank, east throat and Bath line counts were inflated): see the refreshed figures below.
+
+**Results of R1–R3, skimmed (2026-10-19; AM 08:00–09:00, mean over three offsets; each phase against its parent, then the
+programme against B2028).** Nobody is worse off to the centre or to jobs in any comparison.
+
+| | Residents 2+ min faster to the centre | to jobs | Residents with a 15-min service | External rail trips 2+ min faster (AM, of 48,713) | Mean change per external trip | External person-hours saved a weekday (AM) |
+|---|---|---|---|---|---|---|
+| R1 against B2028 | 178,871 (144,481–233,331) | 170,526 | +23,269 | 9,351 (232 slower) | −1.02 min | 819 |
+| R2 against R1 | 133,476 (57,341–189,685) | 303,253 | −2,312 | 5,835 (1,829 slower) | −0.49 min | 389 |
+| R3 against R2 | 49,269 (35,924–57,833) | 68,120 | +3,160 | 3,243 (146 slower) | −0.32 min | 259 |
+| **R3 against B2028 (all three)** | **308,146 (278,960–324,537)** | **681,933** | **+24,117** | **14,349 (124 slower)** | **−1.83 min** | **1,466** |
+
+The wide offset ranges (R2: 57,341–189,685 to the centre) show how much of a 15-minute service's effect depends on its phase
+against its connections. External person-hours scale with the `[PLACEHOLDER]` weekday factor.
+
+**Refreshed capacity (after the OP re-timing fix; supersedes the figures above).** R1: Temple Meads east throat 22–23 trains an
+hour against 18 in every period, and Bristol East Junction – North Somerset Junction (Bath line) 13 against 12. R2 and R3: the
+throat only, 20–21 against 18 in every period. The Horfield – Filton Abbey Wood overload reported for R3 was the duplicated
+Henbury journeys; it is gone. The Severn Beach branch is at its limit (2 of 2) and not over in R1.
+
+**Costs, unchanged by the fix** (2025 prices, with optimism bias; all incomplete): R1 £99m / £119m / £139m (electrification only);
+R2 £893m / no central figure / £7,719m; R3 £85m / £99m / £113m (electrification only). A comparison reports only the scenario's own
+ops, so the programme project shows the three phases side by side, not a sum.
+
+**Next:** approval of the station, portal and junction plot (`runs/_review/hr/stations.html`), then `lab run` and
+`lab compare` for each phase (about two hours of skims each, 2.6 GB of disk each).
 
 ## Phase status
 

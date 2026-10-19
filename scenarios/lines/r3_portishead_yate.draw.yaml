@@ -1,0 +1,30 @@
+# Drawing spec for `lab scenario draw-rail`: R3's Portishead – Yate service through the city tunnel (heavy-rail
+# programme phase 3, plans/heavy-rail-programme.md §4). Existing track is routed along OSM railway ways (26 Sep 2026
+# extract; © OpenStreetMap contributors, ODbL) over Darwin timing points.
+# The portal approach, the tunnel and the east portal to St Philip's Marsh junction are BUILT IN R2 and so are typed
+# `existing_rail` here: R3 pays only for what it adds, the northern link, so the tunnel is not costed twice. Their
+# timing points are the new ones in scenarios/infrastructure/untimed_sections.yaml; their run times come from the
+# speed profile, as in R2.
+# The northern link (about 1 km of new double track in the brief; 0.76 km drawn straight from the junction to Lawrence
+# Hill, a lower bound) is `elevated`: a flyover with abutments built in R2 (W11). Positions as in
+# r2_weston_bath_tunnel.draw.yaml; all [MODELLED].
+# The two Portishead branch legs keep B2028's own speed profile (80 km/h, 0.5 m/s², scenarios/B2028.yaml), so the
+# branch is not made faster by R3's electric-unit profile: that would be a gain the brief does not propose.
+out: r3_portishead_yate.geojson
+kinds: [rail, construction, disused]
+legs:
+  - {via: [[-2.75615, 51.48347], [-2.68691, 51.48127]], alignment_type: existing_rail, timing_points: [PRTSHD, PILL], speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}}
+  - {via: [[-2.68691, 51.48127], [-2.607742, 51.433319]], alignment_type: existing_rail, timing_points: [PILL, PARSNST], speed_profile: {max_kmh: 80, accel_ms2: 0.5, dwell_s: 60}}
+  - {via: [[-2.607742, 51.433319], [-2.60381, 51.43513]], alignment_type: existing_rail, timing_points: [PARSNST, TNLSPTL]}
+  - {via: [[-2.6048, 51.4410]], alignment_type: existing_rail, straight: true, timing_points: [TNLSPTL, TNLNSTR]}
+  - {via: [[-2.6000, 51.4525]], alignment_type: existing_rail, straight: true, timing_points: [TNLNSTR, TNLCNTR]}
+  - {via: [[-2.5905, 51.4560]], alignment_type: existing_rail, straight: true, timing_points: [TNLCNTR, TNLBRDM]}
+  - {via: [[-2.5795, 51.4528]], alignment_type: existing_rail, straight: true, timing_points: [TNLBRDM, TNLTMEE]}
+  - {via: [[-2.5700, 51.4480]], alignment_type: existing_rail, straight: true, timing_points: [TNLTMEE, TNLEPTL]}
+  - {via: [[-2.56628, 51.45116]], alignment_type: existing_rail, straight: true, timing_points: [TNLEPTL, SPMJCT]}
+  - {via: [[-2.56443, 51.45801]], alignment_type: elevated, straight: true, timing_points: [SPMJCT, LAWRNCH]}
+  - {via: [[-2.56443, 51.45801], [-2.56622, 51.46751]], alignment_type: existing_rail, timing_points: [LAWRNCH, STPLTNR]}
+  - {via: [[-2.56622, 51.46751], [-2.5767, 51.47875]], alignment_type: existing_rail, timing_points: [STPLTNR, STPLNAR, ASHYDN]}
+  - {via: [[-2.5767, 51.47875], [-2.56243, 51.50494]], alignment_type: existing_rail, timing_points: [ASHYDN, HORFDJN, FILTNEW]}
+  - {via: [[-2.56243, 51.50494], [-2.54216, 51.5138]], alignment_type: existing_rail, timing_points: [FILTNEW, BRSTPWY]}
+  - {via: [[-2.54216, 51.5138], [-2.43252, 51.5406]], alignment_type: existing_rail, timing_points: [BRSTPWY, WSTLGHJ, YATE]}

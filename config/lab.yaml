@@ -354,3 +354,19 @@ map:
        title: "Portishead line and Henbury extension (due 2028)", against_title: "today's network"}
     - {scenario: S001-bristol-supertram, against: B2028, colour: "#762a83",
        title: "Bristol Supertram, Line One (2001 scheme)", against_title: "the 2028 network"}
+    - {scenario: S002-severn-beach-half-hourly, against: B2028, colour: "#d95f02",
+       title: "Severn Beach line: half-hourly to Severn Beach", against_title: "the 2028 network"}
+    # Heavy-rail programme (plans/heavy-rail-programme.md): each phase against its parent. `pending: true` keeps a
+    # scenario that is built but not yet skimmed and compared off the map (`lab map` says so); remove it once
+    # `lab run` and `lab compare <scenario> <against>` have been run. `cost_from` gives a project whose cost is the
+    # sum of other scenarios' (each against its own parent: a compare run costs only its scenario's own ops).
+    - {scenario: R1-suburban-electric, against: B2028, colour: "#e7298a",
+       title: "Heavy rail R1: electric surface network", against_title: "the 2028 network"}
+    - {scenario: R2-city-tunnel, against: R1-suburban-electric, colour: "#66a61e",
+       title: "Heavy rail R2: city tunnel", against_title: "R1"}
+    - {scenario: R3-northern-link, against: R2-city-tunnel, colour: "#e6ab02",
+       title: "Heavy rail R3: northern link, Portishead to Yate", against_title: "R2"}
+    # The three phases together: R3 (which includes R1 and R2) against the 2028 network.
+    - {scenario: R3-northern-link, against: B2028, id: heavy-rail-programme, colour: "#1f78b4",
+       cost_from: [R1-suburban-electric, R2-city-tunnel, R3-northern-link],
+       title: "Heavy rail programme, all three phases", against_title: "the 2028 network"}

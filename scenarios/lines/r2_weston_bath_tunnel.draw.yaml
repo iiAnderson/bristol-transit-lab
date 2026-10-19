@@ -1,0 +1,29 @@
+# Drawing spec for `lab scenario draw-rail`: R2's Weston-super-Mare – Bath Spa service through the city tunnel
+# (heavy-rail programme phase 2, plans/heavy-rail-programme.md §3). Existing track is routed along OSM railway ways
+# (26 Sep 2026 extract; © OpenStreetMap contributors, ODbL) over Darwin timing points; the tunnel is drawn straight
+# between the points below, which are Robbie's sketch read off by eye and APPROXIMATE [MODELLED]:
+#   south portal   (-2.6040, 51.4352) in the brief, snapped to the old four-track formation (OSM, 15 m)
+#   North Street   (-2.6048, 51.4410)   Centre (-2.6000, 51.4525)   Broadmead (-2.5905, 51.4560)
+#   Temple Meads East (-2.5795, 51.4528)   east portal (-2.5700, 51.4480)
+#   junction onto the Bath line: the brief's point (-2.5660, 51.4490) is 220 m south of the OSM Bath line; snapped to
+#   the track at (-2.56628, 51.45116).
+# Tunnel legs total about 4.4 km (the brief says about 4.5). New track: the portal approach and the east portal to the
+# junction are `at_grade_segregated`; the tunnel is `tunnel`.
+out: r2_weston_bath_tunnel.geojson
+kinds: [rail]
+legs:
+  - {via: [[-2.97166, 51.34432], [-2.94239, 51.34847]], alignment_type: existing_rail, timing_points: [WSMARE, WMILTON]}
+  - {via: [[-2.94239, 51.34847], [-2.90962, 51.35804]], alignment_type: existing_rail, timing_points: [WMILTON, WORLEJ, WORLE]}
+  - {via: [[-2.90962, 51.35804], [-2.82778, 51.39101]], alignment_type: existing_rail, timing_points: [WORLE, YATTON]}
+  - {via: [[-2.82778, 51.39101], [-2.75063, 51.41941]], alignment_type: existing_rail, timing_points: [YATTON, NAILSEA]}
+  - {via: [[-2.75063, 51.41941], [-2.60774, 51.43332]], alignment_type: existing_rail, timing_points: [NAILSEA, PARSNST]}
+  - {via: [[-2.60774, 51.43332], [-2.60381, 51.43513]], alignment_type: at_grade_segregated, timing_points: [PARSNST, TNLSPTL]}
+  - {via: [[-2.6048, 51.4410]], alignment_type: tunnel, straight: true, timing_points: [TNLSPTL, TNLNSTR]}
+  - {via: [[-2.6000, 51.4525]], alignment_type: tunnel, straight: true, timing_points: [TNLNSTR, TNLCNTR]}
+  - {via: [[-2.5905, 51.4560]], alignment_type: tunnel, straight: true, timing_points: [TNLCNTR, TNLBRDM]}
+  - {via: [[-2.5795, 51.4528]], alignment_type: tunnel, straight: true, timing_points: [TNLBRDM, TNLTMEE]}
+  - {via: [[-2.5700, 51.4480]], alignment_type: tunnel, straight: true, timing_points: [TNLTMEE, TNLEPTL]}
+  - {via: [[-2.56628, 51.45116]], alignment_type: at_grade_segregated, straight: true, timing_points: [TNLEPTL, SPMJCT]}
+  - {via: [[-2.56628, 51.45116], [-2.49563, 51.41798]], alignment_type: existing_rail, timing_points: [SPMJCT, NSMRSTJ, KEYNSHM]}
+  - {via: [[-2.49563, 51.41798], [-2.38051, 51.37923]], alignment_type: existing_rail, timing_points: [KEYNSHM, OLDFLDP]}
+  - {via: [[-2.38051, 51.37923], [-2.35702, 51.37769]], alignment_type: existing_rail, timing_points: [OLDFLDP, BATHSPA]}

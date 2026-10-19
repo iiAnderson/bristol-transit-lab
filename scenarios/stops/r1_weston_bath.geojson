@@ -1,0 +1,192 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.971662,
+     51.34432
+    ]
+   },
+   "properties": {
+    "stop_id": "WSM",
+    "name": "Weston-super-Mare",
+    "tiploc": "WSMARE",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station WSM; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.942386,
+     51.348471
+    ]
+   },
+   "properties": {
+    "stop_id": "WNM",
+    "name": "Weston Milton",
+    "tiploc": "WMILTON",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station WNM; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.909622,
+     51.358036
+    ]
+   },
+   "properties": {
+    "stop_id": "WOR",
+    "name": "Worle",
+    "tiploc": "WORLE",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station WOR; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.827779,
+     51.391014
+    ]
+   },
+   "properties": {
+    "stop_id": "YAT",
+    "name": "Yatton",
+    "tiploc": "YATTON",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station YAT; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.750634,
+     51.419408
+    ]
+   },
+   "properties": {
+    "stop_id": "NLS",
+    "name": "Nailsea & Backwell",
+    "tiploc": "NAILSEA",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station NLS; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.607742,
+     51.433319
+    ]
+   },
+   "properties": {
+    "stop_id": "PSN",
+    "name": "Parson Street",
+    "tiploc": "PARSNST",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station PSN; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.594149,
+     51.440088
+    ]
+   },
+   "properties": {
+    "stop_id": "BMT",
+    "name": "Bedminster",
+    "tiploc": "BDMNSTR",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station BMT; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.581315,
+     51.449144
+    ]
+   },
+   "properties": {
+    "stop_id": "BRI",
+    "name": "Bristol Temple Meads",
+    "tiploc": "BRSTLTM",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station BRI; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.495629,
+     51.417977
+    ]
+   },
+   "properties": {
+    "stop_id": "KYN",
+    "name": "Keynsham",
+    "tiploc": "KEYNSHM",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station KYN; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.380508,
+     51.379231
+    ]
+   },
+   "properties": {
+    "stop_id": "OLF",
+    "name": "Oldfield Park",
+    "tiploc": "OLDFLDP",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station OLF; every station of the Weston and Bath lines, an existing stop"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.357018,
+     51.377686
+    ]
+   },
+   "properties": {
+    "stop_id": "BTH",
+    "name": "Bath Spa",
+    "tiploc": "BATHSPA",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station BTH; every station of the Weston and Bath lines, an existing stop"
+   }
+  }
+ ]
+}

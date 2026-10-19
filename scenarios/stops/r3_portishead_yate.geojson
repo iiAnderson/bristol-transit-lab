@@ -1,0 +1,226 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.75615,
+     51.48347
+    ]
+   },
+   "properties": {
+    "stop_id": "POH",
+    "name": "Portishead",
+    "tiploc": "PRTSHD",
+    "source": "B2028's Portishead stop (OSM proposed:railway=station node 11845402921)",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.68691,
+     51.48127
+    ]
+   },
+   "properties": {
+    "stop_id": "PIA",
+    "name": "Pill",
+    "tiploc": "PILL",
+    "source": "B2028's Pill stop (OSM proposed:railway=station node 11845402922)",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.607742,
+     51.433319
+    ]
+   },
+   "properties": {
+    "stop_id": "PSN",
+    "name": "Parson Street",
+    "tiploc": "PARSNST",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station PSN"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.6048,
+     51.441
+    ]
+   },
+   "properties": {
+    "stop_id": "XNS",
+    "name": "North Street",
+    "tiploc": "TNLNSTR",
+    "source": "built in R2 (position read off Robbie's sketch, approximate)",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.6,
+     51.4525
+    ]
+   },
+   "properties": {
+    "stop_id": "XCT",
+    "name": "Centre",
+    "tiploc": "TNLCNTR",
+    "source": "built in R2 (position read off Robbie's sketch, approximate)",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5905,
+     51.456
+    ]
+   },
+   "properties": {
+    "stop_id": "XBM",
+    "name": "Broadmead",
+    "tiploc": "TNLBRDM",
+    "source": "built in R2 (position read off Robbie's sketch, approximate)",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5795,
+     51.4528
+    ]
+   },
+   "properties": {
+    "stop_id": "XTM",
+    "name": "Temple Meads East",
+    "tiploc": "TNLTMEE",
+    "source": "built in R2 (position read off Robbie's sketch, approximate)",
+    "existing": true
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.56443,
+     51.458011
+    ]
+   },
+   "properties": {
+    "stop_id": "LWH",
+    "name": "Lawrence Hill",
+    "tiploc": "LAWRNCH",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station LWH"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.566217,
+     51.467507
+    ]
+   },
+   "properties": {
+    "stop_id": "SRD",
+    "name": "Stapleton Road",
+    "tiploc": "STPLTNR",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station SRD"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.5767,
+     51.47875
+    ]
+   },
+   "properties": {
+    "stop_id": "ASD",
+    "name": "Ashley Down",
+    "tiploc": "ASHYDN",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station ASD"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.562431,
+     51.504939
+    ]
+   },
+   "properties": {
+    "stop_id": "FIT",
+    "name": "Filton Abbey Wood",
+    "tiploc": "FILTNEW",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station FIT"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.542163,
+     51.513801
+    ]
+   },
+   "properties": {
+    "stop_id": "BPW",
+    "name": "Bristol Parkway",
+    "tiploc": "BRSTPWY",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station BPW"
+   }
+  },
+  {
+   "type": "Feature",
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -2.432522,
+     51.540602
+    ]
+   },
+   "properties": {
+    "stop_id": "YAE",
+    "name": "Yate",
+    "tiploc": "YATE",
+    "existing": true,
+    "source": "Rail GTFS (NaPTAN) station YAE"
+   }
+  }
+ ]
+}
